@@ -112,8 +112,9 @@ class DatabaseManager:
 # abstract class to L2-L3 managers
 class NetworkManager(ABC):
     # init by ip and connect with the same username and password
-    def __init__(self, ipaddress):
+    def __init__(self, ipaddress, user_port):
         self.__ipaddress = ipaddress
+        self._user_port = user_port   # is needed in child classes
         self.__USERNAME = os.getenv("NET_USER")
         self.__PASSWORD = os.getenv("NET_PASSWORD")
         
@@ -150,51 +151,6 @@ class NetworkManager(ABC):
 
 # class to connect and communicate with L2
 class L2Manager(NetworkManager):
-    # show ports and catch groups
-    def __show_port(self, port):
-        # command
-        self._session.sendline(f"show ports {port}")
-        
-        # first expression for single type port, second for combo port
-        index = self._session.expect([rf"{port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#", rf"{port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*{port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#"])
-        # 1210: index = self._session.expect([rf"{port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#", rf"{port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*{port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#"])
-        
-        # if it's combo port and active type is fiber
-        if index == 1 and (self._session.match.group(10) or self._session.match.group(1).decode("utf-8") == "Disabled"):
-            return (True, *self._session.match.group(6, 7, 9, 10))
-        # otherwise
-        return (False, *self._session.match.group(1, 2, 4, 5))
-    
-    # handler to check and return info about port
-    def get_port_link(self, port):
-        # get all important parts including port type
-        fiber, state, settings, linkdown, linkup = self.__show_port(port)
-        
-        # modify to useful form
-        state = state.decode("utf-8") == "Disabled"   # boolean
-        settings = None if settings.decode("utf-8") == "Auto" else settings.decode("utf-8")   # if resctricted
-        linkdown = linkdown.decode("utf-8") if linkdown and not state else None   # if down with enabled port
-        linkup = linkup.decode("utf-8") if linkup else None   # speed if up
-        
-        # return all modified
-        return (fiber, state, settings, linkdown, linkup)
-    
-    # cable diagnostics
-    def cable_diag(self, port):
-        # command
-        self._session.sendline(f"cable_diag ports {port}")
-        self._session.expect("#")
-
-        # save output and test different patterns
-        temp = self._session.before.decode("utf-8")
-        match = re.search(rf"({port}\s+(\S+)\s+(Link Up|Link Down)\s+Pair(\d)\s+([A-Za-z]+)\s+at\s+(\d+)\s+M\s+(-|\d+))|({port}\s+(\S+)\s+(Link Up|Link Down)\s+([A-Za-z ]+)\s+(-|\d+))", temp)
-        
-        # if it's patterns with pairs' lengths, return list
-        if match.group(1):
-            return re.findall(r"Pair(\d)\s+([A-Za-z]+)\s+at\s+(\d+)\s+M", temp)
-        # if it's just a diagnose, return string
-        return match.group(11)
-    
     # get all vlans on switch
     def get_switch_vlans(self):
         # command
@@ -206,9 +162,9 @@ class L2Manager(NetworkManager):
         # 1210: return {int(vlan_id): vlan_name for vlan_id, vlan_name in re.findall(r"VID\s+:\s+(\d+)\s+VLAN NAME\s+:\s+(\S+)", self._session.before.decode("utf-8"))}
     
     # get vlans on port
-    def get_port_vlans(self, port):
+    def get_port_vlans(self):
         # command
-        self._session.sendline(f"show vlan ports {port}")
+        self._session.sendline(f"show vlan ports {self._user_port}")
         self._session.expect("#")
         
         # dictionary for vlans with statuses as keys
@@ -224,13 +180,86 @@ class L2Manager(NetworkManager):
         return port_vlans
     
     # get acl options on port from overall output
-    def get_port_acl(self, port):
+    def get_port_acl(self):
         # command
         self._session.sendline("show access_profile")
         self._session.expect("#")
         
         # catch and return two entries of user port's rules
-        return re.findall(rf"Ports\s+:\s+{port}\s+Mode\s+:\s+Permit[\s\S]*?0x([a-z\d]{{8}})\s+0xffffffff", self._session.before.decode("utf-8"))
+        return re.findall(rf"Ports\s+:\s+{self._user_port}\s+Mode\s+:\s+Permit[\s\S]*?0x([a-z\d]{{8}})\s+0xffffffff", self._session.before.decode("utf-8"))
+    
+    # show ports and catch groups
+    def __show_port(self):
+        # command
+        self._session.sendline(f"show ports {self._user_port}")
+        
+        # first expression for single type port, second for combo port
+        index = self._session.expect([rf"{self._user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#", rf"{self._user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*{self._user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#"])
+        # 1210: index = self._session.expect([rf"{self._user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#", rf"{self._user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*{self._user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#"])
+        
+        # if it's combo port and active type is fiber
+        if index == 1 and (self._session.match.group(10) or self._session.match.group(1).decode("utf-8") == "Disabled"):
+            return (True, *self._session.match.group(6, 7, 9, 10))
+        # otherwise
+        return (False, *self._session.match.group(1, 2, 4, 5))
+    
+    # handler to check and return info about port
+    def get_port_link(self):
+        # get all important parts including port type
+        fiber, state, settings, linkdown, linkup = self.__show_port()
+        
+        # modify to useful form
+        state = state.decode("utf-8") == "Disabled"   # boolean
+        settings = None if settings.decode("utf-8") == "Auto" else settings.decode("utf-8")   # if resctricted
+        linkdown = linkdown.decode("utf-8") if linkdown and not state else None   # if down with enabled port
+        linkup = linkup.decode("utf-8") if linkup else None   # speed if up
+        
+        # return all modified
+        return (fiber, state, settings, linkdown, linkup)
+    
+    # cable diagnostics
+    def cable_diag(self):
+        # command
+        self._session.sendline(f"cable_diag ports {self._user_port}")
+        self._session.expect("#")
+
+        # save output and test different patterns
+        temp = self._session.before.decode("utf-8")
+        match = re.search(rf"({self._user_port}\s+(\S+)\s+(Link Up|Link Down)\s+Pair(\d)\s+([A-Za-z]+)\s+at\s+(\d+)\s+M\s+(-|\d+))|({self._user_port}\s+(\S+)\s+(Link Up|Link Down)\s+([A-Za-z ]+)\s+(-|\d+))", temp)
+        
+        # if it's patterns with pairs' lengths, return list
+        if match.group(1):
+            return re.findall(r"Pair(\d)\s+([A-Za-z]+)\s+at\s+(\d+)\s+M", temp)
+        # if it's just a diagnose, return string
+        return match.group(11)
+    
+    # get mac addresses on port
+    def get_fdb_port(self):
+        # command
+        self._session.sendline(f"show fdb port {self._user_port}")
+        self._session.expect("#")
+        
+        # get rows as "vid vlan mac" and return set of macs
+        matches = re.findall(rf"(\d+)\s+(\S+)\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})\s+{self._user_port}", self._session.before.decode("utf-8"))
+        return {i[2] for i in matches}
+    
+    # get crc errors on port
+    def get_crc_errors_port(self):
+        # command
+        self._session.sendline(f"show error ports {self._user_port}")
+        self._session.expect(r"RX Frames.*?CRC Error\s+(\d+).*#")
+        
+        # return rx crc errors' count
+        return int(self._session.match.group(1).decode("utf-8"))
+    
+    # get packages bytes on port
+    def get_packets_port(self):
+        # command
+        self._session.sendline(f"show packet ports {self._user_port}")
+        self._session.expect(r"RX Bytes\s+\d+\s+(\d+).*TX Bytes\s+\d+\s+(\d+).*#")
+        
+        # return rx and tx bytes as integers
+        return map(lambda x: int(x.decode("utf-8")), self._session.match.group(1, 2))
 
 # class to communicate with L3
 class L3Manager(NetworkManager):
@@ -267,25 +296,34 @@ class MainHandler:
         self.__incorrect_gateway = False
         self.__incorrect_switch = False
         
-        # flags for diagnostics of L2 and L3
-        self.__fiber_port = False
+        # flags and variables for diagnostics of L2 and L3
         self.__switch_vlans = {}
         self.__have_vlan404 = False
-        self.__untagged_vlan_id = -1
+        self.__untagged_vlan_id = 0
         self.__port_vlans = {}   # VID: status
+        self.__fiber_port = False
+        self.__mac_addresses = {}
+        self.__need_to_cable_diag = False   # if necessary to cable diag later
+        self.__crc_errors = 0
+        self.__rx_bytes = 0
+        self.__tx_bytes = 0
+        self.__rx_megabit = 0
+        self.__tx_megabit = 0
         
         # flags for errors in diagnostics of L2
+        self.__no_vlan = False
+        self.__user_vlan_instead_of_vlan404 = False
+        self.__vlan404_instead_of_user_vlan = False
+        self.__no_acl = False
+        self.__wrong_acl = False
         self.__port_disabled = False
         self.__speed_settings = None
         self.__linkdown_status = None
         self.__lower_speed = None
         self.__open_cable_pairs = []
         self.__cable_diag_status = None
-        self.__no_vlan = False
-        self.__user_vlan_instead_of_vlan404 = False
-        self.__vlan404_instead_of_user_vlan = False
-        self.__no_acl = False
-        self.__wrong_acl = False
+        self.__no_mac = False
+        self.__many_macs = 0   # count mac addresses if there's more than 1
     
     ##### DATABASE AND USER CARD PART #####
     
@@ -339,7 +377,7 @@ class MainHandler:
         # if mask matches, return its length
         if match:
             return len(match.group(1))
-        return -1
+        return 0
     
     # check if ip address matches subnet
     def __check_ip_in_subnet(self, mask_length):
@@ -398,7 +436,7 @@ class MainHandler:
             if self.__correctly_filled["mask"] == 1:
                 mask_length = self.__get_mask_length()
                 # set a special flag if mask's address doesn't suit to regular mask
-                if mask_length == -1:
+                if not mask_length:
                     self.__impossible_mask = True
                 
                 # if ip and gateway exist, it's possible to check subnet
@@ -436,9 +474,6 @@ class MainHandler:
     # result of database record diagnostics
     def __result_user_card(self):
         all_correct = True
-        
-        print("-" * 20)
-        print("ДИАГНОСТИКА КАРТОЧКИ:")
         
         # if payment is unknown
         if self.__unknown_payment:
@@ -481,27 +516,6 @@ class MainHandler:
     
     ##### L2 AND L3 EQUIPMENT DIAGNOSTICS PART #####
     
-    # check port and mark flags
-    def __check_port(self):
-        # check port, get its type, settings and status, linkdown_status is actual if port is enabled
-        self.__fiber_port, self.__port_disabled, self.__speed_settings, self.__linkdown_status, speed = self.__switch_manager.get_port_link(self.__record_data["port"])
-        
-        # check if speed is satisfying
-        if speed != Const.normal_speed.value[self.__gigabit]:
-            self.__lower_speed = speed
-    
-    # perform cable diagnostics
-    def __try_cable_diag(self):
-        # result can be different pairs or just status
-        res = self.__switch_manager.cable_diag(self.__record_data["port"])
-        
-        # if result is list, it marks opened pairs
-        if isinstance(res, list):
-            self.__open_cable_pairs = res
-        # if result is string, it's just status
-        else:
-            self.__cable_diag_status = res
-    
     # check vlans on switch and on port
     def __check_vlan(self):
         # get switch vlans
@@ -509,7 +523,7 @@ class MainHandler:
         self.__have_vlan404 = Const.vlan404.value in self.__switch_vlans
         
         # get port vlans
-        self.__port_vlans = self.__switch_manager.get_port_vlans(self.__record_data["port"])
+        self.__port_vlans = self.__switch_manager.get_port_vlans()
         
         # no_vlan flag if port has no vlans of any status
         if not self.__port_vlans:
@@ -533,7 +547,7 @@ class MainHandler:
     # check access profile options on port
     def __check_acl(self):
         # get acl entries on port in hex notation
-        hex_entries = self.__switch_manager.get_port_acl(self.__record_data["port"])
+        hex_entries = self.__switch_manager.get_port_acl()
         
         # if there's less than needed entries
         if len(hex_entries) < 2:
@@ -542,6 +556,58 @@ class MainHandler:
         elif any([self.__get_ip_from_acl(i) != self.__record_data["ip"] for i in hex_entries]):
             self.__wrong_acl = True
     
+    # check port and mark flags
+    def __check_port(self):
+        # check port, get its type, settings and status, linkdown_status is actual if port is enabled
+        self.__fiber_port, self.__port_disabled, self.__speed_settings, self.__linkdown_status, speed = self.__switch_manager.get_port_link()
+        
+        # check if speed is satisfying
+        if speed != Const.normal_speed.value[self.__gigabit]:
+            self.__lower_speed = speed
+    
+    # perform cable diagnostics
+    def __try_cable_diag(self):
+        # result can be different pairs or just status
+        res = self.__switch_manager.cable_diag()
+        
+        # if result is list, it marks opened pairs
+        if isinstance(res, list):
+            self.__open_cable_pairs = res
+        # if result is string, it's just status
+        else:
+            self.__cable_diag_status = res
+    
+    # check mac addresses and get as a set
+    def __check_mac(self):
+        # get set of all mac addresses
+        self.__mac_addresses = self.__switch_manager.get_fdb_port()
+        
+        # error when there's no mac, cable diag needed
+        if not self.__mac_addresses:
+            self.__no_mac = True
+            self.__need_to_cable_diag = True
+        # error when there're more than 1 mac
+        elif len(self.__mac_addresses) > 1:
+            self.__many_macs = len(self.__mac_addresses)
+    
+    # check crc errors
+    def __check_crc(self):
+        # get numbers of rx crc errors, will be zero if OK
+        self.__crc_errors = self.__switch_manager.get_crc_errors_port()
+    
+    # calculate megabit from bytes
+    def __byte_to_megabit(self, bytes):
+        return round(bytes * 8 / 1024 / 1024)
+    
+    # check packet bytes and calculate megabit
+    def __check_packets(self):
+        # get rx and tx bytes
+        self.__rx_bytes, self.__tx_bytes = self.__switch_manager.get_packets_port()
+        
+        # calculate to megabit
+        self.__rx_megabit = self.__byte_to_megabit(self.__rx_bytes)
+        self.__tx_megabit = self.__byte_to_megabit(self.__tx_bytes)
+    
     # function to control diagnosting L2 and L3
     def __check_L2_L3(self):
         try:
@@ -549,7 +615,7 @@ class MainHandler:
                 raise Exception("Unable to diagnose L2: don't have switch and port")
             
             # connect to switch only if switch and port are known
-            self.__switch_manager = L2Manager(self.__record_data["switch"])
+            self.__switch_manager = L2Manager(self.__record_data["switch"], self.__record_data["port"])
             
             # if subnet is correct, check vlan and acl
             if self.__ip_mask_gateway:
@@ -561,6 +627,15 @@ class MainHandler:
             
             # check port
             self.__check_port()
+            
+            # check mac
+            self.__check_mac()
+            
+            # check crc errors
+            self.__check_crc()
+            
+            # check packets
+            self.__check_packets()
             
             # if link is down not because of disabled port, try cab diag
             if self.__linkdown_status:
@@ -593,8 +668,10 @@ class MainHandler:
     
     # result of L2 and L3 diagnostics
     def __result_L2_L3(self):
-        print("-" * 20)
-        print("ДИАГНОСТИКА ОБОРУДОВАНИЯ:")
+        # if there's no at least switch and port, terminate
+        if not self.__switch_port:
+            print("Не хватает данных для диагностики")
+            return
         
         # port: speed settings firstly, then status and speed
         if self.__speed_settings:
@@ -616,15 +693,38 @@ class MainHandler:
                 # list has records as [pair, status, meter]
                 print("Кабдиаг", ", ".join(map(lambda x: f"{x[0]}п {x[2]}м {x[1]}", self.__open_cable_pairs))) 
         
+        # crc errors: count
+        if self.__crc_errors:
+            print("Ошибки CRC:", self.__crc_errors)
+        else:
+            print("Ошибки CRC: ок")
+        
+        # if linkup, show mac and packets
+        if not self.__linkdown_status:
+            # mac address: no mac, many macs
+            if self.__no_mac:
+                print("Нет мака на порту")
+            elif self.__many_macs:
+                print("Маков на порту:", self.__many_macs)
+            else:
+                print("Мак ок")
+            
+            # packets: rx and tx bytes and megabit
+            print(f"RX: {self.__rx_bytes} bytes ({self.__rx_megabit} Mbit), TX: {self.__tx_bytes} bytes ({self.__tx_megabit} Mbit)")
+        
+        # if there's no correct subnet, end output
+        if not self.__ip_mask_gateway:
+            return
+        
         # vlan: no vlan, wrong tags, wrong untagged vlan
         vlan_error = False
         if self.__no_vlan:
             print("Нет влана на порту")
         for ind, status in enumerate(Const.vlan_statuses.value):
-            if status in self.__port_vlans and (ind != 0 or self.__untagged_vlan_id == -1):
+            if status in self.__port_vlans and (ind != 0 or not self.__untagged_vlan_id):
                 vlan_error = True
                 print("Влан", ", ".join(map(str, self.__port_vlans[status])), "в", status)
-        if self.__untagged_vlan_id != -1:
+        if self.__untagged_vlan_id:
             if self.__user_vlan_instead_of_vlan404:
                 print(f"Назначен юзерский влан вместо {Const.vlan404.value}")
             elif self.__vlan404_instead_of_user_vlan:
@@ -645,7 +745,12 @@ class MainHandler:
         self.__check_user_card()
         self.__check_L2_L3()
         
+        print("-" * 20)
+        print("ДИАГНОСТИКА КАРТОЧКИ:")
         self.__result_user_card()
+        
+        print("-" * 20)
+        print("ДИАГНОСТИКА ОБОРУДОВАНИЯ:")
         self.__result_L2_L3()
     
     # print all necessary fields
