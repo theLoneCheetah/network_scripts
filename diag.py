@@ -3,6 +3,7 @@ from enum import Enum
 from abc import ABC, abstractmethod
 from ipaddress import IPv4Address, IPv4Network, AddressValueError
 from collections import defaultdict
+from datetime import datetime
 import pymysql.cursors
 import pexpect
 import re
@@ -66,6 +67,10 @@ class Const(Enum):
     vlan_statuses = ["Untagged", "Tagged", "Forbidden", "Dynamic"]
     vlan404 = 404
     iptv_vlan_skipping = 778
+    max_minute_range_port_flapping = 10
+    last_flap_max_minute_remoteness = 2
+    min_count_flapping = 20
+    max_arpentry_by_mac_checking = 10
 
 # class to get data from the database
 class DatabaseManager:
@@ -132,6 +137,7 @@ class NetworkManager(ABC):
         self._session.sendline(self.__PASSWORD)
         self._session.expect("#")
         
+        # turn off clipaging to see commands' whole results
         self._session.sendline("disable clipaging")
         self._session.expect("#")
         
@@ -140,8 +146,11 @@ class NetworkManager(ABC):
     # end
     def __close_connection(self):
         print("Closing connection...")
+        
+        # restore clipaging on switch
         self._session.sendline("enable clipaging")
         self._session.expect("#")
+        
         self._session.close()
         print("Success")
     
@@ -233,6 +242,66 @@ class L2Manager(NetworkManager):
         # if it's just a diagnose, return string
         return match.group(11)
     
+    # check log if port is flapping
+    def get_log_port_flapping(self):
+        # clipaging is necessary to check limited log output
+        self._session.sendline("enable clipaging")
+        self._session.expect("#")
+        
+        # command, expect log's continuation or end
+        self._session.sendline("show log")
+        index = self._session.expect(["CTRL", "#"])
+        
+        # save and parse log
+        log = self._session.before.decode("utf-8")
+        match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+Successful login[\s\S]*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", log)
+        
+        # find the difference between login time and earliest displayed time
+        login_datetime = datetime.strptime(match.group(1) + " " + match.group(2), "%Y-%m-%d %H:%M:%S")
+        first_datetime = datetime.strptime(match.group(3) + " " + match.group(4), "%Y-%m-%d %H:%M:%S")
+        range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
+        
+        # if log continuation
+        if index == 0:
+            # scroll until end found or range max time difference reached
+            while index == 0 and range_minutes_difference < Const.max_minute_range_port_flapping.value:
+                # command to scroll, decide is it continuation or end
+                self._session.send(" ")
+                index = self._session.expect(["CTRL", "#"])
+                
+                # parse current log output
+                current_log = self._session.before.decode("utf-8")
+                match = re.search(r"[\s\S]*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", current_log)
+                
+                # update range time difference
+                first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), "%Y-%m-%d %H:%M:%S")
+                range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
+                
+                # update log variable
+                log += current_log
+        
+        # if still log continuation, quit
+        if index == 0:
+            self._session.send("q")
+            self._session.expect("#")
+        
+        # get back to disabled clipaging
+        self._session.sendline("disable clipaging")
+        self._session.expect("#")
+        
+        # try to find last port flapping, return 0 if not found
+        match = re.search(rf"(\d{{4}}-\d{{2}}-\d{{2}})\s+(\d{{2}}:\d{{2}}:\d{{2}})\s+Port {self._user_port}", log)
+        if not match:
+            return 0, 0
+        
+        # find the difference between login time and last port flapping time
+        last_flap_datetime = datetime.strptime(match.group(1) + " " + match.group(2), "%Y-%m-%d %H:%M:%S")
+        last_flap_login_minutes_difference = int((login_datetime - last_flap_datetime).total_seconds() // 60)
+        
+        # find the count of port flapping and return it with the time difference
+        count_port_flapping = len(re.findall(f"Port {self._user_port} link up", log))
+        return count_port_flapping, last_flap_login_minutes_difference
+    
     # get mac addresses on port
     def get_fdb_port(self):
         # command
@@ -242,6 +311,15 @@ class L2Manager(NetworkManager):
         # get rows as "vid vlan mac" and return set of macs
         matches = re.findall(rf"(\d+)\s+(\S+)\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})\s+{self._user_port}", self._session.before.decode("utf-8"))
         return {i[2] for i in matches}
+    
+    # get port security state on port
+    def get_port_security(self):
+        # command
+        self._session.sendline(f"show port_security ports {self._user_port}")
+        self._session.expect(rf"{self._user_port}\s+(Enabled|Disabled).*#")
+        
+        # return state of port security
+        return self._session.match.group(1).decode("utf-8") == "Enabled"
     
     # get crc errors on port
     def get_crc_errors_port(self):
@@ -263,7 +341,35 @@ class L2Manager(NetworkManager):
 
 # class to communicate with L3
 class L3Manager(NetworkManager):
-    def check_arpentry():
+    # check arp by ip and return mac
+    def check_arpentry_by_ip(self, ip):
+        # command
+        self._session.sendline(f"show arpentry ipaddress {ipaddress}")
+        self._session.expect("#")
+        
+        # parse and find mac address for this ip
+        match = re.search(rf"(\S+)\s+((\d{{1,3}}.){{3}}\d{{1,3}})\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})", self._session.before.decode("utf-8"))
+        
+        # if there's arp, return mac
+        if match:
+            return match.group(4)
+        return None
+    
+    # check arp by mac and return list of ip addresses
+    def check_arpentry_by_mac(self, mac):
+        # command
+        self._session.sendline(f"show arpentry mac_address {macaddress}")
+        self._session.expect("#")
+        
+        # parse and find all ip addresses for this mac
+        matches = re.findall(rf"(\S+)\s+((\d{{1,3}}.){{3}}\d{{1,3}})\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})", self._session.before.decode("utf-8"))
+        
+        # if found, return list of ip addresses
+        if matches:
+            return [match[1] for match in matches]
+        return None
+    
+    def check_mac(self, mac):
         pass
 
 # main class to handle all work
@@ -303,6 +409,7 @@ class MainHandler:
         self.__port_vlans = {}   # VID: status
         self.__fiber_port = False
         self.__mac_addresses = {}
+        self.__port_security = False
         self.__need_to_cable_diag = False   # if necessary to cable diag later
         self.__crc_errors = 0
         self.__rx_bytes = 0
@@ -322,6 +429,7 @@ class MainHandler:
         self.__lower_speed = None
         self.__open_cable_pairs = []
         self.__cable_diag_status = None
+        self.__port_flapping = False
         self.__no_mac = False
         self.__many_macs = 0   # count mac addresses if there's more than 1
     
@@ -561,12 +669,17 @@ class MainHandler:
         # check port, get its type, settings and status, linkdown_status is actual if port is enabled
         self.__fiber_port, self.__port_disabled, self.__speed_settings, self.__linkdown_status, speed = self.__switch_manager.get_port_link()
         
-        # check if speed is satisfying
-        if speed != Const.normal_speed.value[self.__gigabit]:
+        # check if speed is satisfying, cable diag needed if not
+        if not self.__port_disabled and not self.__linkdown_status and speed != Const.normal_speed.value[self.__gigabit]:
             self.__lower_speed = speed
+            self.__need_to_cable_diag = True
     
     # perform cable diagnostics
     def __try_cable_diag(self):
+        # can't perform is its fiber (SFP) port
+        if self.__fiber_port:
+            return
+        
         # result can be different pairs or just status
         res = self.__switch_manager.cable_diag()
         
@@ -576,6 +689,16 @@ class MainHandler:
         # if result is string, it's just status
         else:
             self.__cable_diag_status = res
+    
+    # check if port is flapping
+    def __check_log(self):
+        # get flapping count and last flap remoteness in time
+        count_flapping, last_flap_remoteness = self.__switch_manager.get_log_port_flapping()
+        
+        # if flapping is too often, mark flag and try cable diag afterall
+        if last_flap_remoteness < Const.last_flap_max_minute_remoteness.value and count_flapping >= Const.min_count_flapping.value:
+            self.__port_flapping = True
+            self.__need_to_cable_diag = True
     
     # check mac addresses and get as a set
     def __check_mac(self):
@@ -589,6 +712,9 @@ class MainHandler:
         # error when there're more than 1 mac
         elif len(self.__mac_addresses) > 1:
             self.__many_macs = len(self.__mac_addresses)
+        
+        # check if port security is enabled
+        self.__port_security = self.__switch_manager.get_port_security()
     
     # check crc errors
     def __check_crc(self):
@@ -628,6 +754,15 @@ class MainHandler:
             # check port
             self.__check_port()
             
+            # if link is down not because of disabled port, try cab diag
+            if self.__linkdown_status:
+                self.__try_cable_diag()
+                # exception to skip the code block
+                raise Exception("Unable to diagnose port details: don't have link")
+            
+            # check log for flapping
+            self.__check_log()
+            
             # check mac
             self.__check_mac()
             
@@ -637,34 +772,22 @@ class MainHandler:
             # check packets
             self.__check_packets()
             
-            # if link is down not because of disabled port, try cab diag
-            if self.__linkdown_status:
+            # if speed isn't relevant, port is flapping or there's no mac, try cable_diag afterall
+            if self.__need_to_cable_diag:
                 self.__try_cable_diag()
-                # exception to skip the code block
-                raise Exception("Unable to diagnose port details: don't have link")
-            
-            
-        except Exception as err:
+        
+        finally:
+            # always close connection and delete L2 and L3 managers
+            if self.__switch_manager:
+                del self.__switch_manager
+            if self.__gate_manager:
+                del self.__gate_manager
+        
+        """except Exception as err:
             if re.match("Unable to diagnose", str(err)):   # unable exception
                 print(err)
             else:   # exception while working with L2 or L3
-                print("Exception while working with equipment:", err, sep="\n")
-        
-        finally:
-            # always close connection and delete L2 and L3 managers
-            if self.__switch_manager:
-                del self.__switch_manager
-            if self.__gate_manager:
-                del self.__gate_manager
-        
-        """
-        finally:
-            # always close connection and delete L2 and L3 managers
-            if self.__switch_manager:
-                del self.__switch_manager
-            if self.__gate_manager:
-                del self.__gate_manager
-        """
+                print("Exception while working with equipment:", err, sep="\n")"""
     
     # result of L2 and L3 diagnostics
     def __result_L2_L3(self):
@@ -673,9 +796,12 @@ class MainHandler:
             print("Не хватает данных для диагностики")
             return
         
-        # port: speed settings firstly, then status and speed
+        # port: if it is fiber or has settings
+        if self.__fiber_port:
+            print("Оптический порт")
         if self.__speed_settings:
             print("Скорость ограничена вручную в", self.__speed_settings)
+        # port: status and speed
         if self.__port_disabled:
             print("Порт выключен")
         elif self.__linkdown_status:
@@ -685,13 +811,11 @@ class MainHandler:
         else:
             print("Линк ОК")
         
-        # cable diag: just status or a list of open pairs
-        if self.__linkdown_status:
-            if self.__cable_diag_status:
-                print("Кабдиаг", self.__cable_diag_status)
-            else:
-                # list has records as [pair, status, meter]
-                print("Кабдиаг", ", ".join(map(lambda x: f"{x[0]}п {x[2]}м {x[1]}", self.__open_cable_pairs))) 
+        # if port is or was flapping
+        if self.__port_flapping:
+            print("Линк скачет")
+        else:
+            print("Линк не скачет")
         
         # crc errors: count
         if self.__crc_errors:
@@ -709,8 +833,21 @@ class MainHandler:
             else:
                 print("Мак ок")
             
+            # port security if enabled, makes sense when linkup
+            if self.__port_security:
+                print("Включён port_security")
+            else:
+                print("Нет port_security")
+            
             # packets: rx and tx bytes and megabit
             print(f"RX: {self.__rx_bytes} bytes ({self.__rx_megabit} Mbit), TX: {self.__tx_bytes} bytes ({self.__tx_megabit} Mbit)")
+        
+        # cable diag: just status or a list of open pairs
+        if self.__cable_diag_status:
+            print("Кабдиаг", self.__cable_diag_status)
+        elif self.__open_cable_pairs:
+            # list has records as [pair, status, meter]
+            print("Кабдиаг", ", ".join(map(lambda x: f"{x[0]}п {x[2]}м {x[1]}", self.__open_cable_pairs)))
         
         # if there's no correct subnet, end output
         if not self.__ip_mask_gateway:
