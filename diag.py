@@ -1,19 +1,21 @@
 #!/usr/bin/python3
-from enum import Enum
-from abc import ABC, abstractmethod
-from ipaddress import IPv4Address, IPv4Network, AddressValueError
-from collections import defaultdict
-from datetime import datetime
 import pymysql.cursors
 import pexpect
 import re
 import sys
 import os
 from dotenv import load_dotenv, find_dotenv
+from enum import Enum
+from abc import ABC, abstractmethod
+from ipaddress import IPv4Address, IPv4Network, AddressValueError
+from collections import defaultdict
+from datetime import datetime
 
 
-# convert fields from database to useful names
+##### PROGRAM CONSTANTS #####
+
 class Const(Enum):
+    # convert fields from database to useful program names
     key_field = {"Vznos": "payment",
                  "IP": "ip",
                  "Masck": "mask",
@@ -24,6 +26,7 @@ class Const(Enum):
                  "Add_IP": "public_ip",
                  "Number_serv": "nserv",
                  "Number_net": "nnet"}
+    # convert program names to the form used in workspace cards
     key_output = {"ip": "IP-адрес",
                   "mask": "Маска",
                   "gateway": "Шлюз",
@@ -72,7 +75,9 @@ class Const(Enum):
     min_count_flapping = 20
     max_arpentry_by_mac_checking = 10
 
-# class to get data from the database
+
+##### CLASS TO GET DATA FROM THE DATABASE #####
+
 class DatabaseManager:
     # init data and connect to database
     def __init__(self):
@@ -103,6 +108,18 @@ class DatabaseManager:
             cursor.execute(self.__get_query, (usernum,))
             return cursor.fetchone()
     
+    # find users on this switch and port
+    def get_usernum_by_switch_port(self, switch, port):
+        with self.__connection.cursor() as cursor:
+            cursor.execute("SELECT Number FROM users WHERE switchP = %s AND PortP = %s", (switch, port))
+            return [row[Const.usernum.value] for row in cursor.fetchall()]
+    
+    # find users with this ip
+    def get_usernum_by_ip(self, ip):
+        with self.__connection.cursor() as cursor:
+            cursor.execute("SELECT Number FROM users WHERE IP = %s", (ip,))
+            return [row[Const.usernum.value] for row in cursor.fetchall()]
+    
     # end
     def __close_connection(self):
         print("Closing connection...")
@@ -114,12 +131,12 @@ class DatabaseManager:
         self.__close_connection()
 
 
-# abstract class to L2-L3 managers
+##### ABSTRACT CLASS FOR L2-L3 MANAGERS #####
+
 class NetworkManager(ABC):
     # init by ip and connect with the same username and password
-    def __init__(self, ipaddress, user_port):
+    def __init__(self, ipaddress):
         self.__ipaddress = ipaddress
-        self._user_port = user_port   # is needed in child classes
         self.__USERNAME = os.getenv("NET_USER")
         self.__PASSWORD = os.getenv("NET_PASSWORD")
         
@@ -127,7 +144,7 @@ class NetworkManager(ABC):
     
     # start
     def __start_connection(self):
-        print("Connecting to switch...")
+        print("Connecting to equipment...")
         # protected atribute, it will be inherited
         self._session = pexpect.spawn(f"telnet {self.__ipaddress}")#, logfile=sys.stdout.buffer)
         
@@ -139,6 +156,7 @@ class NetworkManager(ABC):
         
         # turn off clipaging to see commands' whole results
         self._session.sendline("disable clipaging")
+        # cisco: self._session.sendline("terminal length 0")
         self._session.expect("#")
         
         print("Success")
@@ -158,53 +176,23 @@ class NetworkManager(ABC):
     def __del__(self):
         self.__close_connection()
 
-# class to connect and communicate with L2
+
+##### CLASS TO COMMUNICATE WITH L2 SWITCH #####
+
 class L2Manager(NetworkManager):
-    # get all vlans on switch
-    def get_switch_vlans(self):
-        # command
-        self._session.sendline("show vlan")
-        self._session.expect("#")
-        
-        # get vlan_id: vlan_name
-        return {int(vlan_id): vlan_name for vlan_id, vlan_name in re.findall(r"VID\s+:\s+(\d+)\s+VLAN Name\s+:\s+(\S+)", self._session.before.decode("utf-8"))}
-        # 1210: return {int(vlan_id): vlan_name for vlan_id, vlan_name in re.findall(r"VID\s+:\s+(\d+)\s+VLAN NAME\s+:\s+(\S+)", self._session.before.decode("utf-8"))}
-    
-    # get vlans on port
-    def get_port_vlans(self):
-        # command
-        self._session.sendline(f"show vlan ports {self._user_port}")
-        self._session.expect("#")
-        
-        # dictionary for vlans with statuses as keys
-        port_vlans = defaultdict(list)
-        
-        # parse entry, X means actual status
-        for match in re.findall(r"(\d+)+\s+([X-])\s+([X-])\s+([X-])\s+([X-])", self._session.before.decode("utf-8")):
-            pos = match.index("X") - 1
-            if int(match[0]) != Const.iptv_vlan_skipping.value:   # skip old iptv vlan
-                port_vlans[Const.vlan_statuses.value[pos]].append(int(match[0]))
-        
-        # return complete dictionary
-        return port_vlans
-    
-    # get acl options on port from overall output
-    def get_port_acl(self):
-        # command
-        self._session.sendline("show access_profile")
-        self._session.expect("#")
-        
-        # catch and return two entries of user port's rules
-        return re.findall(rf"Ports\s+:\s+{self._user_port}\s+Mode\s+:\s+Permit[\s\S]*?0x([a-z\d]{{8}})\s+0xffffffff", self._session.before.decode("utf-8"))
+    # L2 manager inits by user port and base constructor
+    def __init__(self, ipaddress, user_port):
+        super().__init__(ipaddress)
+        self.__user_port = user_port
     
     # show ports and catch groups
     def __show_port(self):
         # command
-        self._session.sendline(f"show ports {self._user_port}")
+        self._session.sendline(f"show ports {self.__user_port}")
         
         # first expression for single type port, second for combo port
-        index = self._session.expect([rf"{self._user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#", rf"{self._user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*{self._user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#"])
-        # 1210: index = self._session.expect([rf"{self._user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#", rf"{self._user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*{self._user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#"])
+        index = self._session.expect([rf"{self.__user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#", rf"{self.__user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*{self.__user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#"])
+        # 1210: index = self._session.expect([rf"{self.__user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#", rf"{self.__user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*{self.__user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#"])
         
         # if it's combo port and active type is fiber
         if index == 1 and (self._session.match.group(10) or self._session.match.group(1).decode("utf-8") == "Disabled"):
@@ -229,12 +217,12 @@ class L2Manager(NetworkManager):
     # cable diagnostics
     def cable_diag(self):
         # command
-        self._session.sendline(f"cable_diag ports {self._user_port}")
+        self._session.sendline(f"cable_diag ports {self.__user_port}")
         self._session.expect("#")
 
         # save output and test different patterns
         temp = self._session.before.decode("utf-8")
-        match = re.search(rf"({self._user_port}\s+(\S+)\s+(Link Up|Link Down)\s+Pair(\d)\s+([A-Za-z]+)\s+at\s+(\d+)\s+M\s+(-|\d+))|({self._user_port}\s+(\S+)\s+(Link Up|Link Down)\s+([A-Za-z ]+)\s+(-|\d+))", temp)
+        match = re.search(rf"({self.__user_port}\s+(\S+)\s+(Link Up|Link Down)\s+Pair(\d)\s+([A-Za-z]+)\s+at\s+(\d+)\s+M\s+(-|\d+))|({self.__user_port}\s+(\S+)\s+(Link Up|Link Down)\s+([A-Za-z ]+)\s+(-|\d+))", temp)
         
         # if it's patterns with pairs' lengths, return list
         if match.group(1):
@@ -290,7 +278,7 @@ class L2Manager(NetworkManager):
         self._session.expect("#")
         
         # try to find last port flapping, return 0 if not found
-        match = re.search(rf"(\d{{4}}-\d{{2}}-\d{{2}})\s+(\d{{2}}:\d{{2}}:\d{{2}})\s+Port {self._user_port}", log)
+        match = re.search(rf"(\d{{4}}-\d{{2}}-\d{{2}})\s+(\d{{2}}:\d{{2}}:\d{{2}})\s+Port {self.__user_port}", log)
         if not match:
             return 0, 0
         
@@ -299,24 +287,24 @@ class L2Manager(NetworkManager):
         last_flap_login_minutes_difference = int((login_datetime - last_flap_datetime).total_seconds() // 60)
         
         # find the count of port flapping and return it with the time difference
-        count_port_flapping = len(re.findall(f"Port {self._user_port} link up", log))
+        count_port_flapping = len(re.findall(f"Port {self.__user_port} link up", log))
         return count_port_flapping, last_flap_login_minutes_difference
     
     # get mac addresses on port
     def get_fdb_port(self):
         # command
-        self._session.sendline(f"show fdb port {self._user_port}")
+        self._session.sendline(f"show fdb port {self.__user_port}")
         self._session.expect("#")
         
         # get rows as "vid vlan mac" and return set of macs
-        matches = re.findall(rf"(\d+)\s+(\S+)\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})\s+{self._user_port}", self._session.before.decode("utf-8"))
+        matches = re.findall(rf"(\d+)\s+(\S+)\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})\s+{self.__user_port}", self._session.before.decode("utf-8"))
         return {i[2] for i in matches}
     
     # get port security state on port
     def get_port_security(self):
         # command
-        self._session.sendline(f"show port_security ports {self._user_port}")
-        self._session.expect(rf"{self._user_port}\s+(Enabled|Disabled).*#")
+        self._session.sendline(f"show port_security ports {self.__user_port}")
+        self._session.expect(rf"{self.__user_port}\s+(Enabled|Disabled).*#")
         
         # return state of port security
         return self._session.match.group(1).decode("utf-8") == "Enabled"
@@ -324,7 +312,7 @@ class L2Manager(NetworkManager):
     # get crc errors on port
     def get_crc_errors_port(self):
         # command
-        self._session.sendline(f"show error ports {self._user_port}")
+        self._session.sendline(f"show error ports {self.__user_port}")
         self._session.expect(r"RX Frames.*?CRC Error\s+(\d+).*#")
         
         # return rx crc errors' count
@@ -333,18 +321,83 @@ class L2Manager(NetworkManager):
     # get packages bytes on port
     def get_packets_port(self):
         # command
-        self._session.sendline(f"show packet ports {self._user_port}")
+        self._session.sendline(f"show packet ports {self.__user_port}")
         self._session.expect(r"RX Bytes\s+\d+\s+(\d+).*TX Bytes\s+\d+\s+(\d+).*#")
         
         # return rx and tx bytes as integers
         return map(lambda x: int(x.decode("utf-8")), self._session.match.group(1, 2))
 
-# class to communicate with L3
-class L3Manager(NetworkManager):
-    # check arp by ip and return mac
-    def check_arpentry_by_ip(self, ip):
+    # get all vlans on switch
+    def get_switch_vlans(self):
         # command
-        self._session.sendline(f"show arpentry ipaddress {ipaddress}")
+        self._session.sendline("show vlan")
+        self._session.expect("#")
+        
+        # get vlan_id: vlan_name
+        return {int(vlan_id): vlan_name for vlan_id, vlan_name in re.findall(r"VID\s+:\s+(\d+)\s+VLAN Name\s+:\s+(\S+)", self._session.before.decode("utf-8"))}
+        # 1210: return {int(vlan_id): vlan_name for vlan_id, vlan_name in re.findall(r"VID\s+:\s+(\d+)\s+VLAN NAME\s+:\s+(\S+)", self._session.before.decode("utf-8"))}
+    
+    # get vlans on port
+    def get_port_vlans(self):
+        # command
+        self._session.sendline(f"show vlan ports {self.__user_port}")
+        self._session.expect("#")
+        
+        # dictionary for vlans with statuses as keys
+        port_vlans = defaultdict(list)
+        
+        # parse entry, X means actual status
+        for match in re.findall(r"(\d+)+\s+([X-])\s+([X-])\s+([X-])\s+([X-])", self._session.before.decode("utf-8")):
+            pos = match.index("X") - 1
+            if int(match[0]) != Const.iptv_vlan_skipping.value:   # skip old iptv vlan
+                port_vlans[Const.vlan_statuses.value[pos]].append(int(match[0]))
+        
+        # return complete dictionary
+        return port_vlans
+    
+    # get acl options on port from overall output
+    def get_port_acl(self):
+        # command
+        self._session.sendline("show access_profile")
+        self._session.expect("#")
+        
+        # catch and return two entries of user port's rules
+        return re.findall(rf"Ports\s+:\s+{self.__user_port}\s+Mode\s+:\s+Permit[\s\S]*?0x([a-z\d]{{8}})\s+0xffffffff", self._session.before.decode("utf-8"))
+    
+    # get default gateway for this switch, used for direct public ip
+    def get_default_gateway(self):
+        # command
+        self._session.sendline("show switch")
+        
+        # return default gateway field from switch configuration
+        self._session.expect(r"Default Gateway\s+:\s+((\d{1,3}.){3}\d{1,3}).*#")
+        return self._session.match.group(1).decode("utf-8")
+
+
+##### CLASS TO COMMUNICATE WITH L3 GATEWAY #####
+
+class L3Manager(NetworkManager):
+    # L3 manager inits by user ip and base constructor
+    def __init__(self, ipaddress, user_ip):
+        super().__init__(ipaddress)
+        self.__user_ip = user_ip
+    
+    # find ip route for direct public ip
+    def check_ip_route(self):
+        # command
+        self._session.sendline("show iproute static")
+        # cisco: self._session.sendline("show ip route static")
+        self._session.expect("#")
+        
+        # return next hop ip for this ip route
+        temp = self._session.before.decode("utf-8")
+        match = re.search(rf"{self.__user_ip}/32\s+(via\s+)?((\d{{1,3}}.){{3}}\d{{1,3}})", temp)
+        return match.group(2)
+    
+    # check arp by ip and return mac address
+    def check_arpentry_ip_return_mac(self):
+        # command
+        self._session.sendline(f"show arpentry ipaddress {self.__user_ip}")
         self._session.expect("#")
         
         # parse and find mac address for this ip
@@ -355,10 +408,10 @@ class L3Manager(NetworkManager):
             return match.group(4)
         return None
     
-    # check arp by mac and return list of ip addresses
-    def check_arpentry_by_mac(self, mac):
+    # check arp by mac address and return list of ip addresses
+    def check_arpentry_mac_return_ips(self, mac):
         # command
-        self._session.sendline(f"show arpentry mac_address {macaddress}")
+        self._session.sendline(f"show arpentry mac_address {mac}")
         self._session.expect("#")
         
         # parse and find all ip addresses for this mac
@@ -369,16 +422,26 @@ class L3Manager(NetworkManager):
             return [match[1] for match in matches]
         return None
     
-    def check_mac(self, mac):
-        pass
+    # check if mac address is visible on L3
+    def check_mac_on_L3(self, mac):
+        # command
+        self._session.sendline(f"show fdb mac_address {mac}")
+        self._session.expect("#")
+        
+        # return True if error when trying to find mac address
+        match = re.search(rf"(\d+)\s+(\S+)\s+({mac})", self._session.before.decode("utf-8"))
+        return not match
 
-# main class to handle all work
+
+##### MAIN CLASS TO HANDLE ALL WORK #####
+
 class MainHandler:
-    def __init__(self, usernum):   # init by usernum
+    def __init__(self, usernum):
+        # init by usernum, declare fields for main objects
         self.__usernum = usernum
         self.__db_manager = None
         self.__switch_manager = None
-        self.__gate_manager = None
+        self.__gateway_manager = None
         
         self.__record_data = {}   # user record from database
         self.__correctly_filled = {}   # -1 if data from record is incorrect, 0 if empty, 1 if correct
@@ -401,6 +464,8 @@ class MainHandler:
         self.__different_ip_public_ip = False
         self.__incorrect_gateway = False
         self.__incorrect_switch = False
+        self.__double_port = []   # there will be usernums if found doubles
+        self.__double_ip = []
         
         # flags and variables for diagnostics of L2 and L3
         self.__switch_vlans = {}
@@ -416,6 +481,7 @@ class MainHandler:
         self.__tx_bytes = 0
         self.__rx_megabit = 0
         self.__tx_megabit = 0
+        self.__have_arp = False
         
         # flags for errors in diagnostics of L2
         self.__no_vlan = False
@@ -432,6 +498,11 @@ class MainHandler:
         self.__port_flapping = False
         self.__no_mac = False
         self.__many_macs = 0   # count mac addresses if there's more than 1
+        
+        # flags for errors in diagnostics of L3
+        self.__no_arp = False
+        self.__arp_on_unknown_mac = ""   # here wiil be unknown mac if found
+        self.__ip_incorrect_arp_on_mac = []    # here will be unknown ip addresses if found
     
     ##### DATABASE AND USER CARD PART #####
     
@@ -508,6 +579,16 @@ class MainHandler:
     def __check_switch_ip(self):
         return self.__check_local_ip(self.__record_data["switch"]) or IPv4Address(self.__record_data["switch"]) in Const.switch_other_local_subnet.value
     
+    # check users with the same switch and port, return list of doubles if found
+    def __check_double_switch_port(self):
+        usernums = self.__db_manager.get_usernum_by_switch_port(self.__record_data["switch"], self.__record_data["port"])
+        return usernums if len(usernums) > 1 else []
+    
+    # check users with the same ip, return list of doubles if found
+    def __check_double_ip(self):
+        usernums = self.__db_manager.get_usernum_by_ip(self.__record_data["ip"])
+        return usernums if len(usernums) > 1 else []
+    
     # function to control user's database record checking
     def __check_user_card(self):
         try:
@@ -539,6 +620,12 @@ class MainHandler:
                 # if switch and port are correct, L2 diagnostics is possible
                 elif self.__correctly_filled["port"] == 1:
                     self.__switch_port = True
+                    # check for double port
+                    self.__double_port = self.__check_double_switch_port()
+            
+            # check for double ip
+            if self.__correctly_filled["ip"] == 1:
+                self.__double_ip = self.__check_double_ip()
             
             # check mask and subnet
             if self.__correctly_filled["mask"] == 1:
@@ -602,10 +689,18 @@ class MainHandler:
             print("Неверно заполнены поля:", ", ".join(name for key, name in Const.key_output.value.items() if self.__correctly_filled[key] == -1))
             all_correct = False
         
+        # double port and ip
+        if self.__double_port:
+            print("Дубль порт:", ", ".join(map(str, self.__double_port)))
+            all_correct = False
+        if self.__double_ip:
+            print("Дубль айпи:", ", ".join(map(str, self.__double_ip)))
+            all_correct = False
+        
         # switch error separately
         if self.__incorrect_switch:
-           print("Некорректный адрес свитча")
-           all_correct = False
+            print("Некорректный адрес свитча")
+            all_correct = False
         
         # subnet errors alternatively
         if self.__impossible_mask:
@@ -623,46 +718,6 @@ class MainHandler:
             print("OK")
     
     ##### L2 AND L3 EQUIPMENT DIAGNOSTICS PART #####
-    
-    # check vlans on switch and on port
-    def __check_vlan(self):
-        # get switch vlans
-        self.__switch_vlans = self.__switch_manager.get_switch_vlans()
-        self.__have_vlan404 = Const.vlan404.value in self.__switch_vlans
-        
-        # get port vlans
-        self.__port_vlans = self.__switch_manager.get_port_vlans()
-        
-        # no_vlan flag if port has no vlans of any status
-        if not self.__port_vlans:
-            self.__no_vlan = True
-        
-        # check if there's only 1 untagged vlan, remember it
-        elif Const.vlan_statuses.value[0] in self.__port_vlans and len(self.__port_vlans[Const.vlan_statuses.value[0]]) == 1:
-            self.__untagged_vlan_id = self.__port_vlans[Const.vlan_statuses.value[0]][0]
-            
-            # mark flag if port doesn't have vlan404
-            if self.__direct_public_ip and self.__have_vlan404 and self.__untagged_vlan_id != Const.vlan404.value:
-                self.__user_vlan_instead_of_vlan404 = True
-            # mark flag if port doesn't have user vlan
-            elif not self.__direct_public_ip and self.__untagged_vlan_id == Const.vlan404.value:
-                self.__vlan404_instead_of_user_vlan = True
-    
-    # transform acl entry to ip, entry should has 8 hex symbols
-    def __get_ip_from_acl(self, acl_entry):
-        return ".".join([str(int(acl_entry[2*i : 2*i+2], 16)) for i in range(4)])
-    
-    # check access profile options on port
-    def __check_acl(self):
-        # get acl entries on port in hex notation
-        hex_entries = self.__switch_manager.get_port_acl()
-        
-        # if there's less than needed entries
-        if len(hex_entries) < 2:
-            self.__no_acl = True
-        # if at least one entry doesn't match ip
-        elif any([self.__get_ip_from_acl(i) != self.__record_data["ip"] for i in hex_entries]):
-            self.__wrong_acl = True
     
     # check port and mark flags
     def __check_port(self):
@@ -734,6 +789,106 @@ class MainHandler:
         self.__rx_megabit = self.__byte_to_megabit(self.__rx_bytes)
         self.__tx_megabit = self.__byte_to_megabit(self.__tx_bytes)
     
+    # check vlans on switch and on port10.146.0.252
+
+    def __check_vlan(self):
+        # get switch vlans
+        self.__switch_vlans = self.__switch_manager.get_switch_vlans()
+        self.__have_vlan404 = Const.vlan404.value in self.__switch_vlans
+        
+        # get port vlans
+        self.__port_vlans = self.__switch_manager.get_port_vlans()
+        
+        # no_vlan flag if port has no vlans of any status
+        if not self.__port_vlans:
+            self.__no_vlan = True
+        
+        # check if there's only 1 untagged vlan, remember it
+        elif Const.vlan_statuses.value[0] in self.__port_vlans and len(self.__port_vlans[Const.vlan_statuses.value[0]]) == 1:
+            self.__untagged_vlan_id = self.__port_vlans[Const.vlan_statuses.value[0]][0]
+            
+            # mark flag if port doesn't have vlan404
+            if self.__direct_public_ip and self.__have_vlan404 and self.__untagged_vlan_id != Const.vlan404.value:
+                self.__user_vlan_instead_of_vlan404 = True
+            # mark flag if port doesn't have user vlan
+            elif not self.__direct_public_ip and self.__untagged_vlan_id == Const.vlan404.value:
+                self.__vlan404_instead_of_user_vlan = True
+    
+    # transform acl entry to ip, entry should has 8 hex symbols
+    def __get_ip_from_acl(self, acl_entry):
+        return ".".join([str(int(acl_entry[2*i : 2*i+2], 16)) for i in range(4)])
+    
+    # check access profile options on port
+    def __check_acl(self):
+        # get acl entries on port in hex notation
+        hex_entries = self.__switch_manager.get_port_acl()
+        
+        # if there's less than needed entries
+        if len(hex_entries) < 2:
+            self.__no_acl = True
+        # if at least one entry doesn't match ip
+        elif any([self.__get_ip_from_acl(i) != self.__record_data["ip"] for i in hex_entries]):
+            self.__wrong_acl = True
+    
+    # check for direct public ip and find its gateway where arp should be
+    def __find_actual_gateway(self):
+        # init L3 manager by user record's gateway if ip is local
+        if self.__untagged_vlan_id != Const.vlan404.value:
+            self.__gateway_manager = L3Manager(self.__record_data["gateway"], self.__record_data["ip"])
+            return
+        
+        # otherwise, find default gateway address on switch
+        gateway = self.__switch_manager.get_default_gateway()
+        
+        # may need from 1 to 3 iterations
+        while True:
+            # create L3 manager
+            self.__gateway_manager = L3Manager(gateway, self.__record_data["ip"])
+            
+            # find ip route, continue with new L3 manager if new next hop found
+            gateway = self.__gateway_manager.check_ip_route()
+            if gateway == self.__record_data["ip"]:
+                break
+    
+    # try to check arp on mac if there's only 1 mac
+    def __get_ips_from_arpentry_mac(self):
+        # if there's no mac or more than 1, can't find
+        if len(self.__mac_addresses) != 1:
+            return []
+        
+        # return list of ip addresses with arp on this mac
+        return self.__gateway_manager.check_arpentry_mac_return_ips(*self.__mac_addresses)
+    
+    # check arpentry by ip and mac and try other options on L3
+    def __check_arpentry_by_ip(self):
+        # get mac from arp found by ip
+        mac = self.__gateway_manager.check_arpentry_ip_return_mac()
+        
+        # get ip addresses from arp found by mac
+        ips = self.__get_ips_from_arpentry_mac()
+        
+        # found arp by ip and its mac is known
+        if mac and mac in self.__mac_addresses:
+            # mark flag that arp is correct
+            self.__have_arp = True
+            
+            # if found many arps by mac, remember extra ip addresses
+            if len(ips) > 1:
+                self.__ip_incorrect_arp_on_mac = [ip for ip in ips if ip != self.__record_data["ip"]]
+        
+        # if no arp found or arp has unknown mac
+        else:
+            # record extra ip addresses from arps by mac if have any
+            self.__ip_incorrect_arp_on_mac = ips
+            
+            # if arp by ip exists on unknown mac, remember it
+            if mac and mac not in self.__mac_addresses:
+                self.__arp_on_unknown_mac = mac
+            
+            # mark flag if no arp found at all
+            self.__no_arp = not self.__ip_incorrect_arp_on_mac and not self.__arp_on_unknown_mac
+            
+    
     # function to control diagnosting L2 and L3
     def __check_L2_L3(self):
         try:
@@ -754,40 +909,47 @@ class MainHandler:
             # check port
             self.__check_port()
             
-            # if link is down not because of disabled port, try cab diag
+            # if link is down not because of disabled port, try cable diag
             if self.__linkdown_status:
                 self.__try_cable_diag()
-                # exception to skip the code block
-                raise Exception("Unable to diagnose port details: don't have link")
+            # in other case, diagnose further options
+            else:
+                # check log for flapping
+                self.__check_log()
+                
+                # check mac
+                self.__check_mac()
+                
+                # check crc errors
+                self.__check_crc()
+                
+                # check packets
+                self.__check_packets()
+                
+                # if speed isn't relevant, port is flapping or there's no mac, try cable_diag afterall
+                if self.__need_to_cable_diag:
+                    self.__try_cable_diag()
             
-            # check log for flapping
-            self.__check_log()
+            # if subnet isn't correct, quit and send a message
+            if not self.__ip_mask_gateway:
+                raise Exception("Unable to diagnose ACL, VLAN and ARP: don't have correct subnet")
             
-            # check mac
-            self.__check_mac()
-            
-            # check crc errors
-            self.__check_crc()
-            
-            # check packets
-            self.__check_packets()
-            
-            # if speed isn't relevant, port is flapping or there's no mac, try cable_diag afterall
-            if self.__need_to_cable_diag:
-                self.__try_cable_diag()
+            # create L3 manager and check arpentry
+            self.__find_actual_gateway()
+            self.__check_arpentry_by_ip()
+        
+        except Exception as err:
+            if re.match("Unable to diagnose", str(err)):   # unable exception
+                print(err)
+            else:   # exception while working with L2 or L3
+                print("Exception while working with equipment:", err, sep="\n")
         
         finally:
             # always close connection and delete L2 and L3 managers
             if self.__switch_manager:
                 del self.__switch_manager
-            if self.__gate_manager:
-                del self.__gate_manager
-        
-        """except Exception as err:
-            if re.match("Unable to diagnose", str(err)):   # unable exception
-                print(err)
-            else:   # exception while working with L2 or L3
-                print("Exception while working with equipment:", err, sep="\n")"""
+            if self.__gateway_manager:
+                del self.__gateway_manager
     
     # result of L2 and L3 diagnostics
     def __result_L2_L3(self):
@@ -876,16 +1038,30 @@ class MainHandler:
             print("ACL не соответствует IP")
         else:
             print("ACL ок")
+        
+        # arp: no arp, arp on unknown mac, correct
+        if self.__no_arp:
+            print("ARP не найдена по маку и IP")
+        elif self.__arp_on_unknown_mac:
+            print("ARP найдена на неизвестный мак:", self.__arp_on_unknown_mac)
+        elif self.__have_arp:
+            print("ARP ок")
+        # if found arp by mac with wrong ip addresses, is possible even if arp ok or unknown mac
+        if self.__ip_incorrect_arp_on_mac:
+            print("По маку на порту найдена неверная ARP:", ", ".join(self.__ip_incorrect_arp_on_mac))
     
     # main function
     def check_all(self):
+        # check all functions
         self.__check_user_card()
         self.__check_L2_L3()
         
+        # print user card part
         print("-" * 20)
         print("ДИАГНОСТИКА КАРТОЧКИ:")
         self.__result_user_card()
         
+        # print L2 and L3 diagnostics part
         print("-" * 20)
         print("ДИАГНОСТИКА ОБОРУДОВАНИЯ:")
         self.__result_L2_L3()
@@ -893,15 +1069,25 @@ class MainHandler:
     # print all necessary fields
     def print_record(self):
         print("-" * 20)
+        
+        # print usernum and other fields
         print(f"{Const.usernum.name}:{' '*(12-len(Const.usernum.name))}{self.__usernum}")
         for key in self.__record_data:
             print(f"{key}:{' '*(12-len(key))}{self.__record_data[key]}")
+        
         print("-" * 20)
 
 
+##### START DIAGNOSTICS #####
+
 def main():
+    # find .env file
     load_dotenv(find_dotenv())
+    
+    # get usernum
     usernum = int(input("Usernum: "))
+    
+    # create handler object and run diagnostics
     handler = MainHandler(usernum)
     handler.check_all()
 
