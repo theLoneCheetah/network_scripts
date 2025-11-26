@@ -1,1 +1,1 @@
-Repository for scripts used in network diagnosting, usually for work.
+Repository for scripts used in network diagnosing, usually for work.
