@@ -146,7 +146,7 @@ class NetworkManager(ABC):
     def __start_connection(self):
         print("Connecting to equipment...")
         # protected atribute, it will be inherited
-        self._session = pexpect.spawn(f"telnet {self.__ipaddress}")#, logfile=sys.stdout.buffer)
+        self._session = pexpect.spawn(f"telnet {self.__ipaddress}", logfile=sys.stdout.buffer)
         
         self._session.expect("User(N|n)ame:")
         self._session.sendline(self.__USERNAME)
@@ -249,24 +249,22 @@ class L2Manager(NetworkManager):
         first_datetime = datetime.strptime(match.group(3) + " " + match.group(4), "%Y-%m-%d %H:%M:%S")
         range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
         
-        # if log continuation
-        if index == 0:
-            # scroll until end found or range max time difference reached
-            while index == 0 and range_minutes_difference < Const.max_minute_range_port_flapping.value:
-                # command to scroll, decide is it continuation or end
-                self._session.send(" ")
-                index = self._session.expect(["CTRL", "#"])
-                
-                # parse current log output
-                current_log = self._session.before.decode("utf-8")
-                match = re.search(r"[\s\S]*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", current_log)
-                
-                # update range time difference
-                first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), "%Y-%m-%d %H:%M:%S")
-                range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
-                
-                # update log variable
-                log += current_log
+        # scroll until end found or range max time difference reached
+        while index == 0 and range_minutes_difference < Const.max_minute_range_port_flapping.value:
+            # command to scroll, decide is it continuation or end
+            self._session.send(" ")
+            index = self._session.expect(["CTRL", "#"])
+            
+            # parse current log output
+            current_log = self._session.before.decode("utf-8")
+            match = re.search(r"[\s\S]*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", current_log)
+            
+            # update range time difference
+            first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), "%Y-%m-%d %H:%M:%S")
+            range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
+            
+            # update log variable
+            log += current_log
         
         # if still log continuation, quit
         if index == 0:
@@ -361,7 +359,7 @@ class L2Manager(NetworkManager):
         self._session.sendline("show access_profile")
         self._session.expect("#")
         
-        # catch and return two entries of user port's rules
+        # return found entries
         return re.findall(rf"Ports\s+:\s+{self.__user_port}\s+Mode\s+:\s+Permit[\s\S]*?0x([a-z\d]{{8}})\s+0xffffffff", self._session.before.decode("utf-8"))
     
     # get default gateway for this switch, used for direct public ip
@@ -384,15 +382,38 @@ class L3Manager(NetworkManager):
     
     # find ip route for direct public ip
     def check_ip_route(self):
-        # command
+        # clipaging is necessary to check limited ip route output
+        self._session.sendline("enable clipaging")
+        self._session.expect("#")
+        
+        # command, expect ip route's continuation or end
         self._session.sendline("show iproute static")
         # cisco: self._session.sendline("show ip route static")
+        index = self._session.expect(["CTRL", "#"])
+        
+        # parse output without saving as all rows are separated
+        match = re.search(rf"{self.__user_ip}/32\s+(via\s+)?((\d{{1,3}}.){{3}}\d{{1,3}})", self._session.before.decode("utf-8"))
+        
+        # scroll until end found or range max time difference reached
+        while index == 0 and not match:
+            # command to scroll, decide is it continuation or end
+            self._session.send(" ")
+            index = self._session.expect(["CTRL", "#"])
+            
+            # parse current output
+            match = re.search(rf"{self.__user_ip}/32\s+(via\s+)?((\d{{1,3}}.){{3}}\d{{1,3}})", self._session.before.decode("utf-8"))
+        
+        # if still output continuation, quit
+        if index == 0:
+            self._session.send("q")
+            self._session.expect("#")
+        
+        # get back to disabled clipaging
+        self._session.sendline("disable clipaging")
         self._session.expect("#")
         
         # return next hop ip for this ip route
-        temp = self._session.before.decode("utf-8")
-        match = re.search(rf"{self.__user_ip}/32\s+(via\s+)?((\d{{1,3}}.){{3}}\d{{1,3}})", temp)
-        return match.group(2)
+        return match.group(2) if match else None
     
     # check arp by ip and return mac address
     def check_arpentry_ip_return_mac(self):
@@ -500,9 +521,12 @@ class MainHandler:
         self.__many_macs = 0   # count mac addresses if there's more than 1
         
         # flags for errors in diagnostics of L3
+        self.__ip_route_not_found = False
         self.__no_arp = False
         self.__arp_on_unknown_mac = ""   # here wiil be unknown mac if found
         self.__ip_incorrect_arp_on_mac = []    # here will be unknown ip addresses if found
+        self.__need_to_check_mac_on_L3 = False
+        self.__no_mac_on_L3 = False
     
     ##### DATABASE AND USER CARD PART #####
     
@@ -725,7 +749,7 @@ class MainHandler:
         self.__fiber_port, self.__port_disabled, self.__speed_settings, self.__linkdown_status, speed = self.__switch_manager.get_port_link()
         
         # check if speed is satisfying, cable diag needed if not
-        if not self.__port_disabled and not self.__linkdown_status and speed != Const.normal_speed.value[self.__gigabit]:
+        if not self.__port_disabled and not self.__linkdown_status and not (speed == Const.normal_speed.value[True] or not self.__gigabit and speed == Const.normal_speed.value[False]):
             self.__lower_speed = speed
             self.__need_to_cable_diag = True
     
@@ -807,7 +831,7 @@ class MainHandler:
         elif Const.vlan_statuses.value[0] in self.__port_vlans and len(self.__port_vlans[Const.vlan_statuses.value[0]]) == 1:
             self.__untagged_vlan_id = self.__port_vlans[Const.vlan_statuses.value[0]][0]
             
-            # mark flag if port doesn't have vlan404
+            # mark flag if port doesn't have vlan404 when it's on switch
             if self.__direct_public_ip and self.__have_vlan404 and self.__untagged_vlan_id != Const.vlan404.value:
                 self.__user_vlan_instead_of_vlan404 = True
             # mark flag if port doesn't have user vlan
@@ -833,7 +857,7 @@ class MainHandler:
     # check for direct public ip and find its gateway where arp should be
     def __find_actual_gateway(self):
         # init L3 manager by user record's gateway if ip is local
-        if self.__untagged_vlan_id != Const.vlan404.value:
+        if not self.__direct_public_ip:
             self.__gateway_manager = L3Manager(self.__record_data["gateway"], self.__record_data["ip"])
             return
         
@@ -842,13 +866,17 @@ class MainHandler:
         
         # may need from 1 to 3 iterations
         while True:
-            # create L3 manager
+            # create or update L3 manager and find ip route for direct public ip
             self.__gateway_manager = L3Manager(gateway, self.__record_data["ip"])
-            
-            # find ip route, continue with new L3 manager if new next hop found
             gateway = self.__gateway_manager.check_ip_route()
-            if gateway == self.__record_data["ip"]:
-                break
+            
+            # if nothing found, mark flag and keep current L3 manager
+            if not gateway:
+                self.__ip_route_not_found = True
+                return
+            # break if self-route found or continue with new L3 manager if new next hop found
+            elif gateway == self.__record_data["ip"]:
+                return
     
     # try to check arp on mac if there's only 1 mac
     def __get_ips_from_arpentry_mac(self):
@@ -858,6 +886,18 @@ class MainHandler:
         
         # return list of ip addresses with arp on this mac
         return self.__gateway_manager.check_arpentry_mac_return_ips(*self.__mac_addresses)
+    
+    # check mac visibility on L3 and set a flag if not visible
+    def __check_mac_visible_on_L3(self):
+        # if there's no mac or more than 1, can't find
+        if len(self.__mac_addresses) != 1:
+            return
+        
+        # flag to simplify output control, when mac on L3 info should be displayed
+        self.__need_to_check_mac_on_L3 = True
+        
+        # set flag True if no mac found
+        self.__no_mac_on_L3 = self.__gateway_manager.check_mac_on_L3(*self.__mac_addresses)
     
     # check arpentry by ip and mac and try other options on L3
     def __check_arpentry_by_ip(self):
@@ -888,6 +928,9 @@ class MainHandler:
             # mark flag if no arp found at all
             self.__no_arp = not self.__ip_incorrect_arp_on_mac and not self.__arp_on_unknown_mac
             
+            # if no arp on mac found, check mac reaches L3
+            if not self.__ip_incorrect_arp_on_mac:
+                self.__check_mac_visible_on_L3()
     
     # function to control diagnosting L2 and L3
     def __check_L2_L3(self):
@@ -938,18 +981,18 @@ class MainHandler:
             self.__find_actual_gateway()
             self.__check_arpentry_by_ip()
         
-        except Exception as err:
-            if re.match("Unable to diagnose", str(err)):   # unable exception
-                print(err)
-            else:   # exception while working with L2 or L3
-                print("Exception while working with equipment:", err, sep="\n")
-        
         finally:
             # always close connection and delete L2 and L3 managers
             if self.__switch_manager:
                 del self.__switch_manager
             if self.__gateway_manager:
                 del self.__gateway_manager
+        
+        """except Exception as err:
+            if re.match("Unable to diagnose", str(err)):   # unable exception
+                print(err)
+            else:   # exception while working with L2 or L3
+                print("Exception while working with equipment:", err, sep="\n")"""
     
     # result of L2 and L3 diagnostics
     def __result_L2_L3(self):
@@ -1039,9 +1082,12 @@ class MainHandler:
         else:
             print("ACL ок")
         
+        # ip route: if not found
+        if self.__ip_route_not_found:
+            print("Не найден маршрут для прямого внешнего IP на L3")
         # arp: no arp, arp on unknown mac, correct
         if self.__no_arp:
-            print("ARP не найдена по маку и IP")
+            print("ARP не найдена")
         elif self.__arp_on_unknown_mac:
             print("ARP найдена на неизвестный мак:", self.__arp_on_unknown_mac)
         elif self.__have_arp:
@@ -1049,6 +1095,12 @@ class MainHandler:
         # if found arp by mac with wrong ip addresses, is possible even if arp ok or unknown mac
         if self.__ip_incorrect_arp_on_mac:
             print("По маку на порту найдена неверная ARP:", ", ".join(self.__ip_incorrect_arp_on_mac))
+        # if mac was checked, print found or not
+        if self.__need_to_check_mac_on_L3:
+            if self.__no_mac_on_L3:
+                print("Мак не виден на L3")
+            else:
+                print("Мак виден на L3")
     
     # main function
     def check_all(self):
