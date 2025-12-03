@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from ipaddress import IPv4Address, IPv4Network, AddressValueError
 from collections import defaultdict
 from datetime import datetime
+import commands   # user's lib
 
 
 ##### PROGRAM CONSTANTS #####
@@ -50,6 +51,7 @@ class Const(Enum):
     last_nserv_nnet = 1016
     last_port = 52
     
+    # fields checking limits
     number_fields_limits = {"port": last_port, "dhcp": 1, "nserv": last_nserv_nnet, "nnet": last_nserv_nnet}
     ip_fields = {"ip", "mask", "gateway", "switch", "public_ip"}
     
@@ -61,10 +63,6 @@ class Const(Enum):
     # set of network public subnets
     public_subnets = {IPv4Network(subnet, strict=False) for subnet in ["178.252.127.253/18", "146.66.191.253/19", "146.66.207.253/20"]}
     
-    # all the commmands and patterns for re
-    commands = {"DES-3028": {}, "DES-3052": {}, "DGS-1210-28/ME": {}, "DGS-1210-52/ME": {}, "DGS-3000-24TC": {}, "DGS-3000-26TC": {}, "DGS-3120-24TC": {}, "DGS-3200-24": {}, "DES-3200-28": {}, "DES-3526": {}, \
-    "DGS-3620-28TC": {}," DGS-3620-28SC": {}, "DGS-3627G": {}, "DGS-3630-28SC": {}}
-    
     # variables and expressions while diagnosting
     normal_speed = {False: "100M/Full", True: "1000M/Full"}
     vlan_statuses = ["Untagged", "Tagged", "Forbidden", "Dynamic"]
@@ -74,6 +72,10 @@ class Const(Enum):
     last_flap_max_minute_remoteness = 2
     min_count_flapping = 20
     max_arpentry_by_mac_checking = 10
+    
+    # users' switch models
+    switches = {"DES-3028": {}, "DES-3052": {}, "DGS-1210-28/ME": {}, "DGS-1210-52/ME": {}, "DGS-3000-24TC": {}, "DGS-3000-26TC": {}, "DGS-3120-24TC": {}, "DGS-3200-24": {}, "DES-3200-28": {}, "DES-3526": {}, \
+    "DGS-3620-28TC": {}, "DGS-3620-28SC": {}, "DGS-3627G": {}, "DGS-3630-28SC": {}}
 
 
 ##### CLASS TO GET DATA FROM THE DATABASE #####
@@ -136,11 +138,33 @@ class DatabaseManager:
 class NetworkManager(ABC):
     # init by ip and connect with the same username and password
     def __init__(self, ipaddress):
+        # define ip and get connection's environment
         self.__ipaddress = ipaddress
         self.__USERNAME = os.getenv("NET_USER")
         self.__PASSWORD = os.getenv("NET_PASSWORD")
         
+        # switch model name from the defined dict and commands for clipaging
+        self._model = ""
+        self._turn_clipaging = {}
+        
+        # connect
         self.__start_connection()
+    
+    # figure out switch model name
+    def __identify_model(self, output):
+        # exclude all service ANSI constructions
+        ansi_escape = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -/]*[@-~](\s+D\s+)?')
+        output = ansi_escape.sub("", output)
+        
+        # find model name, exception if not found
+        # match = re.search(r"Welcome to L3 Switch\s+(\S+)\s+", output)
+        match = re.search(r"'\^\]'.\s+(\S+)\s+", output)
+        if not match or match.group(1) not in Const.switches.value:
+            raise Exception(f"Unable to diagnose: unknown switch model with ip {self.__ipaddress}")
+        
+        # if found, save model name and clipaging syntax for further commands
+        self._model = match.group(1)
+        self._turn_clipaging = commands.clipaging(self._model)
     
     # start
     def __start_connection(self):
@@ -149,14 +173,17 @@ class NetworkManager(ABC):
         self._session = pexpect.spawn(f"telnet {self.__ipaddress}", logfile=sys.stdout.buffer)
         
         self._session.expect("User(N|n)ame:")
+        
+        # catch model name from welcome string
+        self.__identify_model(self._session.before.decode("utf-8", errors="ignore"))
+        
         self._session.sendline(self.__USERNAME)
         self._session.expect("Pass(W|w)ord:")
         self._session.sendline(self.__PASSWORD)
         self._session.expect("#")
         
         # turn off clipaging to see commands' whole results
-        self._session.sendline("disable clipaging")
-        # cisco: self._session.sendline("terminal length 0")
+        self._session.sendline(self._turn_clipaging["disable"])
         self._session.expect("#")
         
         print("Success")
@@ -166,7 +193,7 @@ class NetworkManager(ABC):
         print("Closing connection...")
         
         # restore clipaging on switch
-        self._session.sendline("enable clipaging")
+        self._session.sendline(self._turn_clipaging["enable"])
         self._session.expect("#")
         
         self._session.close()
@@ -188,11 +215,11 @@ class L2Manager(NetworkManager):
     # show ports and catch groups
     def __show_port(self):
         # command
-        self._session.sendline(f"show ports {self.__user_port}")
+        command_regex = commands.show_ports(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
         
         # first expression for single type port, second for combo port
-        index = self._session.expect([rf"{self.__user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#", rf"{self.__user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*{self.__user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#"])
-        # 1210: index = self._session.expect([rf"{self.__user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#", rf"{self.__user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*{self.__user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#"])
+        index = self._session.expect(command_regex["regex"])
         
         # if it's combo port and active type is fiber
         if index == 1 and (self._session.match.group(10) or self._session.match.group(1).decode("utf-8") == "Disabled"):
@@ -217,36 +244,48 @@ class L2Manager(NetworkManager):
     # cable diagnostics
     def cable_diag(self):
         # command
-        self._session.sendline(f"cable_diag ports {self.__user_port}")
+        command_regex = commands.cable_diag(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
         self._session.expect("#")
 
         # save output and test different patterns
         temp = self._session.before.decode("utf-8")
-        match = re.search(rf"({self.__user_port}\s+(\S+)\s+(Link Up|Link Down)\s+Pair(\d)\s+([A-Za-z]+)\s+at\s+(\d+)\s+M\s+(-|\d+))|({self.__user_port}\s+(\S+)\s+(Link Up|Link Down)\s+([A-Za-z ]+)\s+(-|\d+))", temp)
+        match = re.search(command_regex["regex"], temp)
         
         # if it's patterns with pairs' lengths, return list
         if match.group(1):
-            return re.findall(r"Pair(\d)\s+([A-Za-z]+)\s+at\s+(\d+)\s+M", temp)
+            return re.findall(command_regex["findall"], temp)
         # if it's just a diagnose, return string
         return match.group(11)
     
     # check log if port is flapping
     def get_log_port_flapping(self):
         # clipaging is necessary to check limited log output
-        self._session.sendline("enable clipaging")
+        self._session.sendline(self._turn_clipaging["enable"])
         self._session.expect("#")
         
         # command, expect log's continuation or end
-        self._session.sendline("show log")
+        command_regex = commands.show_log(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
         index = self._session.expect(["CTRL", "#"])
         
         # save and parse log
         log = self._session.before.decode("utf-8")
-        match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+Successful login[\s\S]*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", log)
+        match = re.search(command_regex["login_and_first"], log)
         
-        # find the difference between login time and earliest displayed time
-        login_datetime = datetime.strptime(match.group(1) + " " + match.group(2), "%Y-%m-%d %H:%M:%S")
-        first_datetime = datetime.strptime(match.group(3) + " " + match.group(4), "%Y-%m-%d %H:%M:%S")
+        # find login and the earliest displayed time, for 3028, datetime consists of date and time
+        if self._model == "DES-3028":
+            login_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
+            first_datetime = datetime.strptime(match.group(3) + " " + match.group(4), command_regex["format"])
+        # for 1210, datetime consists of month, day and day, year is current year
+        elif self._model == "DGS-1210-28/ME":
+            login_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
+            first_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(4, 5, 6)), command_regex["format"])
+            # when new year comes
+            if first_datetime.month > login_datetime.month:
+                first_datetime = first_datetime.replace(year=first_datetime.year - 1)
+        
+        # find the difference between login time and the earliest displayed time
         range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
         
         # scroll until end found or range max time difference reached
@@ -257,10 +296,18 @@ class L2Manager(NetworkManager):
             
             # parse current log output
             current_log = self._session.before.decode("utf-8")
-            match = re.search(r"[\s\S]*(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", current_log)
+            match = re.search(command_regex["first"], current_log)
+            
+            # find the earliest displayed time, for 3028
+            if self._model == "DES-3028":
+                first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
+            # for 1210, also check year's switching
+            elif self._model == "DGS-1210-28/ME":
+                first_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
+                if first_datetime.month > login_datetime.month:
+                    first_datetime = first_datetime.replace(year=first_datetime.year - 1)
             
             # update range time difference
-            first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), "%Y-%m-%d %H:%M:%S")
             range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
             
             # update log variable
@@ -272,37 +319,45 @@ class L2Manager(NetworkManager):
             self._session.expect("#")
         
         # get back to disabled clipaging
-        self._session.sendline("disable clipaging")
+        self._session.sendline(self._turn_clipaging["disable"])
         self._session.expect("#")
         
         # try to find last port flapping, return 0 if not found
-        match = re.search(rf"(\d{{4}}-\d{{2}}-\d{{2}})\s+(\d{{2}}:\d{{2}}:\d{{2}})\s+Port {self.__user_port}", log)
+        match = re.search(command_regex["regex"], log)
         if not match:
             return 0, 0
         
+        # find last port flap, for 3028
+        if self._model == "DES-3028":
+            last_flap_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
+        # for 1210
+        elif self._model == "DGS-1210-28/ME":
+            last_flap_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
+        
         # find the difference between login time and last port flapping time
-        last_flap_datetime = datetime.strptime(match.group(1) + " " + match.group(2), "%Y-%m-%d %H:%M:%S")
         last_flap_login_minutes_difference = int((login_datetime - last_flap_datetime).total_seconds() // 60)
         
         # find the count of port flapping and return it with the time difference
-        count_port_flapping = len(re.findall(f"Port {self.__user_port} link up", log))
+        count_port_flapping = len(re.findall(command_regex["findall"], log))
         return count_port_flapping, last_flap_login_minutes_difference
     
     # get mac addresses on port
     def get_fdb_port(self):
         # command
-        self._session.sendline(f"show fdb port {self.__user_port}")
+        command_regex = commands.show_fdb(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
         self._session.expect("#")
         
-        # get rows as "vid vlan mac" and return set of macs
-        matches = re.findall(rf"(\d+)\s+(\S+)\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})\s+{self.__user_port}", self._session.before.decode("utf-8"))
+        # get rows as "vid vlan mac type" and return set of macs
+        matches = re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
         return {i[2] for i in matches}
     
     # get port security state on port
     def get_port_security(self):
         # command
-        self._session.sendline(f"show port_security ports {self.__user_port}")
-        self._session.expect(rf"{self.__user_port}\s+(Enabled|Disabled).*#")
+        command_regex = commands.show_port_security(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
+        self._session.expect(command_regex["regex"])
         
         # return state of port security
         return self._session.match.group(1).decode("utf-8") == "Enabled"
@@ -310,8 +365,9 @@ class L2Manager(NetworkManager):
     # get crc errors on port
     def get_crc_errors_port(self):
         # command
-        self._session.sendline(f"show error ports {self.__user_port}")
-        self._session.expect(r"RX Frames.*?CRC Error\s+(\d+).*#")
+        command_regex = commands.show_crc_errors(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
+        self._session.expect(command_regex["regex"])
         
         # return rx crc errors' count
         return int(self._session.match.group(1).decode("utf-8"))
@@ -319,33 +375,35 @@ class L2Manager(NetworkManager):
     # get packages bytes on port
     def get_packets_port(self):
         # command
-        self._session.sendline(f"show packet ports {self.__user_port}")
-        self._session.expect(r"RX Bytes\s+\d+\s+(\d+).*TX Bytes\s+\d+\s+(\d+).*#")
+        command_regex = commands.show_packet(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
+        self._session.expect(command_regex["regex"])
         
-        # return rx and tx bytes as integers
-        return map(lambda x: int(x.decode("utf-8")), self._session.match.group(1, 2))
+        # return rx and tx bytes as integers, period in seconds also (default 1 sec)
+        return map(lambda x: int(x.decode("utf-8")) if x else 1, self._session.match.group(1, 2, 3))
 
     # get all vlans on switch
     def get_switch_vlans(self):
         # command
-        self._session.sendline("show vlan")
+        command_regex = commands.show_vlan(self._model)
+        self._session.sendline(command_regex["command"])
         self._session.expect("#")
         
         # get vlan_id: vlan_name
-        return {int(vlan_id): vlan_name for vlan_id, vlan_name in re.findall(r"VID\s+:\s+(\d+)\s+VLAN Name\s+:\s+(\S+)", self._session.before.decode("utf-8"))}
-        # 1210: return {int(vlan_id): vlan_name for vlan_id, vlan_name in re.findall(r"VID\s+:\s+(\d+)\s+VLAN NAME\s+:\s+(\S+)", self._session.before.decode("utf-8"))}
+        return {int(vlan_id): vlan_name for vlan_id, vlan_name in re.findall(command_regex["regex"], self._session.before.decode("utf-8"))}
     
     # get vlans on port
     def get_port_vlans(self):
         # command
-        self._session.sendline(f"show vlan ports {self.__user_port}")
+        command_regex = commands.show_vlan_ports(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
         self._session.expect("#")
         
         # dictionary for vlans with statuses as keys
         port_vlans = defaultdict(list)
         
         # parse entry, X means actual status
-        for match in re.findall(r"(\d+)+\s+([X-])\s+([X-])\s+([X-])\s+([X-])", self._session.before.decode("utf-8")):
+        for match in re.findall(command_regex["regex"], self._session.before.decode("utf-8")):
             pos = match.index("X") - 1
             if int(match[0]) != Const.iptv_vlan_skipping.value:   # skip old iptv vlan
                 port_vlans[Const.vlan_statuses.value[pos]].append(int(match[0]))
@@ -356,19 +414,27 @@ class L2Manager(NetworkManager):
     # get acl options on port from overall output
     def get_port_acl(self):
         # command
-        self._session.sendline("show access_profile")
+        command_regex = commands.show_access_profile(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
         self._session.expect("#")
         
         # return found entries
-        return re.findall(rf"Ports\s+:\s+{self.__user_port}\s+Mode\s+:\s+Permit[\s\S]*?0x([a-z\d]{{8}})\s+0xffffffff", self._session.before.decode("utf-8"))
+        if self._model == "DES-3028":
+            # for 3028 two indentical entries
+            return re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
+        elif self._model == "DGS-1210-28/ME":
+            # for 1210 two different entries for different protocols, one separated in parts
+            match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
+            return [match.group(1) + match.group(2), match.group(3)] if match else []
     
     # get default gateway for this switch, used for direct public ip
     def get_default_gateway(self):
         # command
-        self._session.sendline("show switch")
+        command_regex = commands.show_switch(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
         
         # return default gateway field from switch configuration
-        self._session.expect(r"Default Gateway\s+:\s+((\d{1,3}.){3}\d{1,3}).*#")
+        self._session.expect(command_regex["regex"])
         return self._session.match.group(1).decode("utf-8")
 
 
@@ -383,7 +449,7 @@ class L3Manager(NetworkManager):
     # find ip route for direct public ip
     def check_ip_route(self):
         # clipaging is necessary to check limited ip route output
-        self._session.sendline("enable clipaging")
+        self._session.sendline(self._turn_clipaging["enable"])
         self._session.expect("#")
         
         # command, expect ip route's continuation or end
@@ -409,7 +475,7 @@ class L3Manager(NetworkManager):
             self._session.expect("#")
         
         # get back to disabled clipaging
-        self._session.sendline("disable clipaging")
+        self._session.sendline(self._turn_clipaging["disable"])
         self._session.expect("#")
         
         # return next hop ip for this ip route
@@ -800,18 +866,18 @@ class MainHandler:
         # get numbers of rx crc errors, will be zero if OK
         self.__crc_errors = self.__switch_manager.get_crc_errors_port()
     
-    # calculate megabit from bytes
-    def __byte_to_megabit(self, bytes):
-        return round(bytes * 8 / 1024 / 1024)
+    # calculate megabit from bytes, bytes number may be in the period of 1 or 5 seconds
+    def __byte_to_megabit(self, bytes_count, seconds):
+        return round(bytes_count * 8 / 1024 / 1024 / seconds)
     
     # check packet bytes and calculate megabit
     def __check_packets(self):
         # get rx and tx bytes
-        self.__rx_bytes, self.__tx_bytes = self.__switch_manager.get_packets_port()
+        seconds, self.__rx_bytes, self.__tx_bytes = self.__switch_manager.get_packets_port()
         
         # calculate to megabit
-        self.__rx_megabit = self.__byte_to_megabit(self.__rx_bytes)
-        self.__tx_megabit = self.__byte_to_megabit(self.__tx_bytes)
+        self.__rx_megabit = self.__byte_to_megabit(self.__rx_bytes, seconds)
+        self.__tx_megabit = self.__byte_to_megabit(self.__tx_bytes, seconds)
     
     # check vlans on switch and on port10.146.0.252
 
@@ -1052,7 +1118,7 @@ class MainHandler:
             print("Кабдиаг", self.__cable_diag_status)
         elif self.__open_cable_pairs:
             # list has records as [pair, status, meter]
-            print("Кабдиаг", ", ".join(map(lambda x: f"{x[0]}п {x[2]}м {x[1]}", self.__open_cable_pairs)))
+            print("Кабдиаг", ", ".join(map(lambda x: f"{x[0]}п {x[3]}м {x[1]}" if all(x) else f"{x[0]}п {x[1]}", self.__open_cable_pairs)))
         
         # if there's no correct subnet, end output
         if not self.__ip_mask_gateway:
