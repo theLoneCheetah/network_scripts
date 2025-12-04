@@ -24,7 +24,7 @@ def show_ports(model, user_port):
                     "regex": [rf"{user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#", rf"{user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*{user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#"]}
         case "DGS-1210-28/ME":
             return {"command": f"show ports {user_port}",
-                    "regex": [rf"{user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#", rf"{user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*{user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#"]}
+                    "regex": [rf"{user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+ ?[A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled).*#"]}
 
 def cable_diag(model, user_port):
     match model:
@@ -34,8 +34,8 @@ def cable_diag(model, user_port):
                     "findall": r"Pair(\d)\s+([A-Za-z]+)\s+at\s+(\d+)\s+M"}
         case "DGS-1210-28/ME":
             return {"command": f"cable diagnostic port {user_port}",
-                    "regex": rf"({user_port}\s+(\S+)\s+(Link Up|Link Down)\s+Pair(\d)\s+([A-Za-z]+)(\s+at\s+(\d+)\s+M)?\s+(-|\d+))|({user_port}\s+(\S+)\s+(Link Up|Link Down)\s+([A-Za-z ]+)\s+(-|\d+))",
-                    "findall": r"Pair(\d)\s+([A-Za-z]+)(\s+at\s+(\d+)\s+M)?"}
+                    "regex": rf"({user_port}\s+(\S+)\s+(Link Up|Link Down)\s+Pair(\d)\s+([A-Za-z]+)(?:\s+at\s+(\d+)\s+M)?\s+(-|\d+))|({user_port}\s+(\S+)\s+(Link Up|Link Down)\s+([A-Za-z ]+)\s+(-|\d+))",
+                    "findall": r"Pair(\d)\s+([A-Za-z]+)(?:\s+at\s+(\d+)\s+M)?"}
 
 def show_fdb(model, user_port):
     match model:
@@ -110,12 +110,39 @@ def show_log(model, user_port):
 
 ##### FOR L3 GATEWAY #####
 
-"""def (model, user_port):
+def show_ip_route(model, user_ip):
     match model:
-        case "DES-3028":
-            return {"command": ,
-                    "regex": }
-        case "DGS-1210-28/ME":
-            return {"command": ,
-                    "regex": }"""
+        case "DGS-3630-28SC":
+            return {"command": "show ip route static",
+                    "regex": rf"{user_ip}/32\s+via\s+((\d{{1,3}}.){{3}}\d{{1,3}})(,\s+vlan(\d+))?"}
+        case _:
+            return {"command": f"show iproute {user_ip} static",
+                    "regex": rf"{user_ip}/32\s+((\d{{1,3}}.){{3}}\d{{1,3}})"}
+
+def show_arp_ip(model, user_ip):
+    match model:
+        case "DGS-3630-28SC":
+            return {"command": f"show arp {user_ip}",
+                    "regex": rf"{user_ip}\s+(?P<mac>([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})\s+vlan(\d+)"}
+        case _:
+            return {"command": f"show arpentry ipaddress {user_ip}",
+                    "regex": rf"(\S+)\s+{user_ip}\s+(?P<mac>([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})"}
+
+def show_arp_mac(model, user_mac):
+    match model:
+        case "DGS-3630-28SC":
+            return {"command": f"show arp {user_mac}",
+                    "regex": rf"(?P<ip>(\d{{1,3}}.){{3}}\d{{1,3}})\s+{user_mac}\s+vlan(\d+)"}
+        case _:
+            return {"command": f"show arpentry mac_address {user_mac}",
+                    "regex": rf"(\S+)\s+(?P<ip>(\d{{1,3}}.){{3}}\d{{1,3}})\s+{user_mac}"}
+
+def show_fdb_L3(model, user_mac):
+    match model:
+        case "DGS-3630-28SC":
+            return {"command": f"show mac-address-table address {user_mac}",
+                    "regex": rf"(\d+)\s+({user_mac})"}
+        case _:
+            return {"command": f"show fdb mac_address {user_mac}",
+                    "regex": rf"(\d+)\s+(\S+)\s+({user_mac})"}
 

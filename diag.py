@@ -157,13 +157,14 @@ class NetworkManager(ABC):
         output = ansi_escape.sub("", output)
         
         # find model name, exception if not found
-        # match = re.search(r"Welcome to L3 Switch\s+(\S+)\s+", output)
-        match = re.search(r"'\^\]'.\s+(\S+)\s+", output)
+        match = re.search(r"'\^\]'.\s+(?:=+\s+Welcome to L3 Switch\s+)?(\S+)\s+", output)
         if not match or match.group(1) not in Const.switches.value:
             raise Exception(f"Unable to diagnose: unknown switch model with ip {self.__ipaddress}")
         
         # if found, save model name and clipaging syntax for further commands
         self._model = match.group(1)
+        #if self._model == "DGS-1210-52/ME":
+        #    self._model = "DGS-1210-28/ME"
         self._turn_clipaging = commands.clipaging(self._model)
     
     # start
@@ -448,75 +449,91 @@ class L3Manager(NetworkManager):
     
     # find ip route for direct public ip
     def check_ip_route(self):
-        # clipaging is necessary to check limited ip route output
-        self._session.sendline(self._turn_clipaging["enable"])
-        self._session.expect("#")
+        # get regex
+        command_regex = commands.show_ip_route(self._model, self.__user_ip)
         
-        # command, expect ip route's continuation or end
-        self._session.sendline("show iproute static")
-        # cisco: self._session.sendline("show ip route static")
-        index = self._session.expect(["CTRL", "#"])
-        
-        # parse output without saving as all rows are separated
-        match = re.search(rf"{self.__user_ip}/32\s+(via\s+)?((\d{{1,3}}.){{3}}\d{{1,3}})", self._session.before.decode("utf-8"))
-        
-        # scroll until end found or range max time difference reached
-        while index == 0 and not match:
-            # command to scroll, decide is it continuation or end
-            self._session.send(" ")
+        # for cisco-like cli, dynamically try to find ip route in overall output
+        if self._model == "DGS-3630-28SC":
+            # clipaging is necessary to check limited ip route output
+            self._session.sendline(self._turn_clipaging["enable"])
+            self._session.expect("#")
+            
+            # command, expect ip route's continuation or end
+            self._session.sendline(command_regex["command"])
             index = self._session.expect(["CTRL", "#"])
             
-            # parse current output
-            match = re.search(rf"{self.__user_ip}/32\s+(via\s+)?((\d{{1,3}}.){{3}}\d{{1,3}})", self._session.before.decode("utf-8"))
-        
-        # if still output continuation, quit
-        if index == 0:
-            self._session.send("q")
+            # parse output without saving as all rows are separated
+            match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
+            
+            # scroll until end found or range max time difference reached
+            while index == 0 and not match:
+                # command to scroll, decide is it continuation or end
+                self._session.send(" ")
+                index = self._session.expect(["CTRL", "#"])
+                
+                # parse current output
+                match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
+            
+            # if still output continuation, quit
+            if index == 0:
+                self._session.send("q")
+                self._session.expect("#")
+            
+            # get back to disabled clipaging
+            self._session.sendline(self._turn_clipaging["disable"])
             self._session.expect("#")
         
-        # get back to disabled clipaging
-        self._session.sendline(self._turn_clipaging["disable"])
-        self._session.expect("#")
+        # for d-link cli, show and parse exact ip route record
+        else:   # if self._model == "DGS-3620-28SC":
+            # command
+            self._session.sendline(command_regex["command"])
+            self._session.expect("#")
+            
+            # parsing
+            match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
         
         # return next hop ip for this ip route
-        return match.group(2) if match else None
+        return match.group(1) if match else None
     
     # check arp by ip and return mac address
     def check_arpentry_ip_return_mac(self):
         # command
-        self._session.sendline(f"show arpentry ipaddress {self.__user_ip}")
+        command_regex = commands.show_arp_ip(self._model, self.__user_ip)
+        self._session.sendline(command_regex["command"])
         self._session.expect("#")
         
         # parse and find mac address for this ip
-        match = re.search(rf"(\S+)\s+((\d{{1,3}}.){{3}}\d{{1,3}})\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})", self._session.before.decode("utf-8"))
+        match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
         
         # if there's arp, return mac
         if match:
-            return match.group(4)
+            return match.group("mac")
         return None
     
     # check arp by mac address and return list of ip addresses
     def check_arpentry_mac_return_ips(self, mac):
         # command
-        self._session.sendline(f"show arpentry mac_address {mac}")
+        command_regex = commands.show_arp_mac(self._model, mac)
+        self._session.sendline(command_regex["command"])
         self._session.expect("#")
         
         # parse and find all ip addresses for this mac
-        matches = re.findall(rf"(\S+)\s+((\d{{1,3}}.){{3}}\d{{1,3}})\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})", self._session.before.decode("utf-8"))
+        matches = re.finditer(command_regex["regex"], self._session.before.decode("utf-8"))
         
         # if found, return list of ip addresses
         if matches:
-            return [match[1] for match in matches]
+            return [match.group("ip") for match in matches]
         return None
     
     # check if mac address is visible on L3
     def check_mac_on_L3(self, mac):
         # command
-        self._session.sendline(f"show fdb mac_address {mac}")
+        command_regex = commands.show_fdb_L3(self._model, mac)
+        self._session.sendline(command_regex["command"])
         self._session.expect("#")
         
         # return True if error when trying to find mac address
-        match = re.search(rf"(\d+)\s+(\S+)\s+({mac})", self._session.before.decode("utf-8"))
+        match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
         return not match
 
 
@@ -1080,7 +1097,7 @@ class MainHandler:
         elif self.__lower_speed:
             print("Линк", self.__lower_speed, "вместо", Const.normal_speed.value[self.__gigabit])
         else:
-            print("Линк ОК")
+            print("Линк ок")
         
         # if port is or was flapping
         if self.__port_flapping:
@@ -1118,7 +1135,7 @@ class MainHandler:
             print("Кабдиаг", self.__cable_diag_status)
         elif self.__open_cable_pairs:
             # list has records as [pair, status, meter]
-            print("Кабдиаг", ", ".join(map(lambda x: f"{x[0]}п {x[3]}м {x[1]}" if all(x) else f"{x[0]}п {x[1]}", self.__open_cable_pairs)))
+            print("Кабдиаг", ", ".join(map(lambda x: f"{x[0]}п {x[2]}м {x[1].upper()}" if len(x) == 3 and all(x) else f"{x[0]}п {x[1].upper()}", self.__open_cable_pairs)))
         
         # if there's no correct subnet, end output
         if not self.__ip_mask_gateway:
