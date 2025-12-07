@@ -4,6 +4,7 @@ import pexpect
 import re
 import sys
 import os
+import time
 from dotenv import load_dotenv, find_dotenv
 from enum import Enum
 from abc import ABC, abstractmethod
@@ -72,10 +73,6 @@ class Const(Enum):
     last_flap_max_minute_remoteness = 2
     min_count_flapping = 20
     max_arpentry_by_mac_checking = 10
-    
-    # users' switch models
-    switches = {"DES-3028": {}, "DES-3052": {}, "DGS-1210-28/ME": {}, "DGS-1210-52/ME": {}, "DGS-3000-24TC": {}, "DGS-3000-26TC": {}, "DGS-3120-24TC": {}, "DGS-3200-24": {}, "DES-3200-28": {}, "DES-3526": {}, \
-    "DGS-3620-28TC": {}, "DGS-3620-28SC": {}, "DGS-3627G": {}, "DGS-3630-28SC": {}}
 
 
 ##### CLASS TO GET DATA FROM THE DATABASE #####
@@ -158,13 +155,11 @@ class NetworkManager(ABC):
         
         # find model name, exception if not found
         match = re.search(r"'\^\]'.\s+(?:=+\s+Welcome to L3 Switch\s+)?(\S+)\s+", output)
-        if not match or match.group(1) not in Const.switches.value:
+        if not match or match.group(1) not in commands.switches:
             raise Exception(f"Unable to diagnose: unknown switch model with ip {self.__ipaddress}")
         
         # if found, save model name and clipaging syntax for further commands
         self._model = match.group(1)
-        #if self._model == "DGS-1210-52/ME":
-        #    self._model = "DGS-1210-28/ME"
         self._turn_clipaging = commands.clipaging(self._model)
     
     # start
@@ -219,14 +214,20 @@ class L2Manager(NetworkManager):
         command_regex = commands.show_ports(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
         
-        # first expression for single type port, second for combo port
+        # try expressions for simple and combo ports
         index = self._session.expect(command_regex["regex"])
         
+        # save match and quit dynamic page on some switches
+        match = self._session.match
+        if self._model == "DGS-3200-24" or self._model == "DES-3200-28":
+            self._session.send("q")
+            self._session.expect("#")
+        
         # if it's combo port and active type is fiber
-        if index == 1 and (self._session.match.group(10) or self._session.match.group(1).decode("utf-8") == "Disabled"):
-            return (True, *self._session.match.group(6, 7, 9, 10))
+        if index == 1 and (match.group(10) or match.group(1).decode("utf-8") == "Disabled"):
+            return (True, *match.group(6, 7, 9, 10))
         # otherwise
-        return (False, *self._session.match.group(1, 2, 4, 5))
+        return (False, *match.group(1, 2, 4, 5))
     
     # handler to check and return info about port
     def get_port_link(self):
@@ -275,7 +276,7 @@ class L2Manager(NetworkManager):
         match = re.search(command_regex["login_and_first"], log)
         
         # find login and the earliest displayed time, for 3028, datetime consists of date and time
-        if self._model == "DES-3028":
+        if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24":
             login_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
             first_datetime = datetime.strptime(match.group(3) + " " + match.group(4), command_regex["format"])
         # for 1210, datetime consists of month, day and day, year is current year
@@ -300,7 +301,7 @@ class L2Manager(NetworkManager):
             match = re.search(command_regex["first"], current_log)
             
             # find the earliest displayed time, for 3028
-            if self._model == "DES-3028":
+            if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24":
                 first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
             # for 1210, also check year's switching
             elif self._model == "DGS-1210-28/ME":
@@ -329,7 +330,7 @@ class L2Manager(NetworkManager):
             return 0, 0
         
         # find last port flap, for 3028
-        if self._model == "DES-3028":
+        if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24":
             last_flap_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
         # for 1210
         elif self._model == "DGS-1210-28/ME":
@@ -370,8 +371,14 @@ class L2Manager(NetworkManager):
         self._session.sendline(command_regex["command"])
         self._session.expect(command_regex["regex"])
         
+        # save match and quit dynamic page on some switches
+        match = self._session.match
+        if self._model == "DGS-3200-24" or self._model == "DES-3200-28":
+            self._session.send("q")
+            self._session.expect("#")
+        
         # return rx crc errors' count
-        return int(self._session.match.group(1).decode("utf-8"))
+        return int(match.group(1).decode("utf-8"))
     
     # get packages bytes on port
     def get_packets_port(self):
@@ -380,8 +387,14 @@ class L2Manager(NetworkManager):
         self._session.sendline(command_regex["command"])
         self._session.expect(command_regex["regex"])
         
+        # save match and quit dynamic page on some switches
+        match = self._session.match
+        if self._model == "DGS-3200-24" or self._model == "DES-3200-28":
+            self._session.send("q")
+            self._session.expect("#")
+        
         # return rx and tx bytes as integers, period in seconds also (default 1 sec)
-        return map(lambda x: int(x.decode("utf-8")) if x else 1, self._session.match.group(1, 2, 3))
+        return map(lambda x: int(x.decode("utf-8")) if x else 1, match.group(1, 2, 3))
 
     # get all vlans on switch
     def get_switch_vlans(self):
@@ -404,12 +417,11 @@ class L2Manager(NetworkManager):
         port_vlans = defaultdict(list)
         
         # parse entry, X means actual status
-        for match in re.findall(command_regex["regex"], self._session.before.decode("utf-8")):
-            pos = match.index("X") - 1
-            if int(match[0]) != Const.iptv_vlan_skipping.value:   # skip old iptv vlan
-                port_vlans[Const.vlan_statuses.value[pos]].append(int(match[0]))
+        for match in re.finditer(command_regex["regex"], self._session.before.decode("utf-8")):
+            if int(match[1]) != Const.iptv_vlan_skipping.value:   # skip old iptv vlan
+                port_vlans[next(key for key, val in match.groupdict().items() if val == "X")].append(int(match[1]))
         
-        # return complete dictionary
+        # return completed dictionary
         return port_vlans
     
     # get acl options on port from overall output
@@ -423,7 +435,7 @@ class L2Manager(NetworkManager):
         if self._model == "DES-3028":
             # for 3028 two indentical entries
             return re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
-        elif self._model == "DGS-1210-28/ME":
+        elif self._model == "DGS-1210-28/ME" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24":
             # for 1210 two different entries for different protocols, one separated in parts
             match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
             return [match.group(1) + match.group(2), match.group(3)] if match else []
@@ -431,7 +443,7 @@ class L2Manager(NetworkManager):
     # get default gateway for this switch, used for direct public ip
     def get_default_gateway(self):
         # command
-        command_regex = commands.show_switch(self._model, self.__user_port)
+        command_regex = commands.show_default_gateway(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
         
         # return default gateway field from switch configuration
