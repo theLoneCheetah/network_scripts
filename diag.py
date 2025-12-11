@@ -27,7 +27,9 @@ class Const(Enum):
                  "dhcp_type": "dhcp",
                  "Add_IP": "public_ip",
                  "Number_serv": "nserv",
-                 "Number_net": "nnet"}
+                 "Number_net": "nnet",
+                 "Street": "street",
+                 "House": "house"}
     # convert program names to the form used in workspace cards
     key_output = {"ip": "IP-адрес",
                   "mask": "Маска",
@@ -66,13 +68,18 @@ class Const(Enum):
     
     # variables and expressions while diagnosting
     normal_speed = {False: "100M/Full", True: "1000M/Full"}
-    vlan_statuses = ["Untagged", "Tagged", "Forbidden", "Dynamic"]
+    vlan_statuses = ["Untagged", "Tagged", "Forbidden", "Dynamic", "RadiusAssigned"]
     vlan404 = 404
     iptv_vlan_skipping = 778
     max_minute_range_port_flapping = 10
     last_flap_max_minute_remoteness = 2
     min_count_flapping = 20
-    max_arpentry_by_mac_checking = 10
+    
+    # types of cli to identify model
+    cli_types = ["d-link", "cisco"]
+    
+    # on Lensoveta 23 OSPF protocol is used, default gateway address doesn't have static ip route
+    lensoveta_address_gateway = {"street": 33, "house": "23", "gateway": "10.132.59.204"}
 
 
 ##### CLASS TO GET DATA FROM THE DATABASE #####
@@ -87,7 +94,7 @@ class DatabaseManager:
         self.__CHARSET = os.getenv("DB_CHARSET")
         
         # basic query gets all important fields
-        self.__get_query = "SELECT Number, Vznos, IP, Masck, Gate, switchP, PortP, dhcp_type, Add_IP, Number_serv, Number_net FROM users WHERE Number = %s"
+        self.__get_query = "SELECT Number, Vznos, IP, Masck, Gate, switchP, PortP, dhcp_type, Add_IP, Number_serv, Number_net, Street, House FROM users WHERE Number = %s"
         self.__start_connection()
     
     # start
@@ -142,25 +149,30 @@ class NetworkManager(ABC):
         
         # switch model name from the defined dict and commands for clipaging
         self._model = ""
+        self._ports = 0
         self._turn_clipaging = {}
         
         # connect
         self.__start_connection()
     
-    # figure out switch model name
-    def __identify_model(self, output):
-        # exclude all service ANSI constructions
-        ansi_escape = re.compile(r'(\x9B|\x1B\[)[0-?]*[ -/]*[@-~](\s+D\s+)?')
-        output = ansi_escape.sub("", output)
+    # try to figure out switch model name
+    def __get_model(self, cli_type):
+        # try to show mode info
+        command_regex = commands.show_model(cli_type)
+        self._session.sendline(command_regex["command"])
         
-        # find model name, exception if not found
-        match = re.search(r"'\^\]'.\s+(?:=+\s+Welcome to L3 Switch\s+)?(\S+)\s+", output)
-        if not match or match.group(1) not in commands.switches:
-            raise Exception(f"Unable to diagnose: unknown switch model with ip {self.__ipaddress}")
+        # expect output's ending and continuation
+        index = self._session.expect(["CTRL", "#"])
+        temp = self._session.before.decode("utf-8")
         
-        # if found, save model name and clipaging syntax for further commands
-        self._model = match.group(1)
-        self._turn_clipaging = commands.clipaging(self._model)
+        # quit if needed
+        if index == 0:
+            self._session.send("q")
+            self._session.expect("#")
+        
+        # try to find device model
+        match = re.search(command_regex["regex"], temp)
+        return match.group(1) if match else None
     
     # start
     def __start_connection(self):
@@ -168,17 +180,24 @@ class NetworkManager(ABC):
         # protected atribute, it will be inherited
         self._session = pexpect.spawn(f"telnet {self.__ipaddress}", logfile=sys.stdout.buffer)
         
-        self._session.expect("User(N|n)ame:")
-        
-        # catch model name from welcome string
-        self.__identify_model(self._session.before.decode("utf-8", errors="ignore"))
-        
+        self._session.expect("(U|u)ser(N|n)ame:")
         self._session.sendline(self.__USERNAME)
-        self._session.expect("Pass(W|w)ord:")
+        self._session.expect("(P|p)ass(W|w)ord:")
         self._session.sendline(self.__PASSWORD)
         self._session.expect("#")
         
+        # get through two types of cli to get device model
+        for cli_type in Const.cli_types.value:
+            model = self.__get_model(cli_type)
+            if model:
+               self._model = model
+               break
+        # raise exception if model unknown
+        else:
+            raise Exception(f"Unable to diagnose: unknown switch model with ip {self.__ipaddress}")
+        
         # turn off clipaging to see commands' whole results
+        self._turn_clipaging = commands.clipaging(self._model)
         self._session.sendline(self._turn_clipaging["disable"])
         self._session.expect("#")
         
@@ -206,7 +225,12 @@ class L2Manager(NetworkManager):
     # L2 manager inits by user port and base constructor
     def __init__(self, ipaddress, user_port):
         super().__init__(ipaddress)
+        self.__ports = commands.switches[self._model]["ports"]
+        self._model = commands.switches[self._model]["base_switch"]
         self.__user_port = user_port
+    
+    def check_port_in_portlist(self):
+        return self.__user_port <= self.__ports
     
     # show ports and catch groups
     def __show_port(self):
@@ -275,45 +299,53 @@ class L2Manager(NetworkManager):
         log = self._session.before.decode("utf-8")
         match = re.search(command_regex["login_and_first"], log)
         
-        # find login and the earliest displayed time, for 3028, datetime consists of date and time
-        if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24":
-            login_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
-            first_datetime = datetime.strptime(match.group(3) + " " + match.group(4), command_regex["format"])
-        # for 1210, datetime consists of month, day and day, year is current year
-        elif self._model == "DGS-1210-28/ME":
-            login_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
-            first_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(4, 5, 6)), command_regex["format"])
-            # when new year comes
-            if first_datetime.month > login_datetime.month:
-                first_datetime = first_datetime.replace(year=first_datetime.year - 1)
-        
-        # find the difference between login time and the earliest displayed time
-        range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
-        
-        # scroll until end found or range max time difference reached
-        while index == 0 and range_minutes_difference < Const.max_minute_range_port_flapping.value:
-            # command to scroll, decide is it continuation or end
-            self._session.send(" ")
-            index = self._session.expect(["CTRL", "#"])
-            
-            # parse current log output
-            current_log = self._session.before.decode("utf-8")
-            match = re.search(command_regex["first"], current_log)
-            
-            # find the earliest displayed time, for 3028
-            if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24":
-                first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
-            # for 1210, also check year's switching
+        # try to parse datetime while scrolling log
+        try:
+            # find login and the earliest displayed time, for 3028, datetime consists of date and time
+            if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3200-28" or self._model == "DES-3526":
+                login_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
+                first_datetime = datetime.strptime(match.group(3) + " " + match.group(4), command_regex["format"])
+            # for 1210, datetime consists of month, day and day, year is current year
             elif self._model == "DGS-1210-28/ME":
-                first_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
+                login_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
+                first_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(4, 5, 6)), command_regex["format"])
+                # when new year comes
                 if first_datetime.month > login_datetime.month:
                     first_datetime = first_datetime.replace(year=first_datetime.year - 1)
             
-            # update range time difference
+            # find the difference between login time and the earliest displayed time
             range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
             
-            # update log variable
-            log += current_log
+            # scroll until end found or range max time difference reached
+            while index == 0 and range_minutes_difference < Const.max_minute_range_port_flapping.value:
+                # command to scroll, decide is it continuation or end
+                self._session.send(" ")
+                index = self._session.expect(["CTRL", "#"])
+                
+                # parse current log output
+                current_log = self._session.before.decode("utf-8")
+                match = re.search(command_regex["first"], current_log)
+                
+                # find the earliest displayed time, for 3028
+                if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3200-28" or self._model == "DES-3526":
+                    first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
+                # for 1210, also check year's switching
+                elif self._model == "DGS-1210-28/ME":
+                    first_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
+                    if first_datetime.month > login_datetime.month:
+                        first_datetime = first_datetime.replace(year=first_datetime.year - 1)
+                
+                # update range time difference
+                range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
+                
+                # update log variable
+                log += current_log
+        
+        # if datetime on switch is couldn't be parsed, quit log and raise new exception
+        except ValueError:
+            self._session.send("q")
+            self._session.expect("#")
+            raise ValueError
         
         # if still log continuation, quit
         if index == 0:
@@ -330,7 +362,7 @@ class L2Manager(NetworkManager):
             return 0, 0
         
         # find last port flap, for 3028
-        if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24":
+        if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3200-28" or self._model == "DES-3526":
             last_flap_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
         # for 1210
         elif self._model == "DGS-1210-28/ME":
@@ -435,7 +467,10 @@ class L2Manager(NetworkManager):
         if self._model == "DES-3028":
             # for 3028 two indentical entries
             return re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
-        elif self._model == "DGS-1210-28/ME" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24":
+        elif self._model == "DES-3200-28":
+            # for 3200-28 two identical entries constructed from parts
+            return [l + r for l, r in re.findall(command_regex["regex"], self._session.before.decode("utf-8"))]
+        elif self._model == "DGS-1210-28/ME" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3526":
             # for 1210 two different entries for different protocols, one separated in parts
             match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
             return [match.group(1) + match.group(2), match.group(3)] if match else []
@@ -611,6 +646,7 @@ class MainHandler:
         self.__lower_speed = None
         self.__open_cable_pairs = []
         self.__cable_diag_status = None
+        self.__invalid_log_time = False
         self.__port_flapping = False
         self.__no_mac = False
         self.__many_macs = 0   # count mac addresses if there's more than 1
@@ -838,6 +874,10 @@ class MainHandler:
     
     ##### L2 AND L3 EQUIPMENT DIAGNOSTICS PART #####
     
+    # check if port in user's card belongs to switch's portlist
+    def __check_port_in_switch_portlist(self):
+        return self.__switch_manager.check_port_in_portlist()
+    
     # check port and mark flags
     def __check_port(self):
         # check port, get its type, settings and status, linkdown_status is actual if port is enabled
@@ -867,7 +907,11 @@ class MainHandler:
     # check if port is flapping
     def __check_log(self):
         # get flapping count and last flap remoteness in time
-        count_flapping, last_flap_remoteness = self.__switch_manager.get_log_port_flapping()
+        try:
+            count_flapping, last_flap_remoteness = self.__switch_manager.get_log_port_flapping()
+        except ValueError:
+            self.__invalid_log_time = True
+            return
         
         # if flapping is too often, mark flag and try cable diag afterall
         if last_flap_remoteness < Const.last_flap_max_minute_remoteness.value and count_flapping >= Const.min_count_flapping.value:
@@ -956,6 +1000,11 @@ class MainHandler:
             self.__gateway_manager = L3Manager(self.__record_data["gateway"], self.__record_data["ip"])
             return
         
+        # on Lensoveta 23, define gateway address for direct public ip
+        if self.__record_data["street"] == Const.lensoveta_address_gateway.value["street"] and self.__record_data["house"] == Const.lensoveta_address_gateway.value["house"]:
+            self.__gateway_manager = L3Manager(Const.lensoveta_address_gateway.value["gateway"], self.__record_data["ip"])
+            return
+        
         # otherwise, find default gateway address on switch
         gateway = self.__switch_manager.get_default_gateway()
         
@@ -1036,6 +1085,10 @@ class MainHandler:
             # connect to switch only if switch and port are known
             self.__switch_manager = L2Manager(self.__record_data["switch"], self.__record_data["port"])
             
+            # exception if port is outside switch's portlist
+            if not self.__check_port_in_switch_portlist():
+                raise Exception("Unable to diagnose L2: user's port is outside switch's portlist")
+            
             # if subnet is correct, check vlan and acl
             if self.__ip_mask_gateway:
                 # check vlan
@@ -1112,10 +1165,10 @@ class MainHandler:
             print("Линк ок")
         
         # if port is or was flapping
-        if self.__port_flapping:
+        if self.__invalid_log_time:
+            print("Сбились настройки времени на L2")
+        elif self.__port_flapping:
             print("Линк скачет")
-        else:
-            print("Линк не скачет")
         
         # crc errors: count
         if self.__crc_errors:
@@ -1136,8 +1189,6 @@ class MainHandler:
             # port security if enabled, makes sense when linkup
             if self.__port_security:
                 print("Включён port_security")
-            else:
-                print("Нет port_security")
             
             # packets: rx and tx bytes and megabit
             print(f"RX: {self.__rx_bytes} bytes ({self.__rx_megabit} Mbit), TX: {self.__tx_bytes} bytes ({self.__tx_megabit} Mbit)")
