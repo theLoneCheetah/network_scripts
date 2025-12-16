@@ -326,6 +326,10 @@ class L2Manager(NetworkManager):
                 current_log = self._session.before.decode("utf-8")
                 match = re.search(command_regex["first"], current_log)
                 
+                # if no datetime found while new page scanning, it means new page is empty
+                if not match:
+                    break
+                
                 # find the earliest displayed time, for 3028
                 if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3200-28" or self._model == "DES-3526":
                     first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
