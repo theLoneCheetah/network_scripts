@@ -70,7 +70,7 @@ class Const(Enum):
     normal_speed = {False: "100M/Full", True: "1000M/Full"}
     vlan_statuses = ["Untagged", "Tagged", "Forbidden", "Dynamic", "RadiusAssigned"]
     vlan404 = 404
-    iptv_vlan_skipping = 778
+    vlan_skipping = [778, 779]
     max_minute_range_port_flapping = 10
     last_flap_max_minute_remoteness = 2
     min_count_flapping = 20
@@ -178,9 +178,12 @@ class NetworkManager(ABC):
     def __start_connection(self):
         print("Connecting to equipment...")
         # protected atribute, it will be inherited
-        self._session = pexpect.spawn(f"telnet {self.__ipaddress}", logfile=sys.stdout.buffer)
+        self._session = pexpect.spawn(f"telnet {self.__ipaddress}", logfile=sys.stdout.buffer, timeout=5)
         
-        self._session.expect("(U|u)ser(N|n)ame:")
+        try:
+            self._session.expect("(U|u)ser(N|n)ame:")
+        except pexpect.TIMEOUT:
+            print("timeout")
         self._session.sendline(self.__USERNAME)
         self._session.expect("(P|p)ass(W|w)ord:")
         self._session.sendline(self.__PASSWORD)
@@ -454,7 +457,7 @@ class L2Manager(NetworkManager):
         
         # parse entry, X means actual status
         for match in re.finditer(command_regex["regex"], self._session.before.decode("utf-8")):
-            if int(match[1]) != Const.iptv_vlan_skipping.value:   # skip old iptv vlan
+            if int(match[1]) not in Const.vlan_skipping.value:   # skip old iptv vlan
                 port_vlans[next(key for key, val in match.groupdict().items() if val == "X")].append(int(match[1]))
         
         # return completed dictionary
@@ -611,6 +614,7 @@ class MainHandler:
         self.__switch_port = False
         self.__ip_mask_gateway = False   # important only if __switch_port is True
         self.__direct_public_ip = False
+        self.__mask_length = 0
         
         # flags for errors in diagnostics of the database record
         self.__impossible_mask = False
@@ -706,20 +710,19 @@ class MainHandler:
             return -1
     
     # check mask and get its length
-    def __get_mask_length(self):
+    def __calculate_mask_length(self):
         # get binary notation
         bin_mask = f"{IPv4Address(self.__record_data['mask']):b}"
         # mask should contain 1s, then 0s
         match = re.search("^(1{16,})0{2,}$", bin_mask)
         
-        # if mask matches, return its length
+        # if mask matches, remember its length
         if match:
-            return len(match.group(1))
-        return 0
+            self.__mask_length = len(match.group(1))
     
     # check if ip address matches subnet
-    def __check_ip_in_subnet(self, mask_length):
-        subnet = IPv4Network(f"{self.__record_data['gateway']}/{mask_length}", strict=False)
+    def __check_ip_in_subnet(self):
+        subnet = IPv4Network(f"{self.__record_data['gateway']}/{self.__mask_length}", strict=False)
         return IPv4Address(self.__record_data["ip"]) in subnet
     
     # check if address is in local range, usually gateway, sometimes switch
@@ -788,15 +791,15 @@ class MainHandler:
             
             # check mask and subnet
             if self.__correctly_filled["mask"] == 1:
-                mask_length = self.__get_mask_length()
+                self.__calculate_mask_length()
                 # set a special flag if mask's address doesn't suit to regular mask
-                if not mask_length:
+                if not self.__mask_length:
                     self.__impossible_mask = True
                 
                 # if ip and gateway exist, it's possible to check subnet
                 elif self.__correctly_filled["ip"] == 1 and self.__correctly_filled["gateway"] == 1:
                     # make sure ip is in the subnet, or set a flag
-                    if not self.__check_ip_in_subnet(mask_length):
+                    if not self.__check_ip_in_subnet():
                         self.__ip_out_of_subnet = True
                     
                     # if ip is local and has indirect public_ip, check if it's correct
@@ -878,7 +881,7 @@ class MainHandler:
     
     ##### L2 AND L3 EQUIPMENT DIAGNOSTICS PART #####
     
-    # check if port in user's card belongs to switch's portlist
+    # check if port in user card belongs to switch's portlist
     def __check_port_in_switch_portlist(self):
         return self.__switch_manager.check_port_in_portlist()
     
@@ -1026,6 +1029,10 @@ class MainHandler:
             elif gateway == self.__record_data["ip"]:
                 return
     
+    # compare subnet from L3 ip interface with subnet from user card
+    def __check_ip_interface_subnet(self):
+        pass
+    
     # try to check arp on mac if there's only 1 mac
     def __get_ips_from_arpentry_mac(self):
         # if there's no mac or more than 1, can't find
@@ -1131,6 +1138,7 @@ class MainHandler:
             
             # create L3 manager and check arpentry
             self.__find_actual_gateway()
+            self.__
             self.__check_arpentry_by_ip()
         
         finally:

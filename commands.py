@@ -17,7 +17,7 @@ switches = {# L2
             "DGS-3620-28TC": {},
             "DGS-3620-28SC": {},
             "DGS-3627G": {},
-            "DGS-3630-28SC": {}}
+            "DGS-3630-28SC": {}}   # cisco-like
 
 def show_model(cli_type):
     match cli_type:
@@ -218,6 +218,15 @@ def show_log(model, user_port):
                     "findall": f"Port {user_port} link up"}
 
 ##### FOR L3 GATEWAY #####
+
+def show_ip_interface(model, vlan_vlanid):
+    match model:
+        case "DGS-3630-28SC":
+            return {"command": f"show ip interface vlan {vlan_vlanid[1]}",
+                    "regex": rf"IP address is \s+((\d{{1,3}}.){{3}}\d{{1,3}})/(\d+)"}
+        case _:
+            return {"command": f"show ipif {vlan_vlanid[0]}",
+                    "regex": rf"IPv4 Address\s+:\s+((\d{{1,3}}.){{3}}\d{{1,3}})/(\d+)"}
 
 def show_ip_route(model, user_ip):
     match model:
