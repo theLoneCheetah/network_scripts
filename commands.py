@@ -18,6 +18,7 @@ switches = {# L2
             "DGS-3620-28SC": {},
             "DGS-3627G": {},
             "DGS-3630-28SC": {}}   # cisco-like
+cisco_switch = "DGS-3630-28SC"
 
 def show_model(cli_type):
     match cli_type:
@@ -30,7 +31,7 @@ def show_model(cli_type):
 
 def clipaging(model):
     match model:
-        case "DGS-3630-28SC":
+        case x if x == cisco_switch:
             return {"disable": "terminal length 0",
                     "enable": "terminal length 24"}
         case _:
@@ -156,7 +157,7 @@ def show_default_gateway(model, user_port):
     match model:
         case "DES-3028" | "DGS-1210-28/ME" | "DGS-3120-24TC" | "DGS-3000-24TC" | "DGS-3200-24" | "DES-3200-28" | "DES-3526":
             return {"command": "show switch",
-                    "regex": r"Default Gateway\s+:\s+((\d{1,3}.){3}\d{1,3}).*#"}
+                    "regex": r"Default Gateway\s+:\s+((\d{1,3}\.){3}\d{1,3}).*#"}
 
 def show_access_profile(model, user_port):
     match model:
@@ -219,27 +220,32 @@ def show_log(model, user_port):
 
 ##### FOR L3 GATEWAY #####
 
-def show_ip_interface(model, vlan_vlanid):
+def show_ip_interface(model, vlan):
     match model:
-        case "DGS-3630-28SC":
-            return {"command": f"show ip interface vlan {vlan_vlanid[1]}",
-                    "regex": rf"IP address is \s+((\d{{1,3}}.){{3}}\d{{1,3}})/(\d+)"}
+        case x if x == cisco_switch:
+            return {"command": f"show ip interface vlan {vlan}",
+                    "regex": rf"IP address is ((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
+        case "DGS-3620-28SC":
+            return {"command": f"show ipif {vlan}",
+                    "showall": "show ipif",
+                    "regex": rf"VLAN Name\s+:\s+{vlan}\s+Interface Admin State\s+:\s+Enabled\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
         case _:
-            return {"command": f"show ipif {vlan_vlanid[0]}",
-                    "regex": rf"IPv4 Address\s+:\s+((\d{{1,3}}.){{3}}\d{{1,3}})/(\d+)"}
+            return {"command": f"show ipif {vlan}",
+                    "showall": "show ipif",
+                    "regex": rf"VLAN Name\s+:\s+{vlan}\s+Interface Admin State\s+:\s+Enabled\s+Link Status\s+:\s+LinkUp\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
 
 def show_ip_route(model, user_ip):
     match model:
-        case "DGS-3630-28SC":
+        case x if x == cisco_switch:
             return {"command": "show ip route static",
-                    "regex": rf"{user_ip}/32\s+via\s+((\d{{1,3}}.){{3}}\d{{1,3}})(,\s+vlan(\d+))?"}
+                    "regex": rf"{user_ip}/32\s+via\s+((\d{{1,3}}\.){{3}}\d{{1,3}})(,\s+vlan(\d+))?"}
         case _:
             return {"command": f"show iproute {user_ip} static",
-                    "regex": rf"{user_ip}/32\s+((\d{{1,3}}.){{3}}\d{{1,3}})"}
+                    "regex": rf"{user_ip}/32\s+((\d{{1,3}}\.){{3}}\d{{1,3}})"}
 
 def show_arp_ip(model, user_ip):
     match model:
-        case "DGS-3630-28SC":
+        case x if x == cisco_switch:
             return {"command": f"show arp {user_ip}",
                     "regex": rf"{user_ip}\s+(?P<mac>([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})\s+vlan(\d+)"}
         case _:
@@ -248,16 +254,16 @@ def show_arp_ip(model, user_ip):
 
 def show_arp_mac(model, user_mac):
     match model:
-        case "DGS-3630-28SC":
+        case x if x == cisco_switch:
             return {"command": f"show arp {user_mac}",
-                    "regex": rf"(?P<ip>(\d{{1,3}}.){{3}}\d{{1,3}})\s+{user_mac}\s+vlan(\d+)"}
+                    "regex": rf"(?P<ip>(\d{{1,3}}\.){{3}}\d{{1,3}})\s+{user_mac}\s+vlan(\d+)"}
         case _:
             return {"command": f"show arpentry mac_address {user_mac}",
-                    "regex": rf"(\S+)\s+(?P<ip>(\d{{1,3}}.){{3}}\d{{1,3}})\s+{user_mac}"}
+                    "regex": rf"(\S+)\s+(?P<ip>(\d{{1,3}}\.){{3}}\d{{1,3}})\s+{user_mac}"}
 
 def show_fdb_L3(model, user_mac):
     match model:
-        case "DGS-3630-28SC":
+        case x if x == cisco_switch:
             return {"command": f"show mac-address-table address {user_mac}",
                     "regex": rf"(\d+)\s+({user_mac})"}
         case _:

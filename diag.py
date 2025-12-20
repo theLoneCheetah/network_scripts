@@ -507,7 +507,7 @@ class L3Manager(NetworkManager):
         command_regex = commands.show_ip_route(self._model, self.__user_ip)
         
         # for cisco-like cli, dynamically try to find ip route in overall output
-        if self._model == "DGS-3630-28SC":
+        if self._model == commands.cisco_switch:
             # clipaging is necessary to check limited ip route output
             self._session.sendline(self._turn_clipaging["enable"])
             self._session.expect("#")
@@ -538,7 +538,7 @@ class L3Manager(NetworkManager):
             self._session.expect("#")
         
         # for d-link cli, show and parse exact ip route record
-        else:   # if self._model == "DGS-3620-28SC":
+        else:
             # command
             self._session.sendline(command_regex["command"])
             self._session.expect("#")
@@ -548,6 +548,17 @@ class L3Manager(NetworkManager):
         
         # return next hop ip for this ip route
         return match.group(1) if match else None
+    
+    # check ip interface's subnet by vlan matches user's gateway and mask length
+    def check_ip_interface_subnet(self, vlan_id, vlan, gateway, mask_length):
+        # command
+        command_regex = commands.show_ip_interface(self._model, )
+        self._session.sendline(command_regex["command"])
+        self._session.expect("#")
+        #self._session.before.decode("utf-8")
+        
+        # for cisco-like cli, dynamically try to find ip route in overall output
+        if self._model == commands.cisco_switch:
     
     # check arp by ip and return mac address
     def check_arpentry_ip_return_mac(self):
@@ -661,6 +672,8 @@ class MainHandler:
         
         # flags for errors in diagnostics of L3
         self.__ip_route_not_found = False
+        self.__ip_interface_not_found = False
+        self.__ip_interface_wrong_subnet = False
         self.__no_arp = False
         self.__arp_on_unknown_mac = ""   # here wiil be unknown mac if found
         self.__ip_incorrect_arp_on_mac = []    # here will be unknown ip addresses if found
@@ -1030,8 +1043,20 @@ class MainHandler:
                 return
     
     # compare subnet from L3 ip interface with subnet from user card
-    def __check_ip_interface_subnet(self):
-        pass
+    def __check_vlan_subnet(self):
+        # can't diagnose if don't have exact untagged vlan
+        if not self.__untagged_vlan_id:
+            return
+        
+        # L3 manager checks ipif by vlan and compares with user's subnet
+        res = self.__gateway_manager.check_ip_interface_subnet(self.__untagged_vlan_id, self.__switch_vlans[self.__untagged_vlan_id], self.__record_data["gateway"], self.__mask_length)
+        
+        # rarely when ipif doesn't exist
+        if res == 0:
+            self.__ip_interface_not_found = True
+        # if ipif's by vlan subnet differs from user's subnet
+        elif res == -1:
+            self.__ip_interface_wrong_subnet = True
     
     # try to check arp on mac if there's only 1 mac
     def __get_ips_from_arpentry_mac(self):
@@ -1138,7 +1163,7 @@ class MainHandler:
             
             # create L3 manager and check arpentry
             self.__find_actual_gateway()
-            self.__
+            #self.__check_vlan_subnet()
             self.__check_arpentry_by_ip()
         
         finally:
