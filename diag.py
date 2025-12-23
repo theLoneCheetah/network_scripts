@@ -12,6 +12,7 @@ from ipaddress import IPv4Address, IPv4Network, AddressValueError
 from collections import defaultdict
 from datetime import datetime
 import commands   # user's lib
+import time
 
 
 ##### PROGRAM CONSTANTS #####
@@ -467,8 +468,10 @@ class L2Manager(NetworkManager):
     def get_port_acl(self):
         # command
         command_regex = commands.show_access_profile(self._model, self.__user_port)
+        #start = time.perf_counter()
         self._session.sendline(command_regex["command"])
         self._session.expect("#")
+        #print(time.perf_counter() - start)
         
         # return found entries
         if self._model == "DES-3028":
@@ -550,15 +553,47 @@ class L3Manager(NetworkManager):
         return match.group(1) if match else None
     
     # check ip interface's subnet by vlan matches user's gateway and mask length
-    def check_ip_interface_subnet(self, vlan_id, vlan, gateway, mask_length):
+    def check_ip_interface_subnet(self, vlanid_vlan, gateway, mask_length):
+        # inner function to check if any of found subnets matches defined subnet
+        def compare_subnet(gateways_masks):
+            return any(g == gateway and int(m) == mask_length for g, m in gateways_masks)
+        
+        # temporally turn on clipaging because d-link cli may freeze othewise
+        self._session.sendline(self._turn_clipaging["enable"])
+        self._session.expect("#")
+        
         # command
-        command_regex = commands.show_ip_interface(self._model, )
+        command_regex = commands.show_ip_interface(self._model, vlanid_vlan)
         self._session.sendline(command_regex["command"])
         self._session.expect("#")
-        #self._session.before.decode("utf-8")
         
-        # for cisco-like cli, dynamically try to find ip route in overall output
+        # find one or several subnets
+        match = re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
+        
+        # turn off clipaging back
+        self._session.sendline(self._turn_clipaging["disable"])
+        self._session.expect("#")
+        
+        # for cisco-like cli, return -1 if ipif not found or result of comparing subnets
         if self._model == commands.cisco_switch:
+            if not match:
+                return -1
+            return compare_subnet(match)
+        
+        # for d-link cli, if ipif not found or subnet is wrong
+        elif not match or not compare_subnet(match):
+            # try to check all ipifs
+            self._session.sendline(command_regex["showall"])
+            self._session.expect("#", timeout=15)
+            match = re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
+            
+            # return -1 if ipif still not found or result of comparing subnets
+            if not match:
+                return -1
+            return compare_subnet(match)
+        
+        # ok for d-link otherwise
+        return 1
     
     # check arp by ip and return mac address
     def check_arpentry_ip_return_mac(self):
@@ -1049,13 +1084,13 @@ class MainHandler:
             return
         
         # L3 manager checks ipif by vlan and compares with user's subnet
-        res = self.__gateway_manager.check_ip_interface_subnet(self.__untagged_vlan_id, self.__switch_vlans[self.__untagged_vlan_id], self.__record_data["gateway"], self.__mask_length)
+        res = self.__gateway_manager.check_ip_interface_subnet((self.__untagged_vlan_id, self.__switch_vlans[self.__untagged_vlan_id]), self.__record_data["gateway"], self.__mask_length)
         
         # rarely when ipif doesn't exist
-        if res == 0:
+        if res == -1:
             self.__ip_interface_not_found = True
         # if ipif's by vlan subnet differs from user's subnet
-        elif res == -1:
+        elif not res:
             self.__ip_interface_wrong_subnet = True
     
     # try to check arp on mac if there's only 1 mac
@@ -1163,7 +1198,7 @@ class MainHandler:
             
             # create L3 manager and check arpentry
             self.__find_actual_gateway()
-            #self.__check_vlan_subnet()
+            self.__check_vlan_subnet()
             self.__check_arpentry_by_ip()
         
         finally:
@@ -1284,6 +1319,12 @@ class MainHandler:
                 print("Мак не виден на L3")
             else:
                 print("Мак виден на L3")
+        
+        # ip interface on L3: if not found or subnet for vlan is wrong
+        if self.__ip_interface_not_found:
+            print("Не найден интерфейс для влана пользователя")
+        elif self.__ip_interface_wrong_subnet:
+            print("Подсеть интерфейса для влана пользователя не соответствует подсети из карточки пользователя")
     
     # main function
     def check_all(self):
