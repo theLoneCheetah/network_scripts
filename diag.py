@@ -349,10 +349,17 @@ class L2Manager(NetworkManager):
                 # update log variable
                 log += current_log
         
-        # if datetime on switch is couldn't be parsed, quit log and raise new exception
+        # if datetime on switch is couldn't be parsed
         except ValueError:
+            # quit log
             self._session.send("q")
             self._session.expect("#")
+            
+            # disable clipaging back
+            self._session.sendline(self._turn_clipaging["disable"])
+            self._session.expect("#")
+            
+            # raise new exception
             raise ValueError
         
         # if still log continuation, quit
@@ -434,7 +441,7 @@ class L2Manager(NetworkManager):
             self._session.expect("#")
         
         # return rx and tx bytes as integers, period in seconds also (default 1 sec)
-        return map(lambda x: int(x.decode("utf-8")) if x else 1, match.group(1, 2, 3))
+        return map(int, match.group(2, 3))
 
     # get all vlans on switch
     def get_switch_vlans(self):
@@ -995,17 +1002,17 @@ class MainHandler:
         self.__crc_errors = self.__switch_manager.get_crc_errors_port()
     
     # calculate megabit from bytes, bytes number may be in the period of 1 or 5 seconds
-    def __byte_to_megabit(self, bytes_count, seconds):
-        return round(bytes_count * 8 / 1024 / 1024 / seconds)
+    def __byte_to_megabit(self, bytes_count):
+        return round(bytes_count * 8 / 1024 / 1024)
     
     # check packet bytes and calculate megabit
     def __check_packets(self):
         # get rx and tx bytes
-        seconds, self.__rx_bytes, self.__tx_bytes = self.__switch_manager.get_packets_port()
+        self.__rx_bytes, self.__tx_bytes = self.__switch_manager.get_packets_port()
         
         # calculate to megabit
-        self.__rx_megabit = self.__byte_to_megabit(self.__rx_bytes, seconds)
-        self.__tx_megabit = self.__byte_to_megabit(self.__tx_bytes, seconds)
+        self.__rx_megabit = self.__byte_to_megabit(self.__rx_bytes)
+        self.__tx_megabit = self.__byte_to_megabit(self.__tx_bytes)
     
     # check vlans on switch and on port10.146.0.252
 

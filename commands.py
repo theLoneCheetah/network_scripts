@@ -122,10 +122,7 @@ def show_crc_errors(model, user_port):
 
 def show_packet(model, user_port):
     match model:
-        case "DES-3028" | "DGS-1210-28/ME" | "DGS-3000-24TC" | "DES-3526":
-            return {"command": f"show packet ports {user_port}",
-                    "regex": r"Total/(\d)?sec.*RX Bytes\s+\d+\s+(\d+).*TX Bytes\s+\d+\s+(\d+).*#"}
-        case "DGS-3120-24TC":
+        case "DES-3028" | "DGS-1210-28/ME" | "DGS-3000-24TC" | "DES-3526" | "DGS-3120-24TC":
             return {"command": f"show packet ports {user_port}",
                     "regex": r"Total/(\d)?sec.*RX Bytes\s+\d+\s+(\d+).*TX Bytes\s+\d+\s+(\d+).*#"}
         case "DGS-3200-24" | "DES-3200-28":
