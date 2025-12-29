@@ -475,10 +475,8 @@ class L2Manager(NetworkManager):
     def get_port_acl(self):
         # command
         command_regex = commands.show_access_profile(self._model, self.__user_port)
-        #start = time.perf_counter()
         self._session.sendline(command_regex["command"])
-        self._session.expect("#")
-        #print(time.perf_counter() - start)
+        self._session.expect("#", timeout=15)
         
         # return found entries
         if self._model == "DES-3028":
