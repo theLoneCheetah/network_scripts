@@ -812,7 +812,7 @@ class MainHandler:
             dict_data = self.__db_manager.get_record(self.__usernum)
             self.__record_data = {Const.key_field.value[key]: value for key, value in dict_data.items() if key != Const.usernum.value}
             
-            # check payment to choose county/city and speed
+            # check payment to choose country/city and speed
             self.__check_payment()
             
             ########## TO BE WRITTEN...
