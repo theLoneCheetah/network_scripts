@@ -513,6 +513,8 @@ class L3Manager(NetworkManager):
     def check_ip_route(self):
         # get regex
         command_regex = commands.show_ip_route(self._model, self.__user_ip)
+        # by default trying to find strict ip route by ip
+        subnet_route = False
         
         # for cisco-like cli, dynamically try to find ip route in overall output
         if self._model == commands.cisco_switch:
@@ -553,9 +555,14 @@ class L3Manager(NetworkManager):
             
             # parsing
             match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
+            
+            # if strict ip route not found, try to find subnet route
+            if not match:
+                subnet_route = True
+                match = re.search(command_regex["subnet_regex"], self._session.before.decode("utf-8"))
         
-        # return next hop ip for this ip route
-        return match.group(1) if match else None
+        # return flag to indicate trying to find subnet route and next hop
+        return subnet_route, match
     
     # check ip interface's subnet by vlan matches user's gateway and mask length
     def check_ip_interface_subnet(self, vlanid_vlan, gateway, mask_length):
@@ -1053,6 +1060,10 @@ class MainHandler:
         elif any([self.__get_ip_from_acl(i) != self.__record_data["ip"] for i in hex_entries]):
             self.__wrong_acl = True
     
+    # check if ip is in the local switches subnet with 24-bit mask
+    def __ip_in_L3_subnet(self, ip, L3_ip):
+        return IPv4Address(ip) in IPv4Network(f"{L3_ip}/24", strict=False)
+
     # check for direct public ip and find its gateway where arp should be
     def __find_actual_gateway(self):
         # init L3 manager by user record's gateway if ip is local
@@ -1072,15 +1083,27 @@ class MainHandler:
         while True:
             # create or update L3 manager and find ip route for direct public ip
             self.__gateway_manager = L3Manager(gateway, self.__record_data["ip"])
-            gateway = self.__gateway_manager.check_ip_route()
-            
+            subnet_route, match = self.__gateway_manager.check_ip_route()
+
             # if nothing found, mark flag and keep current L3 manager
-            if not gateway:
+            if not match:
                 self.__ip_route_not_found = True
                 return
-            # break if self-route found or continue with new L3 manager if new next hop found
-            elif gateway == self.__record_data["ip"]:
+            
+            # if found strict user's ip route
+            elif not subnet_route:
+                # break if self-route found or continue if new next hop found
+                if match.group("next_hop") == self.__record_data["ip"]:
+                    return
+            
+            # subnet route as "178.252.115.0/24 172.16.60.248" is correct because mask >= 24 and next hop ip is in L3 24-bit subnet
+            # mark flag and keep current L3 manager if incorrect or continue if new next hop found
+            elif int(match.group("mask")) < 24 or not self.__ip_in_L3_subnet(match.group("next_hop"), gateway):
+                self.__ip_route_not_found = True
                 return
+            
+            # continue with new L3 manager if new next hop found
+            gateway = match.group("next_hop")
     
     # compare subnet from L3 ip interface with subnet from user card
     def __check_vlan_subnet(self):

@@ -238,7 +238,8 @@ def show_ip_route(model, user_ip):
                     "regex": rf"{user_ip}/32\s+via\s+((\d{{1,3}}\.){{3}}\d{{1,3}})(,\s+vlan(\d+))?"}
         case _:
             return {"command": f"show iproute {user_ip} static",
-                    "regex": rf"{user_ip}/32\s+((\d{{1,3}}\.){{3}}\d{{1,3}})"}
+                    "regex": rf"{user_ip}/32\s+(?P<next_hop>(\d{{1,3}}\.){{3}}\d{{1,3}})",
+                    "subnet_regex": r"((\d{1,3}\.){3}\d{1,3})/(?P<mask>\d{2})\s+(?P<next_hop>(\d{1,3}\.){3}\d{1,3})"}
 
 def show_arp_ip(model, user_ip):
     match model:
