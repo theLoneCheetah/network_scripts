@@ -217,17 +217,17 @@ def show_log(model, user_port):
 
 ##### FOR L3 GATEWAY #####
 
-def show_ip_interface(model, vlanid_vlan):
+def show_ip_interface(model, vlanid_vlan, public_name):
     match model:
         case x if x == cisco_switch:
             return {"command": f"show ip interface vlan {vlanid_vlan[0]}",
                     "regex": rf"IP address is ((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
         case "DGS-3120-24TC":
-            return {"command": f"show ipif {vlanid_vlan[1]}",
+            return {"command": f"show ipif {public_name if public_name else vlanid_vlan[1]}",
                     "showall": "show ipif",
                     "regex": rf"VLAN Name\s+:\s+{vlanid_vlan[1]}\s+Interface Admin State\s+:\s+Enabled\s+Link Status\s+:\s+LinkUp\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
         case _:
-            return {"command": f"show ipif {vlanid_vlan[1]}",
+            return {"command": f"show ipif {public_name if public_name else vlanid_vlan[1]}",
                     "showall": "show ipif",
                     "regex": rf"VLAN Name\s+:\s+{vlanid_vlan[1]}\s+Interface Admin State\s+:\s+Enabled\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
 
@@ -235,7 +235,7 @@ def show_ip_route(model, user_ip):
     match model:
         case x if x == cisco_switch:
             return {"command": "show ip route static",
-                    "regex": rf"{user_ip}/32\s+via\s+((\d{{1,3}}\.){{3}}\d{{1,3}})(,\s+vlan(\d+))?"}
+                    "regex": rf"{user_ip}/32\s+via\s+(?P<next_hop>(\d{{1,3}}\.){{3}}\d{{1,3}})(,\s+vlan(\d+))?"}
         case _:
             return {"command": f"show iproute {user_ip} static",
                     "regex": rf"{user_ip}/32\s+(?P<next_hop>(\d{{1,3}}\.){{3}}\d{{1,3}})",

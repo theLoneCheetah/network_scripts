@@ -64,8 +64,12 @@ class Const(Enum):
     last_local_ip = IPv4Address("10.146.255.255")
     switch_other_local_subnet = IPv4Network("172.16.60.0/24")
     
+    # range of local masks
+    local_masks = range(23, 28)
+
     # set of network public subnets
-    public_subnets = {IPv4Network(subnet, strict=False) for subnet in ["178.252.127.253/18", "146.66.191.253/19", "146.66.207.253/20"]}
+    public_gateway_mask = {"178.252.127.253": 18, "146.66.191.253": 19, "146.66.207.253": 20}
+    public_subnets = {IPv4Network(subnet, strict=False) for subnet in map(lambda x, pg=public_gateway_mask: f"{x}/{pg[x]}", public_gateway_mask)}
     
     # variables and expressions while diagnosting
     normal_speed = {False: "100M/Full", True: "1000M/Full"}
@@ -565,47 +569,23 @@ class L3Manager(NetworkManager):
         return subnet_route, match
     
     # check ip interface's subnet by vlan matches user's gateway and mask length
-    def check_ip_interface_subnet(self, vlanid_vlan, gateway, mask_length):
+    def check_ip_interface_subnet(self, vlanid_vlan, gateway, mask_length, public_name):
         # inner function to check if any of found subnets matches defined subnet
         def compare_subnet(gateways_masks):
             return any(g == gateway and int(m) == mask_length for g, m in gateways_masks)
         
-        # temporally turn on clipaging because d-link cli may freeze othewise
-        self._session.sendline(self._turn_clipaging["enable"])
-        self._session.expect("#")
-        
-        # command
-        command_regex = commands.show_ip_interface(self._model, vlanid_vlan)
+        # command, public_name is used for ipif for direct public ip
+        command_regex = commands.show_ip_interface(self._model, vlanid_vlan, public_name)
         self._session.sendline(command_regex["command"])
         self._session.expect("#")
         
         # find one or several subnets
         match = re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
         
-        # turn off clipaging back
-        self._session.sendline(self._turn_clipaging["disable"])
-        self._session.expect("#")
-        
-        # for cisco-like cli, return -1 if ipif not found or result of comparing subnets
-        if self._model == commands.cisco_switch:
-            if not match:
-                return -1
-            return compare_subnet(match)
-        
-        # for d-link cli, if ipif not found or subnet is wrong
-        elif not match or not compare_subnet(match):
-            # try to check all ipifs
-            self._session.sendline(command_regex["showall"])
-            self._session.expect("#", timeout=15)
-            match = re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
-            
-            # return -1 if ipif still not found or result of comparing subnets
-            if not match:
-                return -1
-            return compare_subnet(match)
-        
-        # ok for d-link otherwise
-        return 1
+        # return -1 if ipif not found or result of comparing subnets
+        if not match:
+            return -1
+        return compare_subnet(match)
     
     # check arp by ip and return mac address
     def check_arpentry_ip_return_mac(self):
@@ -679,7 +659,7 @@ class MainHandler:
         self.__ip_out_of_subnet = False
         self.__incorrect_indirect_public_ip = False
         self.__different_ip_public_ip = False
-        self.__incorrect_gateway = False
+        self.__incorrect_subnet = False
         self.__incorrect_switch = False
         self.__double_port = []   # there will be usernums if found doubles
         self.__double_ip = []
@@ -785,16 +765,23 @@ class MainHandler:
         subnet = IPv4Network(f"{self.__record_data['gateway']}/{self.__mask_length}", strict=False)
         return IPv4Address(self.__record_data["ip"]) in subnet
     
-    # check if address is in local range, usually gateway, sometimes switch
+    # check if address/subnet is in local range, usually gateway, sometimes switch
     def __check_local_ip(self, address=None):
+        # check only ip if it's switch or check subnet
         if address is None:
+            # by default, check if mask length and gateway address are in local ranges
+            if self.__mask_length not in Const.local_masks.value:
+                return False
             address = self.__record_data["gateway"]
         return int(Const.first_local_ip.value) <= int(IPv4Address(address)) <= int(Const.last_local_ip.value)
     
-    # check if address is in public range, usually gateway, sometimes indirect public_ip
+    # check if address/subnet is in public range, usually gateway, sometimes indirect public ip
     def __check_public_ip(self, address=None):
+        # by default, check if mask and gateway define one of public subnets
         if address is None:
             address = self.__record_data["gateway"]
+            return address in Const.public_gateway_mask.value and self.__mask_length == Const.public_gateway_mask.value[address]
+        # for indirect public ip, check if it lies in public subnet
         return any(IPv4Address(address) in subnet for subnet in Const.public_subnets.value)
     
     # check switch ip, it can be in usual local range or in one special local subnet
@@ -876,10 +863,10 @@ class MainHandler:
                     
                     # if gateway doesn't match to known subnets
                     else:
-                        self.__incorrect_gateway = True
+                        self.__incorrect_subnet = True
                     
                     # if there was no errors, acl and L3 diagnostics is possible
-                    if not any([self.__ip_out_of_subnet, self.__incorrect_indirect_public_ip, self.__different_ip_public_ip, self.__incorrect_gateway]):
+                    if not any([self.__ip_out_of_subnet, self.__incorrect_indirect_public_ip, self.__different_ip_public_ip, self.__incorrect_subnet]):
                         self.__ip_mask_gateway = True
         
         except Exception as err:   # exception while checking record
@@ -926,8 +913,8 @@ class MainHandler:
         
         # subnet errors alternatively
         if self.__impossible_mask:
-            print("Невозможная маска")
-        elif self.__incorrect_gateway:
+            print("Неизвестная маска")
+        elif self.__incorrect_subnet:
             print("Неизвестная подсеть")
         elif self.__ip_out_of_subnet:
             print("Айпи вне подсети")
@@ -1111,10 +1098,11 @@ class MainHandler:
         if not self.__untagged_vlan_id:
             return
         
-        # L3 manager checks ipif by vlan and compares with user's subnet
-        res = self.__gateway_manager.check_ip_interface_subnet((self.__untagged_vlan_id, self.__switch_vlans[self.__untagged_vlan_id]), self.__record_data["gateway"], self.__mask_length)
+        # L3 manager checks ipif by vlan and compares with user's subnet, ipif name for direct public ip can be last 2 octets of gateway
+        res = self.__gateway_manager.check_ip_interface_subnet((self.__untagged_vlan_id, self.__switch_vlans[self.__untagged_vlan_id]), self.__record_data["gateway"],
+                                                                self.__mask_length, self.__record_data["gateway"][-7:] if self.__direct_public_ip else None)
         
-        # rarely when ipif doesn't exist
+        # rarely when ipif doesn't exist or has another name
         if res == -1:
             self.__ip_interface_not_found = True
         # if ipif's by vlan subnet differs from user's subnet
@@ -1198,6 +1186,9 @@ class MainHandler:
             
             # check port
             self.__check_port()
+                
+            # check crc errors in any case
+            self.__check_crc()
             
             # if link is down not because of disabled port, try cable diag
             if self.__linkdown_status:
@@ -1209,9 +1200,6 @@ class MainHandler:
                 
                 # check mac
                 self.__check_mac()
-                
-                # check crc errors
-                self.__check_crc()
                 
                 # check packets
                 self.__check_packets()
@@ -1228,7 +1216,11 @@ class MainHandler:
             self.__find_actual_gateway()
             self.__check_vlan_subnet()
             self.__check_arpentry_by_ip()
-        
+        except Exception as err:
+            if re.match("Unable to diagnose", str(err)):   # unable exception
+                print(err)
+            else:   # exception while working with L2 or L3
+                print("Exception while working with equipment:", err, sep="\n")
         finally:
             # always close connection and delete L2 and L3 managers
             if self.__switch_manager:
@@ -1352,7 +1344,7 @@ class MainHandler:
         if self.__ip_interface_not_found:
             print("Не найден интерфейс для влана пользователя")
         elif self.__ip_interface_wrong_subnet:
-            print("Подсеть интерфейса для влана пользователя не соответствует подсети из карточки пользователя")
+            print("Подсеть интерфейса для влана пользователя не соответствует подсети из карточки")
     
     # main function
     def check_all(self):
