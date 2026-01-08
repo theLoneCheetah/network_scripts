@@ -226,7 +226,7 @@ class L2Manager(NetworkManager):
             self._session.expect("#")
         
         # return rx and tx bytes as integers
-        return map(int, match.group(2, 3))
+        return list(map(int, match.group(2, 3)))
 
     # get all vlans on switch
     def get_switch_vlans(self):

@@ -1,6 +1,10 @@
 #!/usr/bin/python3
 import re
 import traceback
+import signal
+import sys
+import os
+import time
 from ipaddress import IPv4Address, IPv4Network, AddressValueError
 # user's modules
 from database_manager import DatabaseManager
@@ -18,11 +22,15 @@ class MainHandler:
         self.__usernum = usernum
         self.__db_manager = None
         self.__switch_manager = None
-        self.__gateway_manager = None
-        
         self.__record_data = {}   # user record from database
+        self.__switch_port = False
+    
+    # set variables for main user diagnosing
+    def __diagnostics_initializer(self):
+        # another main fields
+        self.__gateway_manager = None
         self.__correctly_filled = {}   # -1 if data from record is incorrect, 0 if empty, 1 if correct
-        
+
         # flags for country, speed and unknown payment
         self.__country = False
         self.__gigabit = False
@@ -30,7 +38,6 @@ class MainHandler:
         self.__unknown_payment = False
         
         # flags that shows how many fields are filled
-        self.__switch_port = False
         self.__ip_mask_gateway = False   # important only if __switch_port is True
         self.__direct_public_ip = False
         self.__mask_length = 0
@@ -195,7 +202,7 @@ class MainHandler:
         try:
             # connect and get record from database
             self.__db_manager = DatabaseManager()
-            dict_data = self.__db_manager.get_record(self.__usernum)
+            dict_data = self.__db_manager.get_main_record(self.__usernum)
             self.__record_data = {CONST.key_field[key]: value for key, value in dict_data.items() if key != CONST.usernum}
             
             # check payment to choose country/city and speed
@@ -816,6 +823,9 @@ class MainHandler:
     
     # main function
     def check_all(self):
+        # start init
+        self.__diagnostics_initializer()
+
         # check all functions
         self.__check_user_card()
         self.__check_L2_L3()
@@ -840,3 +850,94 @@ class MainHandler:
             print(f"{key}:{' '*(12-len(key))}{self.__record_data[key]}")
         
         print("-" * 20)
+    
+    ##### PACKET SCANNING #####
+
+    # handler for safe exiting, gets signal number and stack frame and exits successfully
+    def __handle_exit(self, sig, frame):
+        sys.exit(0)
+
+    # start init
+    def __packet_scan_initializer(self):
+        # handle signal with "kill" command and CTRL+C key for safe exiting
+        signal.signal(signal.SIGTERM, self.__handle_exit)
+        signal.signal(signal.SIGINT, self.__handle_exit)
+
+        # create pipe if not exists
+        if not os.path.exists(CONST.PIPE):
+            os.mkfifo(CONST.PIPE)
+
+        # variables
+        self.__rx_megabit = 0
+        self.__max_rx_megabit = 0
+        self.__tx_megabit = 0
+        self.__max_tx_megabit = 0
+
+    # working with database
+    def __get_switch_port(self):
+        try:
+            # connect and get user's switch and port from database
+            self.__db_manager = DatabaseManager()
+            dict_data = self.__db_manager.get_switch_port(self.__usernum)
+            self.__record_data = {CONST.key_field[key]: value for key, value in dict_data.items()}
+        
+        finally:   # always close connection and delete database manager
+            del self.__db_manager
+    
+    # check and write packet to named pipe
+    def __scan_packet(self):
+        # calculate megabit and max megabit
+        def calculate_current_and_max(rx_bytes, tx_bytes):
+            self.__rx_megabit = self.__byte_to_megabit(rx_bytes)
+            self.__tx_megabit = self.__byte_to_megabit(tx_bytes)
+            self.__max_rx_megabit = max(self.__max_rx_megabit, self.__rx_megabit)
+            self.__max_tx_megabit = max(self.__max_tx_megabit, self.__tx_megabit)
+
+        try:
+            # connect to switch
+            self.__switch_manager = L2Manager(self.__record_data["switch"], self.__record_data["port"])
+            
+            # open pipe with buffering by every line, not to collect lines in python script's buffer
+            with open(CONST.PIPE, "w", buffering=1) as pipe:
+                # run until interrupted
+                while True:
+                    # get bytes and calculate megabit with max
+                    calculate_current_and_max(*self.__switch_manager.get_packets_port())
+
+                    # try block needed because bash script always reads data from pipe and closes promtply
+                    try:
+                        # write rx, rx_max, tx, tx_max with spaces in one string into pipe
+                        pipe.write(f"{self.__rx_megabit} {self.__max_rx_megabit} {self.__tx_megabit} {self.__max_tx_megabit}\n")
+
+                        # forcely write data from buffer into pipe
+                        pipe.flush()
+                    
+                    # ignore broken pipe error when bash is not reading
+                    except BrokenPipeError:
+                        pass
+        
+        # catch error for correct exiting: eof ending, broken pipe by bash, exit from bash
+        except (EOFError, BrokenPipeError, SystemExit):
+            pass
+            
+        # always close connection and delete L2 and L3 managers
+        finally:
+            if self.__switch_manager:
+                del self.__switch_manager
+
+    def check_packet(self):
+        # start init
+        self.__packet_scan_initializer()
+
+        # get data from database for switch connection
+        try:
+            self.__get_switch_port()
+        except Exception as err:   # exception while checking record
+            print("Exception while working with the database record:", traceback.print_exc(), sep="\n")
+
+        # scan packet on switch and provide data for bash script by pipe
+        try:
+            self.__scan_packet()
+        # exceptions while working with L2, show traceback
+        except Exception as err:
+            print("Exception while working with equipment:", traceback.print_exc(), sep="\n")

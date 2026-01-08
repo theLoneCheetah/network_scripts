@@ -80,3 +80,6 @@ class CONST:
     
     # on Lensoveta 23 OSPF protocol is used, default gateway address doesn't have static ip route
     lensoveta_address_gateway = {"street": 33, "house": "23", "gateway": os.getenv("LENSOVETA_23_GATEWAY")}
+
+    # pipe for packet scanning path
+    PIPE = os.getenv("PIPE")

@@ -1,0 +1,6 @@
+# environment file
+.env
+
+# test files and scripts
+*.txt
+test*
