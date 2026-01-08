@@ -5,25 +5,23 @@ from enum import Enum
 ##### CLASS FOR ERRORS' CODES #####
 
 class ExceptionType(Enum):
-    BASE = "Unable to diagnose "
+    BASE = "Невозможно продиагностировать "
 
-    NO_SWITCH_PORT = "L2: don't have switch and port"
-    SWITCH_NOT_AVAILABLE = "L2: switch is not available"
-    SWITCH_FREEZES = "L2: switch freezes"
-    SWITCH_CANNOT_CONNECT = "L2: can't connect to switch"
+    NO_SWITCH_PORT = "L2: нет свитча и порта"
 
-    UNKNOWN_MODEL = "L2: unknown switch model with ip "
+    SWITCH_NOT_AVAILABLE = "L2: свитч недоступен"
+    SWITCH_FREEZES = "L2: свитч зависает"
+    SWITCH_CANNOT_CONNECT = "L2: не удаётся подключиться к свитчу, свитч пингуется"
 
-    PORT_OUTSIDE_OF_PORTLIST = "L2: user's port is outside switch's portlist"
+    UNKNOWN_MODEL = "L2: неизвестная модель свитча с IP "
 
-    NO_SUBNET = "ACL, VLAN and ARP: don't have correct subnet"
+    PORT_OUTSIDE_OF_PORTLIST = "L2: порт пользователя вне диапазона портов свитча"
+
+    NO_SUBNET = "ACL, VLAN и ARP: нет корректных настроек IP"
 
 ##### CLASS FOR USER'S EXCEPTION AND ERRORS' CODES #####
 
 class MyException(Exception):
-    not_connected_values = {err.value for err in (ExceptionType.NO_SWITCH_PORT, ExceptionType.SWITCH_NOT_AVAILABLE,
-                                                  ExceptionType.SWITCH_FREEZES, ExceptionType.SWITCH_CANNOT_CONNECT)}
-    
     # init by base init and message
     def __init__(self, message, arg=""):
         super().__init__()
@@ -31,14 +29,6 @@ class MyException(Exception):
         # save message, add ip argument if unknown model error
         self.__message = message.value
         self.__arg = arg
-
-    # True if switch not connected
-    def is_switch_not_connected_error(self):
-        return self.__message in self.not_connected_values
-    
-    # True is switch model unknown
-    def is_switch_unknown_model_error(self):
-        return self.__message == ExceptionType.UNKNOWN_MODEL.value
 
     # print with base and specific messages concatenated
     def __str__(self):

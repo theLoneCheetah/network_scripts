@@ -76,9 +76,7 @@ class MainHandler:
         self.__arp_ok = False
         
         # flags for errors in diagnostics of L2
-        self.__switch_not_connected = False
-        self.__switch_unknown_model = False
-        self.__port_outside_of_portlist = False
+        self.__switch_exception = None
         self.__no_vlan = False
         self.__user_vlan_instead_of_direct_public_vlan = False
         self.__direct_public_vlan_instead_of_user_vlan = False
@@ -621,7 +619,6 @@ class MainHandler:
             
             # exception and flag if port is outside switch's portlist
             if not self.__check_port_in_switch_portlist():
-                self.__port_outside_of_portlist = True
                 raise MyException(ExceptionType.PORT_OUTSIDE_OF_PORTLIST)
             
             # if subnet is correct, check vlan and acl
@@ -664,16 +661,13 @@ class MainHandler:
             self.__find_actual_gateway()
             self.__check_vlan_subnet()
             self.__check_arpentry_by_ip()
-        # user's raised exceptions
+        # user's exception include special text for output
         except MyException as err:
-            print(err)
-            # mark special flag
-            if err.is_switch_not_connected_error():
-                self.__switch_not_connected = True
-            elif err.is_switch_unknown_model_error():
-                self.__switch_unknown_model = True
+            # save exception's text if it's not subnet error, it's switch error
+            if self.__ip_mask_gateway:
+                self.__switch_exception = err
         # exceptions while working with L2 or L3, show traceback
-        except Exception as err:
+        except Exception:
             print("Exception while working with equipment:", traceback.print_exc(), sep="\n")
         # always close connection and delete L2 and L3 managers
         finally:
@@ -682,32 +676,20 @@ class MainHandler:
             if self.__gateway_manager:
                 del self.__gateway_manager
         
-        """# user's raised exceptions
+        """# user's exception include special text for output
         except MyException as err:
-            print(err)
-            # mark special flag
-            if err.is_switch_not_connected_error():
-                self.__switch_not_connected = True
-            elif err.is_switch_unknown_model_error():
-                self.__switch_unknown_model = True
+            # save exception's text if it's not subnet error, it's switch error
+            if self.__ip_mask_gateway:
+                self.__switch_exception = err
         # exceptions while working with L2 or L3, show traceback
-        except Exception as err:
+        except Exception:
             print("Exception while working with equipment:", traceback.print_exc(), sep="\n")"""
     
     # result of L2 and L3 diagnostics
     def __result_L2_L3(self):
         # terminate when any fatal error discovered
-        if not self.__switch_port:
-            print("Не хватает данных для диагностики")
-            return
-        elif self.__switch_not_connected:
-            print("Свитч недоступен")
-            return
-        elif self.__switch_unknown_model:
-            print("Невозможно продиагностировать, неизвестная модель свитча")
-            return
-        elif self.__port_outside_of_portlist:
-            print("Невозможно продиагностировать, порт вне диапазона портов свитча")
+        if self.__switch_exception:
+            print(self.__switch_exception)
             return
 
         # port: if it is fiber or has settings

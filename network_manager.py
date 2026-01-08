@@ -33,7 +33,7 @@ class NetworkManager(ABC):
     # check switch availability by 4 icmp packets and return packet loss
     def __check_ping(self):
         host_data = ping(self.__ipaddress, count=4, timeout=1, interval=0.25, privileged=False)
-        return int(host_data.packet_loss)
+        return host_data.packet_loss
 
     # try to figure out switch model name
     def __get_model(self, cli_type):
@@ -70,7 +70,7 @@ class NetworkManager(ABC):
         # try connecting to switch
         try:
             # protected atribute, it will be inherited
-            self._session = pexpect.spawn(f"telnet {self.__ipaddress}")#, logfile=sys.stdout.buffer, timeout=5)
+            self._session = pexpect.spawn(f"telnet {self.__ipaddress}", logfile=sys.stdout.buffer, timeout=5)
             self._session.expect("(U|u)ser(N|n)ame:", timeout=3)
         # if timeout or another connection error, get packet loss by pinging switch address
         except:
