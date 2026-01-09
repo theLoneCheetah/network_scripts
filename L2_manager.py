@@ -293,19 +293,62 @@ class L2Manager(NetworkManager):
 
     # get acl options on port from overall output
     def get_port_acl(self):
+        # clipaging is necessary because it's much faster on some models to scroll by space
+        self._session.sendline(self._turn_clipaging["enable"])
+        self._session.expect("#")
+
         # command
         command_regex = commands.show_access_profile(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
-        self._session.expect("#", timeout=15)
+        index = self._session.expect(["CTRL", "#"])
+
+        # save output and try to find end of permit block
+        acl = self._session.before.decode("utf-8")
+        match = re.search("Deny", acl)
         
+        # scroll until end reached or deny block started
+        while index == 0 and not match:
+            # command to scroll, decide is it continuation or end
+            self._session.send(" ")
+            index = self._session.expect(["CTRL", "#"])
+
+            # try to find end of permit block and concatenate output
+            match = re.search("Deny", self._session.before.decode("utf-8"))
+            acl += self._session.before.decode("utf-8")
+
+        # if still acl continuation, quit
+        if index == 0:
+            self._session.send("q")
+            self._session.expect("#")
+        
+        # get back to disabled clipaging
+        self._session.sendline(self._turn_clipaging["disable"])
+        self._session.expect("#")
+
+        # clean ansi sequences
+        acl = acl.replace("\x00", "")
+        ansi_escape = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+        acl = ansi_escape.sub('', acl)
+
+        # filter lines to get only useful ones
+        filtered_lines = [
+            line for line in acl.splitlines()   # splitlines accurately split with all space symbols
+            if line.strip()   # if line is not empty
+            and not re.search(r'\[[0-9;]*[mK]', line)   # if line is not some skipped ansi symbol 
+            and not re.search(r'Quit|Next Page|Next Entry|ALL', line)   # if it's not hint line
+        ]
+
+        # collect filtered lines in one big text
+        acl = "\n".join(filtered_lines).strip()
+
         # return found entries
         if self._model == "DES-3028":
             # for 3028 two indentical entries
-            return re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
+            return re.findall(command_regex["regex"], acl)
         elif self._model == "DES-3200-28":
             # for 3200-28 two identical entries constructed from parts
-            return [l + r for l, r in re.findall(command_regex["regex"], self._session.before.decode("utf-8"))]
+            return [l + r for l, r in re.findall(command_regex["regex"], acl)]
         elif self._model == "DGS-1210-28/ME" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3526":
             # for 1210 two different entries for different protocols, one separated in parts
-            match = re.search(command_regex["regex"], self._session.before.decode("utf-8"))
+            match = re.search(command_regex["regex"], acl)
             return [match.group(1) + match.group(2), match.group(3)] if match else []

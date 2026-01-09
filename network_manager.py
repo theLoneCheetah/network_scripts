@@ -70,7 +70,7 @@ class NetworkManager(ABC):
         # try connecting to switch
         try:
             # protected atribute, it will be inherited
-            self._session = pexpect.spawn(f"telnet {self.__ipaddress}", logfile=sys.stdout.buffer, timeout=5)
+            self._session = pexpect.spawn(f"telnet {self.__ipaddress}")#, logfile=sys.stdout.buffer, timeout=5)
             self._session.expect("(U|u)ser(N|n)ame:", timeout=3)
         # if timeout or another connection error, get packet loss by pinging switch address
         except:
