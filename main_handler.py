@@ -814,7 +814,7 @@ class MainHandler:
         print("-" * 20)
         
         # print usernum and other fields
-        print(f"{Const.USERNUM.name}:{' '*(12-len(Const.USERNUM.name))}{self.__usernum}")
+        print(f"{Const.USERNUM}:{' '*(12-len(Const.USERNUM))}{self.__usernum}")
         for key in self.__record_data:
             print(f"{key}:{' '*(12-len(key))}{self.__record_data[key]}")
         
