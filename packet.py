@@ -32,4 +32,4 @@ def main():
     handler.check_packet()
 
 if __name__ == "__main__":
-    main()
+    main2()
