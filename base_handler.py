@@ -30,7 +30,7 @@ class BaseHandler(ABC):
         print("-" * 20)
         
         # print usernum and other fields
-        print(f"{Const.USERNUM.name}:{' '*(12-len(Const.USERNUM.name))}{self._usernum}")
+        print(f"{Const.USERNUM}:{' '*(12-len(Const.USERNUM))}{self._usernum}")
         for key in self._record_data:
             print(f"{key}:{' '*(12-len(key))}{self._record_data[key]}")
         
