@@ -18,6 +18,7 @@ switches = {# L2
             # L2+
             "DGS-3120-24TC": {"base_switch": "DGS-3120-24TC", "ports": 24},
             # L3
+            "DGS-3120-24SC": {},
             "DGS-3620-28TC": {},
             "DGS-3620-28SC": {},
             "DGS-3627G": {},

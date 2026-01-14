@@ -4,43 +4,27 @@ from collections import defaultdict
 from datetime import datetime
 # user's modules
 from network_manager import NetworkManager
-from const import CONST
+from const import Const
 import commands
 
 
 ##### CLASS TO COMMUNICATE WITH L2 SWITCH #####
 
 class L2Manager(NetworkManager):
-    # L2 manager inits by user port and base constructor
+    # L2 manager inits by user's port and base constructor
     def __init__(self, ipaddress, user_port):
         super().__init__(ipaddress)
+
+        # remember number of ports for this switch and then save base model for further diagnosing
         self.__ports = commands.switches[self._model]["ports"]
         self._model = commands.switches[self._model]["base_switch"]
+
+        # user's port
         self.__user_port = user_port
     
+    # return True is user's port is inside switch's portlist
     def check_port_in_portlist(self):
         return self.__user_port <= self.__ports
-    
-    # show ports and catch groups
-    def __show_port(self):
-        # command
-        command_regex = commands.show_ports(self._model, self.__user_port)
-        self._session.sendline(command_regex["command"])
-        
-        # try expressions for simple and combo ports
-        index = self._session.expect(command_regex["regex"])
-        
-        # save match and quit dynamic page on some switches
-        match = self._session.match
-        if self._model == "DGS-3200-24" or self._model == "DES-3200-28":
-            self._session.send("q")
-            self._session.expect("#")
-        
-        # if it's combo port and active type is fiber
-        if index == 1 and (match.group(10) or match.group(1).decode("utf-8") == "Disabled"):
-            return (True, *match.group(6, 7, 9, 10))
-        # otherwise
-        return (False, *match.group(1, 2, 4, 5))
     
     # handler to check and return info about port
     def get_port_link(self):
@@ -55,6 +39,26 @@ class L2Manager(NetworkManager):
         
         # return all modified
         return (fiber, state, settings, linkdown, linkup)
+    
+    # show ports and catch groups
+    def __show_port(self):
+        # command
+        command_regex = commands.show_ports(self._model, self.__user_port)
+        self._session.sendline(command_regex["command"])
+        
+        # try expressions for simple and combo ports
+        index = self._session.expect(command_regex["regex"])
+        
+        # save match and quit dynamic page on some switches
+        match = self._session.match
+        if self._model in {"DGS-3200-24", "DES-3200-28"}:
+            self._quit_output()
+        
+        # if it's combo port and active type is fiber
+        if index == 1 and match.group(10):
+            return (True, *match.group(6, 7, 9, 10))
+        # otherwise
+        return (False, *match.group(1, 2, 4, 5))
     
     # cable diagnostics
     def cable_diag(self):
@@ -76,8 +80,7 @@ class L2Manager(NetworkManager):
     # check log if port is flapping
     def get_log_port_flapping(self):
         # clipaging is necessary to check limited log output
-        self._session.sendline(self._turn_clipaging["enable"])
-        self._session.expect("#")
+        self._turn_on_clipaging()
         
         # command, expect log's continuation or end
         command_regex = commands.show_log(self._model, self.__user_port)
@@ -90,23 +93,23 @@ class L2Manager(NetworkManager):
         
         # try to parse datetime while scrolling log
         try:
-            # find login and the earliest displayed time, for 3028, datetime consists of date and time
-            if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3200-28" or self._model == "DES-3526":
-                login_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
-                first_datetime = datetime.strptime(match.group(3) + " " + match.group(4), command_regex["format"])
-            # for 1210, datetime consists of month, day and day, year is current year
-            elif self._model == "DGS-1210-28/ME":
+            # find login and the earliest displayed time, for 1210, datetime consists of month, day and day, year is current year
+            if self._model == "DGS-1210-28/ME":
                 login_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
                 first_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(4, 5, 6)), command_regex["format"])
                 # when new year comes
                 if first_datetime.month > login_datetime.month:
                     first_datetime = first_datetime.replace(year=first_datetime.year - 1)
+            # for other, datetime consists of date and time
+            else:
+                login_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
+                first_datetime = datetime.strptime(match.group(3) + " " + match.group(4), command_regex["format"])
             
             # find the difference between login time and the earliest displayed time
             range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
             
             # scroll until end found or range max time difference reached
-            while index == 0 and range_minutes_difference < CONST.max_minute_range_port_flapping:
+            while index == 0 and range_minutes_difference < Const.MAX_MINUTE_RANGE_PORT_FLAPPING:
                 # command to scroll, decide is it continuation or end
                 self._session.send(" ")
                 index = self._session.expect(["CTRL", "#"])
@@ -119,14 +122,14 @@ class L2Manager(NetworkManager):
                 if not match:
                     break
                 
-                # find the earliest displayed time, for 3028
-                if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3200-28" or self._model == "DES-3526":
-                    first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
-                # for 1210, also check year's switching
-                elif self._model == "DGS-1210-28/ME":
+                # find the earliest displayed time, for 1210, also check year's switching
+                if self._model == "DGS-1210-28/ME":
                     first_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
                     if first_datetime.month > login_datetime.month:
                         first_datetime = first_datetime.replace(year=first_datetime.year - 1)
+                # for other
+                else:
+                    first_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
                 
                 # update range time difference
                 range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
@@ -137,36 +140,32 @@ class L2Manager(NetworkManager):
         # if datetime on switch is couldn't be parsed
         except ValueError:
             # quit log
-            self._session.send("q")
-            self._session.expect("#")
+            self._quit_output()
             
             # disable clipaging back
-            self._session.sendline(self._turn_clipaging["disable"])
-            self._session.expect("#")
+            self._turn_off_clipaging()
             
             # new exception
             raise ValueError
         
         # if still log continuation, quit
         if index == 0:
-            self._session.send("q")
-            self._session.expect("#")
+            self._quit_output()
         
         # get back to disabled clipaging
-        self._session.sendline(self._turn_clipaging["disable"])
-        self._session.expect("#")
+        self._turn_off_clipaging()
         
         # try to find last port flapping, return 0 if not found
         match = re.search(command_regex["regex"], log)
         if not match:
             return 0, 0
         
-        # find last port flap, for 3028
-        if self._model == "DES-3028" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3200-28" or self._model == "DES-3526":
-            last_flap_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
-        # for 1210
-        elif self._model == "DGS-1210-28/ME":
+        # find last port flap, for 1210
+        if self._model == "DGS-1210-28/ME":
             last_flap_datetime = datetime.strptime(str(datetime.now().year) + " " + " ".join(match.group(1, 2, 3)), command_regex["format"])
+        # for other
+        else:
+            last_flap_datetime = datetime.strptime(match.group(1) + " " + match.group(2), command_regex["format"])
         
         # find the difference between login time and last port flapping time
         last_flap_login_minutes_difference = int((login_datetime - last_flap_datetime).total_seconds() // 60)
@@ -176,7 +175,7 @@ class L2Manager(NetworkManager):
         return count_port_flapping, last_flap_login_minutes_difference
     
     # get mac addresses on port
-    def get_fdb_port(self):
+    def get_mac_addresses_port(self):
         # command
         command_regex = commands.show_fdb(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -205,9 +204,8 @@ class L2Manager(NetworkManager):
         
         # save match and quit dynamic page on some switches
         match = self._session.match
-        if self._model == "DGS-3200-24" or self._model == "DES-3200-28":
-            self._session.send("q")
-            self._session.expect("#")
+        if self._model in {"DGS-3200-24", "DES-3200-28"}:
+            self._quit_output()
         
         # return rx crc errors' count
         return int(match.group(1).decode("utf-8"))
@@ -221,12 +219,11 @@ class L2Manager(NetworkManager):
         
         # save match and quit dynamic page on some switches
         match = self._session.match
-        if self._model == "DGS-3200-24" or self._model == "DES-3200-28":
-            self._session.send("q")
-            self._session.expect("#")
+        if self._model in {"DGS-3200-24", "DES-3200-28"}:
+            self._quit_output()
         
         # return rx and tx bytes as integers
-        return list(map(int, match.group(2, 3)))
+        return map(int, match.group(2, 3))
 
     # get all vlans on switch
     def get_switch_vlans(self):
@@ -250,7 +247,7 @@ class L2Manager(NetworkManager):
         
         # parse entry, X means actual status
         for match in re.finditer(command_regex["regex"], self._session.before.decode("utf-8")):
-            if int(match[1]) not in CONST.vlan_skipping:   # skip old iptv vlan
+            if int(match[1]) not in Const.VLAN_SKIPPING:   # skip old iptv vlan
                 port_vlans[next(key for key, val in match.groupdict().items() if val == "X")].append(int(match[1]))
         
         # return completed dictionary
@@ -294,13 +291,13 @@ class L2Manager(NetworkManager):
     # get acl options on port from overall output
     def get_port_acl(self):
         # clipaging is necessary because it's much faster on some models to scroll by space
-        self._session.sendline(self._turn_clipaging["enable"])
-        self._session.expect("#")
+        self._turn_on_clipaging()
 
         # command
         command_regex = commands.show_access_profile(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
-        index = self._session.expect(["CTRL", "#"])
+        # for 1210, it's important to skip ## sequence and expect only one # symbol
+        index = self._session.expect(["CTRL", r'(?<!#)#(?!#)'])
 
         # save output and try to find end of permit block
         acl = self._session.before.decode("utf-8")
@@ -310,7 +307,8 @@ class L2Manager(NetworkManager):
         while index == 0 and not match:
             # command to scroll, decide is it continuation or end
             self._session.send(" ")
-            index = self._session.expect(["CTRL", "#"])
+            # to skip ## sequence and expect only one # symbol
+            index = self._session.expect(["CTRL", r'(?<!#)#(?!#)'])
 
             # try to find end of permit block and concatenate output
             match = re.search("Deny", self._session.before.decode("utf-8"))
@@ -318,12 +316,10 @@ class L2Manager(NetworkManager):
 
         # if still acl continuation, quit
         if index == 0:
-            self._session.send("q")
-            self._session.expect("#")
+            self._quit_output()
         
         # get back to disabled clipaging
-        self._session.sendline(self._turn_clipaging["disable"])
-        self._session.expect("#")
+        self._turn_off_clipaging()
 
         # clean ansi sequences
         acl = acl.replace("\x00", "")
@@ -348,7 +344,7 @@ class L2Manager(NetworkManager):
         elif self._model == "DES-3200-28":
             # for 3200-28 two identical entries constructed from parts
             return [l + r for l, r in re.findall(command_regex["regex"], acl)]
-        elif self._model == "DGS-1210-28/ME" or self._model == "DGS-3120-24TC" or self._model == "DGS-3000-24TC" or self._model == "DGS-3200-24" or self._model == "DES-3526":
-            # for 1210 two different entries for different protocols, one separated in parts
+        elif self._model in {"DGS-1210-28/ME", "DGS-3120-24TC", "DGS-3000-24TC", "DGS-3200-24", "DES-3526"}:
+            # for other two different entries for different protocols, one separated in parts
             match = re.search(command_regex["regex"], acl)
             return [match.group(1) + match.group(2), match.group(3)] if match else []

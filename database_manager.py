@@ -2,7 +2,7 @@
 import pymysql.cursors
 import os
 # user's modules
-from const import CONST
+from const import Const
 
 
 ##### MAIN QUERIES #####
@@ -27,15 +27,21 @@ class DatabaseManager:
         # start session
         self.__start_connection()
     
+    # delete, close connection
+    def __del__(self):
+        print("Closing connection...")
+        self.__connection.close()
+        print("Success")
+    
     # start
     def __start_connection(self):
         print("Connecting to database...")
         self.__connection = pymysql.connect(host=self.__SERVER,
-                                 user=self.__USER,
-                                 password=self.__PASSWORD,
-                                 db=self.__DATABASE,
-                                 charset=self.__CHARSET,
-                                 cursorclass=pymysql.cursors.DictCursor)
+                                            user=self.__USER,
+                                            password=self.__PASSWORD,
+                                            db=self.__DATABASE,
+                                            charset=self.__CHARSET,
+                                            cursorclass=pymysql.cursors.DictCursor)
         print("Success")
     
     # get main data about this user
@@ -48,26 +54,16 @@ class DatabaseManager:
     def get_usernum_by_switch_port(self, switch, port):
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_USERNUMS_BY_SWITCH_PORT, (switch, port))
-            return [row[CONST.usernum] for row in cursor.fetchall()]
+            return [row[Const.USERNUM] for row in cursor.fetchall()]
     
     # find users with this ip
     def get_usernum_by_ip(self, ip):
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_USERNUMS_BY_IP, (ip,))
-            return [row[CONST.usernum] for row in cursor.fetchall()]
+            return [row[Const.USERNUM] for row in cursor.fetchall()]
     
     # get switch and port for user
     def get_switch_port(self, usernum):
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_SWITCH_PORT, (usernum,))
             return cursor.fetchone()
-    
-    # end
-    def __close_connection(self):
-        print("Closing connection...")
-        self.__connection.close()
-        print("Success")
-    
-    # delete
-    def __del__(self):
-        self.__close_connection()

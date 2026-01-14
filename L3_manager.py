@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import re
+from ipaddress import IPv4Address, IPv4Network
 # user's modules
 from network_manager import NetworkManager
 import commands
@@ -17,14 +18,11 @@ class L3Manager(NetworkManager):
     def check_ip_route(self):
         # get regex
         command_regex = commands.show_ip_route(self._model, self.__user_ip)
-        # by default trying to find strict ip route by ip
-        subnet_route = False
         
         # for cisco-like cli, dynamically try to find ip route in overall output
         if self._model == commands.cisco_switch:
             # clipaging is necessary to check limited ip route output
-            self._session.sendline(self._turn_clipaging["enable"])
-            self._session.expect("#")
+            self._turn_on_clipaging()
             
             # command, expect ip route's continuation or end
             self._session.sendline(command_regex["command"])
@@ -44,12 +42,10 @@ class L3Manager(NetworkManager):
             
             # if still output continuation, quit
             if index == 0:
-                self._session.send("q")
-                self._session.expect("#")
+                self._quit_output()
             
             # get back to disabled clipaging
-            self._session.sendline(self._turn_clipaging["disable"])
-            self._session.expect("#")
+            self._turn_off_clipaging()
         
         # for d-link cli, show and parse exact ip route record
         else:
@@ -62,22 +58,23 @@ class L3Manager(NetworkManager):
             
             # if strict ip route not found, try to find subnet route
             if not match:
-                subnet_route = True
                 match = re.search(command_regex["subnet_regex"], self._session.before.decode("utf-8"))
+
+                # subnet route as "X.X.115.0/24 X.X.X.248" is correct because mask >= 24 and next hop ip is in L3 24-bit subnet, None otherwise
+                if int(match.group("mask")) < 24 or not self.__ip_in_L3_subnet(match.group("next_hop")):
+                    return None
         
-        # return flag to indicate trying to find subnet route and next hop
-        return subnet_route, match
+        return match.group("next_hop") if match else None
+    
+    # check if ip is in the local switches subnet with 24-bit mask
+    def __ip_in_L3_subnet(self, ip):
+        return IPv4Address(ip) in IPv4Network(f"{self._ipaddress}/24", strict=False)
     
     # check ip interface's subnet by vlan matches user's gateway and mask length
     def check_ip_interface_subnet(self, vlanid_vlan, gateway, mask_length, public_name):
-        # inner function to check if any of found subnets matches defined subnet
-        def compare_subnet(gateways_masks):
-            return any(g == gateway and int(m) == mask_length for g, m in gateways_masks)
-        
         # on d-link, turn on clipaging because it can bug for a second
         if self._model != commands.cisco_switch:
-            self._session.sendline(self._turn_clipaging["enable"])
-            self._session.expect("#")
+            self._turn_on_clipaging()
 
         # command, public_name is used for ipif for direct public ip
         command_regex = commands.show_ip_interface(self._model, vlanid_vlan, public_name)
@@ -89,13 +86,13 @@ class L3Manager(NetworkManager):
 
         # on d-link, get back to disabled clipaging
         if self._model != commands.cisco_switch:
-            self._session.sendline(self._turn_clipaging["disable"])
-            self._session.expect("#")
+            self._turn_off_clipaging()
         
-        # return -1 if ipif not found or result of comparing subnets
+        # return -1 if ipif not found
         if not match:
             return -1
-        return compare_subnet(match)
+        # or check if any of found subnets match defined subnet
+        return any(g == gateway and int(m) == mask_length for g, m in match)
     
     # check arp by ip and return mac address
     def check_arpentry_ip_return_mac(self):

@@ -10,7 +10,7 @@ from ipaddress import IPv4Address, IPv4Network, AddressValueError
 from database_manager import DatabaseManager
 from L2_manager import L2Manager
 from L3_manager import L3Manager
-from const import CONST
+from const import Const
 from my_exception import ExceptionType, MyException
 
 
@@ -23,11 +23,11 @@ class MainHandler:
         self.__db_manager = None
         self.__switch_manager = None
         self.__record_data = {}   # user record from database
-        self.__switch_port = False
     
     # set variables for main user diagnosing
     def __diagnostics_initializer(self):
         # another main fields
+        self.__switch_port = False
         self.__gateway_manager = None
         self.__correctly_filled = {}   # -1 if data from record is incorrect, 0 if empty, 1 if correct
 
@@ -109,19 +109,19 @@ class MainHandler:
     # check payment (vznos)
     def __check_payment(self):
         # if it's country, speed is not necessary
-        if self.__record_data["payment"] in CONST.country:
+        if self.__record_data["payment"] in Const.COUNTRY:
             self.__country = True
         # 100 Mbit if payment is known
-        elif self.__record_data["payment"] in CONST.fast_ethernet:
+        elif self.__record_data["payment"] in Const.FAST_ETHERNET:
             self.__gigabit = False
         # 1 Gbit if payment is known or more than limit
-        elif self.__record_data["payment"] in CONST.gigabit_ethernet:
+        elif self.__record_data["payment"] in Const.GIGABIT_ETHERNET:
             self.__gigabit = True
         # if it's new user or it has high payment for juridical, ask for speed
-        elif self.__record_data["payment"] == CONST.new_payment or self.__record_data["payment"] > CONST.max_known_payment:
+        elif self.__record_data["payment"] == Const.NEW_PAYMENT or self.__record_data["payment"] > Const.MAX_KNOWN_PAYMENT:
             self.__gigabit = input(f"Vznos is {self.__record_data["payment"]}. Gigabit? (y/n) ").lower() == "y"
         # user is inactive, didn't pay or disconnected
-        elif self.__record_data["payment"] in CONST.old_payment:
+        elif self.__record_data["payment"] in Const.OLD_PAYMENT:
             self.__inactive_payment = True
         # in other cases
         else:
@@ -159,31 +159,30 @@ class MainHandler:
     
     # check if ip address matches subnet
     def __check_ip_in_subnet(self):
-        subnet = IPv4Network(f"{self.__record_data['gateway']}/{self.__mask_length}", strict=False)
-        return IPv4Address(self.__record_data["ip"]) in subnet
+        return IPv4Address(self.__record_data["ip"]) in IPv4Network(f"{self.__record_data['gateway']}/{self.__mask_length}", strict=False)
     
     # check if address/subnet is in local range, usually gateway, sometimes switch
     def __check_local_ip(self, address=None):
         # check only ip if it's switch or check subnet
         if address is None:
             # by default, check if mask length and gateway address are in local ranges
-            if self.__mask_length not in CONST.local_masks:
+            if self.__mask_length not in Const.LOCAL_MASKS:
                 return False
             address = self.__record_data["gateway"]
-        return int(CONST.first_local_ip) <= int(IPv4Address(address)) <= int(CONST.last_local_ip)
+        return int(Const.FIRST_LOCAL_IP) <= int(IPv4Address(address)) <= int(Const.LAST_LOCAL_IP)
     
     # check if address/subnet is in public range, usually gateway, sometimes indirect public ip
     def __check_public_ip(self, address=None):
         # by default, check if mask and gateway define one of public subnets
         if address is None:
             address = self.__record_data["gateway"]
-            return address in CONST.public_gateway_mask and self.__mask_length == CONST.public_gateway_mask[address]
+            return address in Const.PUBLIC_GATEWAY_MASK and self.__mask_length == Const.PUBLIC_GATEWAY_MASK[address]
         # for indirect public ip, check if it lies in public subnet
-        return any(IPv4Address(address) in subnet for subnet in CONST.public_subnets)
+        return any(IPv4Address(address) in subnet for subnet in Const.PUBLIC_SUBNETS)
     
     # check switch ip, it can be in usual local range or in one special local subnet
     def __check_switch_ip(self):
-        return self.__check_local_ip(self.__record_data["switch"]) or IPv4Address(self.__record_data["switch"]) in CONST.switch_other_local_subnet
+        return self.__check_local_ip(self.__record_data["switch"]) or IPv4Address(self.__record_data["switch"]) in Const.SWITCH_OTHER_LOCAL_SUBNET
     
     # check users with the same switch and port, return list of doubles if found
     def __check_double_switch_port(self):
@@ -201,7 +200,7 @@ class MainHandler:
             # connect and get record from database
             self.__db_manager = DatabaseManager()
             dict_data = self.__db_manager.get_main_record(self.__usernum)
-            self.__record_data = {CONST.key_field[key]: value for key, value in dict_data.items() if key != CONST.usernum}
+            self.__record_data = {Const.KEY_FIELD[key]: value for key, value in dict_data.items() if key != Const.USERNUM}
             
             # check payment to choose country/city and speed
             self.__check_payment()
@@ -211,11 +210,11 @@ class MainHandler:
                 raise Exception("It's country! Help!")
             
             # check and make a note about numeric fields
-            for field, limit in CONST.number_fields_limits.items():
+            for field, limit in Const.NUMBER_FIELDS_LIMITS.items():
                 self.__correctly_filled[field] = self.__check_number_fields(field, limit)
             
             # check and make a note about ip fields
-            for field in CONST.ip_fields:
+            for field in Const.IP_FIELDS:
                 self.__correctly_filled[field] = self.__check_ip_fields(field)
             
             # check switch ip
@@ -287,12 +286,12 @@ class MainHandler:
         
         # print empty fields except public_ip
         if any(value == 0 for key, value in self.__correctly_filled.items() if key != "public_ip"):
-            print("Не заполнены поля:", ", ".join(name for key, name in CONST.key_output.items() if key != "public_ip" and self.__correctly_filled[key] == 0))
+            print("Не заполнены поля:", ", ".join(name for key, name in Const.KEY_OUTPUT.items() if key != "public_ip" and self.__correctly_filled[key] == 0))
             all_correct = False
         
         # print obviously incorrect fields
         if any(value == -1 for key, value in self.__correctly_filled.items()):
-            print("Неверно заполнены поля:", ", ".join(name for key, name in CONST.key_output.items() if self.__correctly_filled[key] == -1))
+            print("Неверно заполнены поля:", ", ".join(name for key, name in Const.KEY_OUTPUT.items() if self.__correctly_filled[key] == -1))
             all_correct = False
         
         # double port and ip
@@ -337,7 +336,7 @@ class MainHandler:
         # if there's link
         if not self.__port_disabled and not self.__linkdown_status:
             # check if speed is satisfying, cable diag needed if not
-            if not (speed == CONST.normal_speed[True] or not self.__gigabit and speed == CONST.normal_speed[False]):
+            if not (speed == Const.NORMAL_SPEED[True] or not self.__gigabit and speed == Const.NORMAL_SPEED[False]):
                 self.__need_to_cable_diag = True
                 self.__lower_speed = speed
             # otherwise it's ok
@@ -370,14 +369,14 @@ class MainHandler:
             return
         
         # if flapping is too often, mark flag and try cable diag afterall
-        if last_flap_remoteness < CONST.last_flap_max_minute_remoteness and count_flapping >= CONST.min_count_flapping:
+        if last_flap_remoteness < Const.LAST_FLAP_MAX_MINUTE_REMOTENESS and count_flapping >= Const.MIN_COUNT_FLAPPING:
             self.__port_flapping = True
             self.__need_to_cable_diag = True
     
     # check mac addresses and get as a set
     def __check_mac(self):
         # get set of all mac addresses
-        self.__mac_addresses = self.__switch_manager.get_fdb_port()
+        self.__mac_addresses = self.__switch_manager.get_mac_addresses_port()
         
         # error when there's no mac, cable diag needed
         if not self.__mac_addresses:
@@ -403,7 +402,7 @@ class MainHandler:
             self.__crc_ok = True
     
     # calculate megabit from bytes, bytes number may be in the period of 1 or 5 seconds
-    def __byte_to_megabit(self, bytes_count):
+    def _byte_to_megabit(bytes_count):
         return round(bytes_count * 8 / 1024 / 1024)
     
     # check packet bytes and calculate megabit
@@ -412,8 +411,8 @@ class MainHandler:
         self.__rx_bytes, self.__tx_bytes = self.__switch_manager.get_packets_port()
         
         # calculate to megabit
-        self.__rx_megabit = self.__byte_to_megabit(self.__rx_bytes)
-        self.__tx_megabit = self.__byte_to_megabit(self.__tx_bytes)
+        self.__rx_megabit = MainHandler._byte_to_megabit(self.__rx_bytes)
+        self.__tx_megabit = MainHandler._byte_to_megabit(self.__tx_bytes)
         
         # set flag that packets successfully checked
         self.__packets_ok = True
@@ -421,7 +420,7 @@ class MainHandler:
     # check dhcp relay settings for user's vlan
     def __check_dhcp_relay(self):
         def check_servers_dhcp_relay(dhcp_servers):
-            return dhcp_servers and dhcp_servers[0] == CONST.primary_dhcp_server and dhcp_servers[1] in CONST.secondary_dhcp_servers
+            return dhcp_servers and dhcp_servers[0] == Const.PRIMARY_DHCP_SERVER and dhcp_servers[1] in Const.SECONDARY_DHCP_SERVERS
         
         def check_vlan_id_dhcp_relay(untagged_vlan_id, vlan_ids_list):
             return any([i != "" and untagged_vlan_id in range(int(i.split("-")[0]), int(i.split("-")[-1]) + 1) for i in vlan_ids_list])
@@ -447,7 +446,7 @@ class MainHandler:
     def __check_vlan(self):
         # get switch vlans
         self.__switch_vlans = self.__switch_manager.get_switch_vlans()
-        self.__have_direct_public_vlan = CONST.direct_public_vlan in self.__switch_vlans
+        self.__have_direct_public_vlan = Const.DIRECT_PUBLIC_VLAN in self.__switch_vlans
         
         # get port vlans
         self.__port_vlans = self.__switch_manager.get_port_vlans()
@@ -457,14 +456,14 @@ class MainHandler:
             self.__no_vlan = True
         
         # check if there's only 1 untagged vlan, remember it
-        elif CONST.vlan_statuses[0] in self.__port_vlans and len(self.__port_vlans[CONST.vlan_statuses[0]]) == 1:
-            self.__untagged_vlan_id = self.__port_vlans[CONST.vlan_statuses[0]][0]
+        elif Const.VLAN_STATUSES[0] in self.__port_vlans and len(self.__port_vlans[Const.VLAN_STATUSES[0]]) == 1:
+            self.__untagged_vlan_id = self.__port_vlans[Const.VLAN_STATUSES[0]][0]
             
             # mark flag if port doesn't have direct_public_vlan when it's on switch
-            if self.__direct_public_ip and self.__have_direct_public_vlan and self.__untagged_vlan_id != CONST.direct_public_vlan:
+            if self.__direct_public_ip and self.__have_direct_public_vlan and self.__untagged_vlan_id != Const.DIRECT_PUBLIC_VLAN:
                 self.__user_vlan_instead_of_direct_public_vlan = True
             # mark flag if port doesn't have user vlan
-            elif not self.__direct_public_ip and self.__untagged_vlan_id == CONST.direct_public_vlan:
+            elif not self.__direct_public_ip and self.__untagged_vlan_id == Const.DIRECT_PUBLIC_VLAN:
                 self.__direct_public_vlan_instead_of_user_vlan = True
             # correct flag if port has only 1 vlan in untagged
             elif len(self.__port_vlans.keys()) == 1:
@@ -491,10 +490,6 @@ class MainHandler:
         # if everything is ok
         else:
             self.__acl_ok = True
-    
-    # check if ip is in the local switches subnet with 24-bit mask
-    def __ip_in_L3_subnet(self, ip, L3_ip):
-        return IPv4Address(ip) in IPv4Network(f"{L3_ip}/24", strict=False)
 
     # check for direct public ip and find its gateway where arp should be
     def __find_actual_gateway(self):
@@ -504,8 +499,8 @@ class MainHandler:
             return
         
         # on Lensoveta 23, define gateway address for direct public ip
-        if self.__record_data["street"] == CONST.lensoveta_address_gateway["street"] and self.__record_data["house"] == CONST.lensoveta_address_gateway["house"]:
-            self.__gateway_manager = L3Manager(CONST.lensoveta_address_gateway["gateway"], self.__record_data["ip"])
+        if self.__record_data["street"] == Const.LENSOVETA_ADDRESS_GATEWAY["street"] and self.__record_data["house"] == Const.LENSOVETA_ADDRESS_GATEWAY["house"]:
+            self.__gateway_manager = L3Manager(Const.LENSOVETA_ADDRESS_GATEWAY["gateway"], self.__record_data["ip"])
             return
         
         # otherwise, find default gateway address on switch
@@ -515,27 +510,19 @@ class MainHandler:
         while True:
             # create or update L3 manager and find ip route for direct public ip
             self.__gateway_manager = L3Manager(gateway, self.__record_data["ip"])
-            subnet_route, match = self.__gateway_manager.check_ip_route()
+            gateway = self.__gateway_manager.check_ip_route()
 
             # if nothing found, mark flag and keep current L3 manager
-            if not match:
+            if not gateway:
                 self.__ip_route_not_found = True
                 return
             
-            # if found strict user's ip route
-            elif not subnet_route:
-                # break if self-route found or continue if new next hop found
-                if match.group("next_hop") == self.__record_data["ip"]:
-                    return
-            
-            # subnet route as "X.X.115.0/24 X.X.X.248" is correct because mask >= 24 and next hop ip is in L3 24-bit subnet
-            # mark flag and keep current L3 manager if incorrect or continue if new next hop found
-            elif int(match.group("mask")) < 24 or not self.__ip_in_L3_subnet(match.group("next_hop"), gateway):
-                self.__ip_route_not_found = True
+            # break if self-route found
+            elif gateway == self.__record_data["ip"]:
                 return
             
-            # continue with new L3 manager if new next hop found
-            gateway = match.group("next_hop")
+            # delete previous and continue with new L3 manager if new next hop found
+            del self.__gateway_manager
     
     # compare subnet from L3 ip interface with subnet from user card
     def __check_vlan_subnet(self):
@@ -608,7 +595,7 @@ class MainHandler:
             if not self.__ip_incorrect_arp_on_mac:
                 self.__check_mac_visible_on_L3()
     
-    # function to control diagnosting L2 and L3
+    # function to control diagnosing L2 and L3
     def __check_L2_L3(self):
         try:
             if not self.__switch_port:   # exception if there's no data
@@ -703,7 +690,7 @@ class MainHandler:
         elif self.__linkdown_status:
             print("Состояние порта:", self.__linkdown_status)
         elif self.__lower_speed and not self.__speed_settings:
-            print("Линк", self.__lower_speed, "вместо", CONST.normal_speed[self.__gigabit])
+            print("Линк", self.__lower_speed, "вместо", Const.NORMAL_SPEED[self.__gigabit])
         elif self.__link_ok:
             print("Линк OK")
         
@@ -751,14 +738,14 @@ class MainHandler:
         # vlan: no vlan, wrong tags, wrong untagged vlan, ok
         if self.__no_vlan:
             print("Нет влана на порту")
-        for ind, status in enumerate(CONST.vlan_statuses):
+        for ind, status in enumerate(Const.VLAN_STATUSES):
             if status in self.__port_vlans and (ind != 0 or not self.__untagged_vlan_id):
                 print("Влан", ", ".join(map(str, self.__port_vlans[status])), "в", status)
         if self.__untagged_vlan_id:
             if self.__user_vlan_instead_of_direct_public_vlan:
-                print(f"Назначен юзерский влан вместо {CONST.direct_public_vlan}")
+                print(f"Назначен юзерский влан вместо {Const.DIRECT_PUBLIC_VLAN}")
             elif self.__direct_public_vlan_instead_of_user_vlan:
-                print(f"Назначен влан {CONST.direct_public_vlan} вместо юзерского")
+                print(f"Назначен влан {Const.DIRECT_PUBLIC_VLAN} вместо юзерского")
             elif self.__vlan_ok:
                 print("Влан OK")
         
@@ -827,7 +814,7 @@ class MainHandler:
         print("-" * 20)
         
         # print usernum and other fields
-        print(f"{CONST.usernum.name}:{' '*(12-len(CONST.usernum.name))}{self.__usernum}")
+        print(f"{Const.USERNUM.name}:{' '*(12-len(Const.USERNUM.name))}{self.__usernum}")
         for key in self.__record_data:
             print(f"{key}:{' '*(12-len(key))}{self.__record_data[key]}")
         
@@ -846,8 +833,8 @@ class MainHandler:
         signal.signal(signal.SIGINT, self.__handle_exit)
 
         # create pipe if not exists
-        if not os.path.exists(CONST.PIPE):
-            os.mkfifo(CONST.PIPE)
+        if not os.path.exists(Const.PIPE):
+            os.mkfifo(Const.PIPE)
 
         # variables
         self.__rx_megabit = 0
@@ -861,7 +848,7 @@ class MainHandler:
             # connect and get user's switch and port from database
             self.__db_manager = DatabaseManager()
             dict_data = self.__db_manager.get_switch_port(self.__usernum)
-            self.__record_data = {CONST.key_field[key]: value for key, value in dict_data.items()}
+            self.__record_data = {Const.KEY_FIELD[key]: value for key, value in dict_data.items()}
         
         finally:   # always close connection and delete database manager
             del self.__db_manager
@@ -870,8 +857,8 @@ class MainHandler:
     def __scan_packet(self):
         # calculate megabit and max megabit
         def calculate_current_and_max(rx_bytes, tx_bytes):
-            self.__rx_megabit = self.__byte_to_megabit(rx_bytes)
-            self.__tx_megabit = self.__byte_to_megabit(tx_bytes)
+            self.__rx_megabit = MainHandler._byte_to_megabit(rx_bytes)
+            self.__tx_megabit = MainHandler._byte_to_megabit(tx_bytes)
             self.__max_rx_megabit = max(self.__max_rx_megabit, self.__rx_megabit)
             self.__max_tx_megabit = max(self.__max_tx_megabit, self.__tx_megabit)
 
@@ -880,7 +867,7 @@ class MainHandler:
             self.__switch_manager = L2Manager(self.__record_data["switch"], self.__record_data["port"])
             
             # open pipe with buffering by every line, not to collect lines in python script's buffer
-            with open(CONST.PIPE, "w", buffering=1) as pipe:
+            with open(Const.PIPE, "w", buffering=1) as pipe:
                 # run until interrupted
                 while True:
                     # get bytes and calculate megabit with max

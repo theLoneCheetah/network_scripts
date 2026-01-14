@@ -8,9 +8,9 @@ import json
 
 ##### PROGRAM CONSTANTS #####
 
-class CONST:
+class Const:
     # convert fields from database to useful program names
-    key_field = {"Vznos": "payment",
+    KEY_FIELD = {"Vznos": "payment",
                  "IP": "ip",
                  "Masck": "mask",
                  "Gate": "gateway",
@@ -23,7 +23,7 @@ class CONST:
                  "Street": "street",
                  "House": "house"}
     # convert program names to the form used in workspace cards
-    key_output = {"ip": "IP-адрес",
+    KEY_OUTPUT = {"ip": "IP-адрес",
                   "mask": "Маска",
                   "gateway": "Шлюз",
                   "switch": "Свитч статич.",
@@ -32,54 +32,57 @@ class CONST:
                   "public_ip": "Внешний IP",
                   "nserv": "Nserv",
                   "nnet": "Nnet"}
-    usernum = "Number"
+    USERNUM = "Number"
     
     # speed by payments (vznos), country payments, 555 is an exception
-    new_payment = 555
-    fast_ethernet = {52, 53, 54, 301, 303, 330, 400, 490, 492, 494, 497, 503, 508, 509, 580, 582, 583, 586, 592, 598, 666, 667, 1000, 1300, 2000}
-    gigabit_ethernet = {650, 652, 653, 656, 662, 668, 720, 722, 723, 726, 732, 738, 950, 951, 952, 953, 956, 962, 968, 1330}
-    old_payment = {10, 48, 49, 95, 96, 97, 98, 99}
-    country = {801, 1001, 1006, 1012, 1501, 1506, 1512, 2001, 2006, 2012}
-    max_known_payment = 2099   # more than 2100 let's decide there's only gigabit
+    NEW_PAYMENT = 555
+    FAST_ETHERNET = {52, 53, 54, 301, 303, 330, 400, 490, 492, 494, 497, 503, 508, 509, 580, 582, 583, 586, 592, 598, 666, 667, 1000, 1300, 2000}
+    GIGABIT_ETHERNET = {650, 652, 653, 656, 662, 668, 720, 722, 723, 726, 732, 738, 950, 951, 952, 953, 956, 962, 968, 1330}
+    OLD_PAYMENT = {10, 48, 49, 95, 96, 97, 98, 99}
+    COUNTRY = {801, 1001, 1006, 1012, 1501, 1506, 1512, 2001, 2006, 2012}
+    MAX_KNOWN_PAYMENT = 2099   # more than 2100 let's decide there's only gigabit
     
     # network has nnets and nservs from 1 to 1016 now
-    last_nserv_nnet = int(os.getenv("LAST_NNET_NSERV"))
-    last_port = 52
+    LAST_NSERV_NNET = int(os.getenv("LAST_NNET_NSERV"))
+    LAST_PORT = 52
     
     # fields checking limits
-    number_fields_limits = {"port": last_port, "dhcp": 1, "nserv": last_nserv_nnet, "nnet": last_nserv_nnet}
-    ip_fields = {"ip", "mask", "gateway", "switch", "public_ip"}
+    NUMBER_FIELDS_LIMITS = {"port": LAST_PORT, "dhcp": 1, "nserv": LAST_NSERV_NNET, "nnet": LAST_NSERV_NNET}
+    IP_FIELDS = {"ip", "mask", "gateway", "switch", "public_ip"}
 
     # network local addresses
-    first_local_ip = IPv4Address(os.getenv("FIRST_LOCAL_IP"))
-    last_local_ip = IPv4Address(os.getenv("LAST_LOCAL_IP"))
-    switch_other_local_subnet = IPv4Network(os.getenv("SWITCH_OTHER_LOCAL_SUBNET"))
+    FIRST_LOCAL_IP = IPv4Address(os.getenv("FIRST_LOCAL_IP"))
+    LAST_LOCAL_IP = IPv4Address(os.getenv("LAST_LOCAL_IP"))
+    SWITCH_OTHER_LOCAL_SUBNET = IPv4Network(os.getenv("SWITCH_OTHER_LOCAL_SUBNET"))
     
     # range of local masks
-    local_masks = range(*json.loads(os.getenv("LOCAL_MASKS_RANGE")))
+    LOCAL_MASKS = range(*json.loads(os.getenv("LOCAL_MASKS_RANGE")))
 
     # set of network public subnets
-    public_gateway_mask = json.loads(os.getenv("PUBLIC_GATEWAY_MASK"))
-    public_subnets = {IPv4Network(subnet, strict=False) for subnet in map(lambda x, pg=public_gateway_mask: f"{x}/{pg[x]}", public_gateway_mask)}
+    PUBLIC_GATEWAY_MASK = json.loads(os.getenv("PUBLIC_GATEWAY_MASK"))
+    PUBLIC_SUBNETS = {IPv4Network(f"{gateway}/{mask}", strict=False) for gateway, mask in PUBLIC_GATEWAY_MASK.items()}
 
     # dhcp servers
-    primary_dhcp_server = os.getenv("PRIMARY_DHCP_SERVER")
-    secondary_dhcp_servers = json.loads(os.getenv("SECONDARY_DHCP_SERVERS"))
+    PRIMARY_DHCP_SERVER = os.getenv("PRIMARY_DHCP_SERVER")
+    SECONDARY_DHCP_SERVERS = json.loads(os.getenv("SECONDARY_DHCP_SERVERS"))
 
     # variables and expressions while diagnosting
-    normal_speed = {False: "100M/Full", True: "1000M/Full"}
-    vlan_statuses = ["Untagged", "Tagged", "Forbidden", "Dynamic", "RadiusAssigned"]
-    direct_public_vlan = int(os.getenv("DIRECT_PUBLIC_VLAN"))
-    vlan_skipping = json.loads(os.getenv("VLAN_SKIPPING"))
-    max_minute_range_port_flapping = 10
-    last_flap_max_minute_remoteness = 2
-    min_count_flapping = 20
+    NORMAL_SPEED = {False: "100M/Full", True: "1000M/Full"}
+    VLAN_STATUSES = ["Untagged", "Tagged", "Forbidden", "Dynamic", "RadiusAssigned"]
+    DIRECT_PUBLIC_VLAN = int(os.getenv("DIRECT_PUBLIC_VLAN"))
+    VLAN_SKIPPING = json.loads(os.getenv("VLAN_SKIPPING"))
+    MAX_MINUTE_RANGE_PORT_FLAPPING = 10
+    LAST_FLAP_MAX_MINUTE_REMOTENESS = 2
+    MIN_COUNT_FLAPPING = 20
     
     # types of cli to identify model
-    cli_types = ["d-link", "cisco"]
+    CLI_TYPES = ["d-link", "cisco"]
+
+    # max hops number for direct public ip routes
+    MAX_HOPS = 3
     
     # on Lensoveta 23 OSPF protocol is used, default gateway address doesn't have static ip route
-    lensoveta_address_gateway = {"street": 33, "house": "23", "gateway": os.getenv("LENSOVETA_23_GATEWAY")}
+    LENSOVETA_ADDRESS_GATEWAY = {"street": 33, "house": "23", "gateway": os.getenv("LENSOVETA_23_GATEWAY")}
 
     # pipe for packet scanning path
     PIPE = os.getenv("PIPE")
