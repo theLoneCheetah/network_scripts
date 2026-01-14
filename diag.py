@@ -1,9 +1,38 @@
 #!/usr/bin/python3
+import traceback
 # user's modules
+from diag_handler import DiagHandler
+from city_diag_handler import CityDiagHandler
+from country_diag_handler import CountryDiagHandler
 from main_handler import MainHandler
 
 
 ##### START DIAGNOSTICS #####
+
+def main2():
+    # get usernum
+    usernum = int(input("Usernum: "))
+    
+    # try to perform database connection and country check
+    try:
+        # with base handler class, check payment to decide country user or not
+        country, db_manager, record_data = DiagHandler.decide_country_or_city(usernum)
+
+        # depending on country or not, create main handler object
+        if country:
+            handler = CountryDiagHandler(usernum, db_manager, record_data)
+        else:
+            handler = CityDiagHandler(usernum, db_manager, record_data)
+        
+        # delete this function's database manager reference so class instance could control it
+        del db_manager
+
+    # exception in this function
+    except Exception as err:
+        print("Exception while working with the database record:", traceback.print_exc(), sep="\n")
+    
+    # run diagnostics
+    handler.check_all()
 
 def main():
     # get usernum
@@ -14,4 +43,4 @@ def main():
     handler.check_all()
 
 if __name__ == "__main__":
-    main()
+    main2()
