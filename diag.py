@@ -9,7 +9,7 @@ from main_handler import MainHandler
 
 ##### START DIAGNOSTICS #####
 
-def main2():
+def main():
     # get usernum
     usernum = int(input("Usernum: "))
     
@@ -34,13 +34,5 @@ def main2():
     # run diagnostics
     handler.check_all()
 
-def main():
-    # get usernum
-    usernum = int(input("Usernum: "))
-    
-    # create handler object and run diagnostics
-    handler = MainHandler(usernum)
-    handler.check_all()
-
 if __name__ == "__main__":
-    main2()
+    main()

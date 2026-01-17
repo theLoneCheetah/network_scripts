@@ -11,7 +11,7 @@ import commands
 class L3Manager(NetworkManager):
     # L3 manager inits by user ip and base constructor
     def __init__(self, ipaddress, user_ip):
-        super().__init__(ipaddress)
+        super().__init__(ipaddress, "L3 gateway")
         self.__user_ip = user_ip
     
     # find ip route for direct public ip

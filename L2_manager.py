@@ -13,7 +13,7 @@ import commands
 class L2Manager(NetworkManager):
     # L2 manager inits by user's port and base constructor
     def __init__(self, ipaddress, user_port):
-        super().__init__(ipaddress)
+        super().__init__(ipaddress, "L2 switch")
 
         # remember number of ports for this switch and then save base model for further diagnosing
         self.__ports = commands.switches[self._model]["ports"]

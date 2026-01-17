@@ -15,15 +15,22 @@ import commands
 
 class NetworkManager(ABC):
     # init by ip and connect with the same username and password
-    def __init__(self, ipaddress):
-        # define ip and get connection's environment
+    def __init__(self, ipaddress, switch_layer_type):
+        # define ip
         self._ipaddress = ipaddress
+
+        # indicates if switch is L2 or L3 layer, is used for output while starting and closing connection
+        self.__switch_layer_type = switch_layer_type
+
+        # get connection's environment
         self.__USERNAME = os.getenv("NET_USER")
         self.__PASSWORD = os.getenv("NET_PASSWORD")
-        
-        # switch model name from the defined dict and commands for clipaging
+
+        # switch model name and default gateway
         self._model = ""
         self.__default_gateway = ""   # for d-link, is used only in base class
+
+        # dict to store commands for clipaging
         self.__turn_clipaging = {}
         
         # connect
@@ -35,7 +42,7 @@ class NetworkManager(ABC):
         if not self.__turn_clipaging:
             return
         
-        print("Closing connection...")
+        print(f"Closing connection to {self.__switch_layer_type}...")
         
         # for d-link, restore clipaging on switch if command is known (if unknown, it means that error occured while connecting to switch)
         if self._model != commands.cisco_switch:
@@ -46,7 +53,7 @@ class NetworkManager(ABC):
     
     # start
     def __start_connection(self):
-        print("Connecting to equipment...")
+        print(f"Connecting to {self.__switch_layer_type}...")
         
         # try connecting to switch
         try:
@@ -56,7 +63,7 @@ class NetworkManager(ABC):
         # if timeout or another connection error
         except:
             # close old session
-            print("Failed")
+            print(f"Failed to connect to {self.__switch_layer_type}")
             self._session.close()
 
             # get packet loss by pinging switch address
@@ -74,13 +81,13 @@ class NetworkManager(ABC):
             else:
                 # try connecting again
                 try:
-                    print("Connecting to equipment...")
+                    print(f"Connecting to {self.__switch_layer_type}...")
                     self._session = pexpect.spawn(f"telnet {self._ipaddress}", timeout=5)#, logfile=sys.stdout.buffer)
                     self._session.expect("(U|u)ser(N|n)ame:")
                 
                 # can't connect if timeout repeatedly
                 except:
-                    print("Failed")
+                    print(f"Failed to connect to {self.__switch_layer_type}")
                     self._session.close()
                     raise MyException(ExceptionType.SWITCH_CANNOT_CONNECT)
 

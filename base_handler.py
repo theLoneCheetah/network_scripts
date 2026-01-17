@@ -4,11 +4,11 @@ from typing import TYPE_CHECKING, Any
 from abc import ABC, abstractmethod
 # user's modules
 from const import Const
+from protocols import L2SwitchProtocol
 
 # import as type only by Pylance (for VS Code)
 if TYPE_CHECKING:
     from database_manager import DatabaseManager
-    from L2_manager import L2Manager
 
 
 ##### ABSTRACT HANDLER CLASS FOR USER #####
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class BaseHandler(ABC):
     # annotations of objects in child classes: database and L2 managers, record data dict
     _db_manager: DatabaseManager
-    _switch_manager: L2Manager
+    _switch_manager: L2SwitchProtocol
     _record_data: dict[str, Any]
 
     # abstract constructor so base class is abstract

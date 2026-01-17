@@ -29,7 +29,7 @@ class DatabaseManager:
     
     # delete, close connection
     def __del__(self):
-        print("Closing connection...")
+        print("Closing connection to database...")
         self.__connection.close()
         print("Success")
     

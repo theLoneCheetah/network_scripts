@@ -696,5 +696,5 @@ class CityDiagHandler(DiagHandler):
         if self._ip_interface_not_found:
             print("Не найден интерфейс для юзерского влана")
         elif self._ip_interface_wrong_subnet:
-            print("Подсеть интерфейса для юзерского влана не соответствует подсети из карточки")
+            print("Подсеть интерфейса для влана на порту не соответствует подсети из карточки")
     
