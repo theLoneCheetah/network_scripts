@@ -2,7 +2,7 @@
 import re
 import traceback
 from typing import override
-from ipaddress import IPv4Address, IPv4Network
+from ipaddress import IPv4Address, IPv4Network, AddressValueError
 # user's modules
 from diag_handler import DiagHandler
 from L2_manager import L2Manager
@@ -14,9 +14,9 @@ from my_exception import ExceptionType, MyException
 ##### MAIN CLASS TO HANDLE CITY USER DIAGNOSTICS #####
 
 class CityDiagHandler(DiagHandler):
-    def __init__(self, usernum, db_manager, record_data):
+    def __init__(self, usernum, db_manager, record_data, inactive_payment):
         # init with base constructor
-        super().__init__(usernum, db_manager, record_data)
+        super().__init__(usernum, db_manager, record_data, inactive_payment)
 
         # L2 and L3 managers
         self._switch_manager = None
@@ -37,7 +37,6 @@ class CityDiagHandler(DiagHandler):
         self.__mask_length = 0
         
         # flags for errors in diagnostics of the database record
-        self.__inactive_payment = False
         self.__unknown_payment = False
         self.__impossible_mask = False
         self.__ip_out_of_subnet = False
@@ -113,14 +112,16 @@ class CityDiagHandler(DiagHandler):
     # function to control user's database record checking
     def _check_user_card(self):
         try:
+            # check payment field
             self.__check_payment()
+
             # check and make a note about numeric fields
             for field, limit in Const.NUMBER_FIELDS_LIMITS.items():
-                self._correctly_filled[field] = self._check_number_fields(field, limit)
+                self._correctly_filled[field] = self.__check_number_fields(field, limit)
             
             # check and make a note about ip fields
             for field in Const.IP_FIELDS:
-                self._correctly_filled[field] = self._check_ip_fields(field)
+                self._correctly_filled[field] = self.__check_ip_fields(field)
             
             # check switch ip
             if self._correctly_filled["switch"] == 1:
@@ -187,12 +188,28 @@ class CityDiagHandler(DiagHandler):
         # if it's new user or it has high payment for juridical, ask for speed
         elif self._record_data["payment"] == Const.NEW_PAYMENT or self._record_data["payment"] > Const.MAX_KNOWN_PAYMENT:
             self.__gigabit = input(f"Vznos is {self._record_data["payment"]}. Gigabit? (y/n) ").lower() == "y"
-        # user is inactive, didn't pay or disconnected
-        elif self._record_data["payment"] in Const.OLD_PAYMENT:
-            self.__inactive_payment = True
-        # in other cases
-        else:
+        # in other cases, if it's not old payment
+        elif not self._inactive_payment:
             self.__unknown_payment = True
+
+    # check numeric record fields: port, dhcp, nserv, nnet
+    def __check_number_fields(self, field, limit):
+        # each field must be from 1 to some known limit
+        if self._record_data[field] == None or self._record_data[field] == 0:
+            return 0
+        elif 1 <= self._record_data[field] <= limit:
+            return 1
+        return -1
+    
+    # check ip record fields: ip, mask, gateway, switch, public_ip
+    def __check_ip_fields(self, field):
+        if not self._record_data[field]:
+            return 0
+        try:
+            IPv4Address(self._record_data[field])
+            return 1
+        except AddressValueError:
+            return -1
     
     # check users with the same switch and port, return list of doubles if found
     def __check_double_switch_port(self):
@@ -247,7 +264,7 @@ class CityDiagHandler(DiagHandler):
             print("Неизвестный взнос:", self._record_data["payment"])
             all_correct = False
         # if payment is inactive
-        elif self.__inactive_payment:
+        elif self._inactive_payment:
             print("Неактивный взнос:", self._record_data["payment"])
             all_correct = False
         

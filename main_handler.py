@@ -121,7 +121,7 @@ class MainHandler:
         elif self.__record_data["payment"] == Const.NEW_PAYMENT or self.__record_data["payment"] > Const.MAX_KNOWN_PAYMENT:
             self.__gigabit = input(f"Vznos is {self.__record_data["payment"]}. Gigabit? (y/n) ").lower() == "y"
         # user is inactive, didn't pay or disconnected
-        elif self.__record_data["payment"] in Const.OLD_PAYMENT:
+        elif self.__record_data["payment"] in Const.INACTIVE_PAYMENT:
             self.__inactive_payment = True
         # in other cases
         else:

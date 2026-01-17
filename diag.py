@@ -16,13 +16,13 @@ def main():
     # try to perform database connection and country check
     try:
         # with base handler class, check payment to decide country user or not
-        country, db_manager, record_data = DiagHandler.decide_country_or_city(usernum)
+        country, db_manager, record_data, inactive_payment = DiagHandler.decide_country_or_city(usernum)
 
         # depending on country or not, create main handler object
         if country:
-            handler = CountryDiagHandler(usernum, db_manager, record_data)
+            handler = CountryDiagHandler(usernum, db_manager, record_data, inactive_payment)
         else:
-            handler = CityDiagHandler(usernum, db_manager, record_data)
+            handler = CityDiagHandler(usernum, db_manager, record_data, inactive_payment)
         
         # delete this function's database manager reference so class instance could control it
         del db_manager

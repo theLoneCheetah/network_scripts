@@ -2,7 +2,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 from abc import abstractmethod
-from ipaddress import IPv4Address, AddressValueError
 import traceback
 import sys
 # user's modules
@@ -22,13 +21,14 @@ class DiagHandler(BaseHandler):
     _gateway_manager: L3Manager
     _correctly_filled: dict[str, int]
 
-    def __init__(self, usernum, db_manager, record_data):
+    def __init__(self, usernum, db_manager, record_data, inactive_payment):
         # init with base constructor
         super().__init__(usernum)
 
         # database managers and record data object are be given by child class
         self._db_manager = db_manager
         self._record_data = record_data
+        self._inactive_payment = inactive_payment
         
         # there will be usernums if found doubles, actual for all users
         self._double_ip = []
@@ -76,25 +76,6 @@ class DiagHandler(BaseHandler):
     @abstractmethod
     def _check_user_card(self):
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
-    
-    # check numeric record fields: port, dhcp, nserv, nnet
-    def _check_number_fields(self, field, limit):
-        # each field must be from 1 to some known limit
-        if self._record_data[field] == None or self._record_data[field] == 0:
-            return 0
-        elif 1 <= self._record_data[field] <= limit:
-            return 1
-        return -1
-    
-    # check ip record fields: ip, mask, gateway, switch, public_ip
-    def _check_ip_fields(self, field):
-        if not self._record_data[field]:
-            return 0
-        try:
-            IPv4Address(self._record_data[field])
-            return 1
-        except AddressValueError:
-            return -1
     
     # check users with the same ip, return list of doubles if found
     def _check_double_ip(self):
@@ -223,8 +204,12 @@ class DiagHandler(BaseHandler):
             dict_data = db_manager.get_main_record(usernum)
             record_data = {Const.KEY_FIELD[key]: value for key, value in dict_data.items() if key != Const.USERNUM}
             
-            # return True if it's country payment, also return database manager and main data object
-            return record_data["payment"] in Const.COUNTRY, db_manager, record_data
+            # it's country user has active country payment or inactive payment with coutnry nnet
+            inactive_payment = record_data["payment"] in Const.INACTIVE_PAYMENT
+            country = record_data["payment"] in Const.COUNTRY or inactive_payment and record_data["nnet"] == Const.COUNTRY_NSERV_NNET
+            
+            # return True if it's country payment, also return database manager, main data object and flag for inactive payment so not to check it later
+            return country, db_manager, record_data, inactive_payment
         
         # exception while checking record
         except Exception as err:   
