@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from abc import ABC, abstractmethod
 # user's modules
-from const import Const
+from const import Database
 from protocols import L2SwitchProtocol
 
 # import as type only by Pylance (for VS Code)
@@ -21,22 +21,22 @@ class BaseHandler(ABC):
 
     # abstract constructor so base class is abstract
     @abstractmethod
-    def __init__(self, usernum):
+    def __init__(self, usernum: int) -> None:
         # init by usernum
         self._usernum = usernum
     
     # print all fields
-    def print_record(self):
+    def print_record(self) -> None:
         print("-" * 20)
         
         # print usernum and other fields
-        print(f"{Const.USERNUM}:{' '*(12-len(Const.USERNUM))}{self._usernum}")
-        for key in self._record_data:
-            print(f"{key}:{' '*(12-len(key))}{self._record_data[key]}")
+        print(f"{Database.USERNUM}:{' '*(12-len(Database.USERNUM))}{self._usernum}")
+        for key, val in self._record_data.items():
+            print(f"{key}:{' '*(12-len(key))}{val}")
         
         print("-" * 20)
     
     # static method to calculate megabit from bytes
     @staticmethod
-    def _byte_to_megabit(bytes_count):
+    def _byte_to_megabit(bytes_count: int) -> int:
         return round(bytes_count * 8 / 1024 / 1024)

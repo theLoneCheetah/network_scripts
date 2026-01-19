@@ -2,12 +2,11 @@
 import sys
 # user's modules
 from packet_scan_handler import PacketScanHandler
-from main_handler import MainHandler
 
 
 ##### START SCANNING #####
 
-def main():
+def main() -> None:
     # get usernum from argument string, first element of argv is file's name
     if len(sys.argv) >= 2:
         usernum = int(sys.argv[1])

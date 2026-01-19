@@ -4,12 +4,11 @@ import traceback
 from diag_handler import DiagHandler
 from city_diag_handler import CityDiagHandler
 from country_diag_handler import CountryDiagHandler
-from main_handler import MainHandler
 
 
 ##### START DIAGNOSTICS #####
 
-def main():
+def main() -> None:
     # get usernum
     usernum = int(input("Usernum: "))
     
@@ -27,12 +26,13 @@ def main():
         # delete this function's database manager reference so class instance could control it
         del db_manager
 
-    # exception in this function
-    except Exception as err:
-        print("Exception while working with the database record:", traceback.print_exc(), sep="\n")
-    
-    # run diagnostics
-    handler.check_all()
+        # run diagnostics
+        handler.check_all()
 
+    # exception in this function, print traceback
+    except Exception as err:
+        print("Exception while working with the database record:")
+        traceback.print_exc()
+    
 if __name__ == "__main__":
     main()

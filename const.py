@@ -6,9 +6,9 @@ import os
 import json
 
 
-##### PROGRAM CONSTANTS #####
+##### DATABASE FIELDS AND CONSTANTS #####
 
-class Const:
+class Database:
     # convert fields from database to useful program names
     KEY_FIELD = {"Vznos": "payment",
                  "IP": "ip",
@@ -22,6 +22,7 @@ class Const:
                  "Number_net": "nnet",
                  "Street": "street",
                  "House": "house"}
+    
     # convert program names to the form used in workspace cards
     KEY_OUTPUT = {"ip": "IP-адрес",
                   "mask": "Маска",
@@ -32,6 +33,8 @@ class Const:
                   "public_ip": "Внешний IP",
                   "nserv": "Nserv",
                   "nnet": "Nnet"}
+    
+    # usernum field name
     USERNUM = "Number"
     
     # speed by payments (vznos), country payments, 555 is an exception
@@ -39,9 +42,13 @@ class Const:
     FAST_ETHERNET = {52, 53, 54, 301, 303, 330, 400, 490, 492, 494, 497, 503, 508, 509, 580, 582, 583, 586, 592, 598, 666, 667, 1000, 1300, 2000}
     GIGABIT_ETHERNET = {650, 652, 653, 656, 662, 668, 720, 722, 723, 726, 732, 738, 950, 951, 952, 953, 956, 962, 968, 1330}
     INACTIVE_PAYMENT = {10, 48, 49, 95, 96, 97, 98, 99}
-    COUNTRY = {801, 1001, 1006, 1012, 1501, 1506, 1512, 2001, 2006, 2012}
+    COUNTRY_PAYMENT = {801, 1001, 1006, 1012, 1501, 1506, 1512, 2001, 2006, 2012}
     MAX_KNOWN_PAYMENT = 2099   # more than 2100 let's decide there's only gigabit
-    
+
+
+##### MAIN PROVIDER SETTINGS AND CONSTANTS FOR CITY #####
+
+class Provider:    
     # network has nnets and nservs from 1 to 1016 now
     LAST_NSERV_NNET = int(os.getenv("LAST_NSERV_NNET"))
     LAST_PORT = 52
@@ -65,35 +72,63 @@ class Const:
     # dhcp servers
     PRIMARY_DHCP_SERVER = os.getenv("PRIMARY_DHCP_SERVER")
     SECONDARY_DHCP_SERVERS = set(json.loads(os.getenv("SECONDARY_DHCP_SERVERS")))
-
-    # variables and expressions while diagnosting
-    NORMAL_SPEED = {False: "100M/Full", True: "1000M/Full"}
-    VLAN_STATUSES = ["Untagged", "Tagged", "Forbidden", "Dynamic", "RadiusAssigned"]
+    
+    # vlan constants
     DIRECT_PUBLIC_VLAN = int(os.getenv("DIRECT_PUBLIC_VLAN"))
     VLAN_SKIPPING = set(json.loads(os.getenv("VLAN_SKIPPING")))
-    MAX_MINUTE_RANGE_PORT_FLAPPING = 10
-    LAST_FLAP_MAX_MINUTE_REMOTENESS = 2
-    MIN_COUNT_FLAPPING = 20
-    
-    # types of cli to identify model
-    CLI_TYPES = ["d-link", "cisco"]
-
-    # max hops number for direct public ip routes
-    MAX_HOPS = 3
     
     # on Lensoveta 23 OSPF protocol is used, default gateway address doesn't have static ip route
     LENSOVETA_ADDRESS_GATEWAY = {"street": 33, "house": "23", "gateway": os.getenv("LENSOVETA_23_GATEWAY")}
 
-    # country settings
-    COUNTRY_UNUSED_NUMBER_FIELDS = {"port", "dhcp"}
-    COUNTRY_UNUSED_IP_FIELDS = {"Masck", "Gate", "switchP"}
-    COUNTRY_GATEWAY_VLAN = json.loads(os.getenv("COUNTRY_GATEWAY_VLAN"))
-    COUNTRY_MASK = os.getenv("COUNTRY_MASK")
-    COUNTRY_SUBNETS = set(map(lambda gateway, mask=COUNTRY_MASK: IPv4Network(f"{gateway}/{mask}", strict=False), COUNTRY_GATEWAY_VLAN.keys()))
-    COUNTRY_NSERV_NNET = int(os.getenv("COUNTRY_NSERV_NNET"))
+
+##### CONSTANTS FOR CITY SWITCH DIAGNOSTICS #####
+
+class CitySwitch:
+    # types of cli to identify model
+    CLI_TYPES = ["d-link", "cisco"]
+
+    # port speed
+    NORMAL_SPEED = {False: "100M/Full", True: "1000M/Full"}
+
+    # vlan statuses
+    VLAN_STATUSES = ["Untagged", "Tagged", "Forbidden", "Dynamic", "RadiusAssigned"]
+
+    # for log scanning
+    MAX_MINUTE_RANGE_PORT_FLAPPING = 10
+    LAST_FLAP_MAX_MINUTE_REMOTENESS = 2
+    MIN_COUNT_FLAPPING = 20
+
+    # max hops number for direct public ip routes
+    MAX_HOPS_DIRECT_PUBLIC_IP = 3
+
+
+##### COUNTRY SETTINGS #####
+
+class Country:
+    # record fields
+    NUMBER_FIELDS = {"nserv", "nnet"}
+    IP_FIELDS = {"ip", "public_ip"}
+    UNUSED_NUMBER_FIELDS = {"port", "dhcp"}
+    UNUSED_IP_FIELDS = {"Masck", "Gate", "switchP"}
+
+    # country's unified mask, main subnets and vlans
+    MASK = os.getenv("COUNTRY_MASK")
+    GATEWAY_VLAN = json.loads(os.getenv("COUNTRY_GATEWAY_VLAN"))
+    SUBNETS = set(map(lambda gateway, mask=MASK: IPv4Network(f"{gateway}/{mask}", strict=False), GATEWAY_VLAN.keys()))
+
+    # nserv and nnet
+    NSERV_NNET = int(os.getenv("COUNTRY_NSERV_NNET"))
+
+    # ip addresses of olt swtiches version 2 and 3
     OLT2_SWITCHES = set(json.loads(os.getenv("OLT2_SWITCHES")))
     OLT3_SWITCHES = set(json.loads(os.getenv("OLT3_SWITCHES")))
-    COUNTRY_ACTUAL_GATEWAY = os.getenv("COUNTRY_ACTUAL_GATEWAY")
 
+    # unified gateway
+    ACTUAL_GATEWAY = os.getenv("COUNTRY_ACTUAL_GATEWAY")
+
+
+##### PACKET SCANNING CONSTANTS #####
+
+class PacketScan:
     # pipe for packet scanning path
     PIPE = os.getenv("PIPE")

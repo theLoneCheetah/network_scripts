@@ -1,4 +1,8 @@
 #!/usr/bin/python3
+from typing import TypeAlias
+
+# alias for most of returned dictionaries
+CommandRegexData: TypeAlias = dict[str, str]
 
 
 ##### SWITCH MODELS #####
@@ -27,7 +31,7 @@ cisco_switch = "DGS-3630-28SC"
 
 ##### BASE COMMANDS #####
 
-def show_model(cli_type):
+def show_model(cli_type: str) -> CommandRegexData:
     match cli_type:
         case "d-link":
             return {"command": "show switch",
@@ -36,7 +40,7 @@ def show_model(cli_type):
             return {"command": "show version",
                     "regex": r"-+\s+1\s+(?P<model>\S+)\s+"}
 
-def clipaging(model):
+def clipaging(model: str) -> CommandRegexData:
     match model:
         case x if x == cisco_switch:
             return {"disable": "terminal length 0",
@@ -47,7 +51,7 @@ def clipaging(model):
 
 ##### FOR L2 SWITCH #####
 
-def show_ports(model, user_port):
+def show_ports(model: str, user_port: int) -> dict[str, str | list[str]]:
     match model:
         case "DES-3028":
             return {"command": f"show ports {user_port}",
@@ -71,7 +75,7 @@ def show_ports(model, user_port):
             return {"command": f"show ports {user_port}",
                     "regex": [rf"{user_port}\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+ ?[A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#", rf"{user_port}\(C\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+ ?[A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*{user_port}\(F\)\s+(Enabled|Disabled)\s+(Auto|10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/Disabled\s+(([A-Za-z]+ ?[A-Za-z]+)|(10{{1,3}}M\/Half|10{{1,3}}M\/Full)\/None).*#"]}
 
-def cable_diag(model, user_port):
+def cable_diag(model: str, user_port: int) -> CommandRegexData:
     match model:
         case "DES-3028" | "DES-3200-28" | "DES-3526":
             return {"command": f"cable_diag ports {user_port}",
@@ -94,7 +98,7 @@ def cable_diag(model, user_port):
                     "regex": rf"({user_port}\s+(\S+)\s+(Link Up|Link Down)\s+Pair(\d)\s+([A-Za-z]+)(?:\s+at\s+(\d+)\s+M)?\s+(-|\d+))|({user_port}\s+(\S+)\s+(Link Up|Link Down)\s+([A-Za-z ]+)\s+(-|\d+))",
                     "findall": r"Pair(\d)\s+([A-Za-z]+)(?:\s+at\s+(\d+)\s+M)?"}
 
-def show_fdb(model, user_port):
+def show_fdb(model: str, user_port: int) -> CommandRegexData:
     match model:
         case "DES-3028" | "DGS-1210-28/ME" | "DGS-3000-24TC" | "DGS-3200-24" | "DES-3200-28" | "DES-3526":
             return {"command": f"show fdb port {user_port}",
@@ -103,7 +107,7 @@ def show_fdb(model, user_port):
             return {"command": f"show fdb port {user_port}",
                     "regex": rf"(\d+)\s+(\S+)\s+(([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})\s+(?:1:)?{user_port}\s+([A-Za-z]+)"}
 
-def show_port_security(model, user_port):
+def show_port_security(model: str, user_port: int) -> CommandRegexData:
     match model:
         case "DES-3028" | "DGS-1210-28/ME" | "DGS-3200-24" | "DES-3200-28" | "DES-3526":
             return {"command": f"show port_security ports {user_port}",
@@ -115,7 +119,7 @@ def show_port_security(model, user_port):
             return {"command": f"show port_security ports {user_port}",
                     "regex": rf"{user_port}\s+(Enabled|Disabled)\s+([A-Za-z]+)\s+(\d+).*#"}
 
-def show_crc_errors(model, user_port):
+def show_crc_errors(model: str, user_port: int) -> CommandRegexData:
     match model:
         case "DES-3028" | "DGS-1210-28/ME" | "DGS-3000-24TC" | "DES-3526":
             return {"command": f"show error ports {user_port}",
@@ -127,7 +131,7 @@ def show_crc_errors(model, user_port):
             return {"command": f"show error ports {user_port}",
                     "regex": r"RX Frames.*?CRC Error\s+(\d+).*CTRL"}
 
-def show_packet(model, user_port):
+def show_packet(model: str, user_port: int) -> CommandRegexData:
     match model:
         case "DES-3028" | "DGS-1210-28/ME" | "DGS-3000-24TC" | "DES-3526" | "DGS-3120-24TC":
             return {"command": f"show packet ports {user_port}",
@@ -136,7 +140,7 @@ def show_packet(model, user_port):
             return {"command": f"show packet ports {user_port}",
                     "regex": r"Total/(\d)?sec.*RX Bytes\s+\d+\s+(\d+).*TX Bytes\s+\d+\s+(\d+).*CTRL"}
 
-def show_vlan(model):
+def show_vlan(model: str) -> CommandRegexData:
     match model:
         case "DES-3028" | "DGS-3120-24TC" | "DGS-3000-24TC" | "DGS-3200-24" | "DES-3200-28" | "DES-3526":
             return {"command": "show vlan",
@@ -145,7 +149,7 @@ def show_vlan(model):
             return {"command": "show vlan",
                     "regex": r"VID\s+:\s+(\d+)\s+VLAN NAME\s+:\s+(\S+)"}
 
-def show_vlan_ports(model, user_port):
+def show_vlan_ports(model: str, user_port: int) -> CommandRegexData:
     match model:
         case "DES-3028" | "DGS-1210-28/ME" | "DES-3200-28":
             return {"command": f"show vlan ports {user_port}",
@@ -157,7 +161,7 @@ def show_vlan_ports(model, user_port):
             return {"command": f"show vlan ports {user_port}",
                     "regex": r"(\d+)\s+(?P<Untagged>[X-])\s+(?P<Tagged>[X-])\s+(?P<Dynamic>[X-])\s+(?P<Forbidden>[X-])"}
 
-def show_dhcp_relay(model):
+def show_dhcp_relay(model: str) -> CommandRegexData:
     match model:
         case "DGS-1210-28/ME":
             return {"command": "show dhcp_relay",
@@ -171,7 +175,7 @@ def show_dhcp_relay(model):
             return {"command": "show dhcp_relay",
                     "servers": r"Interface\s+Server 1\s+Server 2\s+Server 3\s+Server 4\s+(?:-+\s+){5}System\s+(?P<dhcp_server1>(?:\d{1,3}\.){3}\d{1,3})\s+(?P<dhcp_server2>(?:\d{1,3}\.){3}\d{1,3})"}
 
-def show_access_profile(model, user_port):
+def show_access_profile(model: str, user_port: int) -> CommandRegexData:
     match model:
         case "DES-3028":
             return {"command": "show access_profile",
@@ -192,7 +196,7 @@ def show_access_profile(model, user_port):
             return {"command": "show access_profile",
                     "regex": rf"Ports:\s+{user_port}\s+[\s\S]*?value : 0x0000([A-Z\d]{{4}})\s+[\s\S]*?value : 0x([A-Z\d]{{4}})0000\s+Mask : \S+\s+Action:\s+Permit[\s\S]*?Ports:\s+{user_port}\s+[\s\S]*?value : 0x([A-Z\d]{{8}})\s+Mask : \S+\s+Action:\s+Permit"}
 
-def show_log(model, user_port):
+def show_log(model: str, user_port: int) -> CommandRegexData:
     match model:
         case "DES-3028" | "DGS-3200-24" | "DES-3200-28":
             return {"command": "show log",
@@ -232,21 +236,21 @@ def show_log(model, user_port):
 
 ##### FOR L3 GATEWAY #####
 
-def show_ip_interface(model, vlanid_vlan, public_name):
+def show_ip_interface(model: str, vlan_id: int, ipif_name: str) -> CommandRegexData:
     match model:
         case x if x == cisco_switch:
-            return {"command": f"show ip interface vlan {vlanid_vlan[0]}",
+            return {"command": f"show ip interface vlan {vlan_id}",
                     "regex": rf"IP address is ((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
         case "DGS-3120-24TC":
-            return {"command": f"show ipif {public_name if public_name else vlanid_vlan[1]}",
+            return {"command": f"show ipif {ipif_name}",
                     "showall": "show ipif",
-                    "regex": rf"VLAN Name\s+:\s+{vlanid_vlan[1]}\s+Interface Admin State\s+:\s+Enabled\s+Link Status\s+:\s+LinkUp\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
+                    "regex": rf"VLAN Name\s+:\s+{ipif_name}\s+Interface Admin State\s+:\s+Enabled\s+Link Status\s+:\s+LinkUp\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
         case _:
-            return {"command": f"show ipif {public_name if public_name else vlanid_vlan[1]}",
+            return {"command": f"show ipif {ipif_name}",
                     "showall": "show ipif",
-                    "regex": rf"VLAN Name\s+:\s+{vlanid_vlan[1]}\s+Interface Admin State\s+:\s+Enabled\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
+                    "regex": rf"VLAN Name\s+:\s+{ipif_name}\s+Interface Admin State\s+:\s+Enabled\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
 
-def show_ip_route(model, user_ip):
+def show_ip_route(model: str, user_ip: str) -> CommandRegexData:
     match model:
         case x if x == cisco_switch:
             return {"command": "show ip route static",
@@ -256,7 +260,7 @@ def show_ip_route(model, user_ip):
                     "regex": rf"{user_ip}/32\s+(?P<next_hop>(\d{{1,3}}\.){{3}}\d{{1,3}})",
                     "subnet_regex": r"((\d{1,3}\.){3}\d{1,3})/(?P<mask>\d{2})\s+(?P<next_hop>(\d{1,3}\.){3}\d{1,3})"}
 
-def show_arp_ip(model, user_ip):
+def show_arp_ip(model: str, user_ip: str) -> CommandRegexData:
     match model:
         case x if x == cisco_switch:
             return {"command": f"show arp {user_ip}",
@@ -265,7 +269,7 @@ def show_arp_ip(model, user_ip):
             return {"command": f"show arpentry ipaddress {user_ip}",
                     "regex": rf"(\S+)\s+{user_ip}\s+(?P<mac>([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})"}
 
-def show_arp_mac(model, user_mac):
+def show_arp_mac(model: str, user_mac: str) -> CommandRegexData:
     match model:
         case x if x == cisco_switch:
             return {"command": f"show arp {user_mac}",
@@ -274,7 +278,7 @@ def show_arp_mac(model, user_mac):
             return {"command": f"show arpentry mac_address {user_mac}",
                     "regex": rf"(\S+)\s+(?P<ip>(\d{{1,3}}\.){{3}}\d{{1,3}})\s+{user_mac}"}
 
-def show_fdb_L3(model, user_mac):
+def show_fdb_L3(model: str, user_mac: str) -> CommandRegexData:
     match model:
         case x if x == cisco_switch:
             return {"command": f"show mac-address-table address {user_mac}",

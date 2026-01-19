@@ -6,7 +6,7 @@ import os
 from abc import ABC
 from icmplib import ping
 # user's modules
-from const import Const
+from const import CitySwitch
 from my_exception import ExceptionType, MyException
 import commands
 
@@ -15,7 +15,7 @@ import commands
 
 class NetworkManager(ABC):
     # init by ip and connect with the same username and password
-    def __init__(self, ipaddress, switch_layer_type):
+    def __init__(self, ipaddress: str, switch_layer_type: str) -> None:
         # define ip
         self._ipaddress = ipaddress
 
@@ -31,13 +31,13 @@ class NetworkManager(ABC):
         self.__default_gateway = ""   # for d-link, is used only in base class
 
         # dict to store commands for clipaging
-        self.__turn_clipaging = {}
+        self.__turn_clipaging: commands.CommandRegexData = {}
         
         # connect
         self.__start_connection()
     
     # delete, close connection
-    def __del__(self):
+    def __del__(self) -> None:
         # if clipaging variable is empty, switch connection is not opened, it's nothing to close
         if not self.__turn_clipaging:
             return
@@ -52,7 +52,7 @@ class NetworkManager(ABC):
         print("Success")
     
     # start
-    def __start_connection(self):
+    def __start_connection(self) -> None:
         print(f"Connecting to {self.__switch_layer_type}...")
         
         # try connecting to switch
@@ -97,7 +97,7 @@ class NetworkManager(ABC):
         self._session.expect("#")
         
         # get through two types of cli to get device model
-        for cli_type in Const.CLI_TYPES:
+        for cli_type in CitySwitch.CLI_TYPES:
             self.__get_model(cli_type)
             if self._model:
                break
@@ -113,11 +113,11 @@ class NetworkManager(ABC):
         print("Success")
     
     # check switch availability by 4 icmp packets and return packet loss
-    def __check_ping(self):
+    def __check_ping(self) -> float:
         return ping(self._ipaddress, count=4, timeout=1, interval=0.25, privileged=False).packet_loss
 
     # try to figure out switch model name
-    def __get_model(self, cli_type):
+    def __get_model(self, cli_type: str) -> None:
         # try to show model info
         command_regex = commands.show_model(cli_type)
         self._session.sendline(command_regex["command"])
@@ -144,20 +144,20 @@ class NetworkManager(ABC):
                 self.__default_gateway = match.group("default_gateway")
 
     # disable clipaging
-    def _turn_off_clipaging(self):
+    def _turn_off_clipaging(self) -> None:
         self._session.sendline(self.__turn_clipaging["disable"])
         self._session.expect("#")
 
     # enable clipaging
-    def _turn_on_clipaging(self):
+    def _turn_on_clipaging(self) -> None:
         self._session.sendline(self.__turn_clipaging["enable"])
         self._session.expect("#")
     
     # quit long output with escape symbol
-    def _quit_output(self):
+    def _quit_output(self) -> None:
         self._session.send("q")
         self._session.expect("#")
 
     # get default gateway variable
-    def get_default_gateway(self):
+    def get_default_gateway(self) -> str:
         return self.__default_gateway

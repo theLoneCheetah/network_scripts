@@ -1,13 +1,12 @@
 #!/usr/bin/python3
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from abc import abstractmethod
-import traceback
 import sys
 # user's modules
 from base_handler import BaseHandler
 from database_manager import DatabaseManager
-from const import Const
+from const import Database, Country
 
 # import as type only by Pylance (for VS Code)
 if TYPE_CHECKING:
@@ -21,7 +20,7 @@ class DiagHandler(BaseHandler):
     _gateway_manager: L3Manager
     _correctly_filled: dict[str, int]
 
-    def __init__(self, usernum, db_manager, record_data, inactive_payment):
+    def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool) -> None:
         # init with base constructor
         super().__init__(usernum)
 
@@ -31,10 +30,10 @@ class DiagHandler(BaseHandler):
         self._inactive_payment = inactive_payment
         
         # there will be usernums if found doubles, actual for all users
-        self._double_ip = []
+        self._double_ip: list[int] = []
         
         # mac address
-        self._mac_addresses = {}
+        self._mac_addresses: set[str] = set()
         self._mac_ok = False
         self._no_mac = False
         self._many_macs = 0   # count mac addresses if there's more than 1
@@ -47,14 +46,14 @@ class DiagHandler(BaseHandler):
         self._arp_ok = False
         self._no_arp = False
         self._arp_on_unknown_mac = ""   # here wiil be unknown mac if found
-        self._ip_incorrect_arp_on_mac = []    # here will be unknown ip addresses if found
+        self._ip_incorrect_arp_on_mac: list[str] = []    # here will be unknown ip addresses if found
         
         # mac check on L3
         self._need_to_check_mac_on_L3 = False
         self._no_mac_on_L3 = False
 
     # main function
-    def check_all(self):
+    def check_all(self) -> None:
         # check all functions
         self._check_user_card()
         self._check_L2_L3()
@@ -74,17 +73,17 @@ class DiagHandler(BaseHandler):
     
     # function to control user's database record checking
     @abstractmethod
-    def _check_user_card(self):
+    def _check_user_card(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
     
     # check users with the same ip, return list of doubles if found
-    def _check_double_ip(self):
+    def _check_double_ip(self) -> None:
         usernums = self._db_manager.get_usernum_by_ip(self._record_data["ip"])
         self._double_ip = usernums if len(usernums) > 1 else []
 
     # result of database record diagnostics
     @abstractmethod
-    def _result_user_card(self):
+    def _result_user_card(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
     
     
@@ -92,12 +91,12 @@ class DiagHandler(BaseHandler):
 
     # function to control diagnosing L2 and L3
     @abstractmethod
-    def _check_L2_L3(self):
+    def _check_L2_L3(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
     
     # check mac addresses and get as a set
     @abstractmethod
-    def _check_mac(self):
+    def _check_mac(self) -> None:
         # get set of all mac addresses
         self._mac_addresses = self._switch_manager.get_mac_addresses_port()
         
@@ -113,28 +112,28 @@ class DiagHandler(BaseHandler):
     
     # find actual gateway and create L3 manager
     @abstractmethod
-    def _find_actual_gateway(self):
+    def _find_actual_gateway(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
     
     # check if vlan's ip interface on L3 matches user's subnet
     @abstractmethod
-    def _check_vlan_subnet(self):
+    def _check_vlan_subnet(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
     
     # compare subnet from L3 ip interface with subnet from user card
-    def _user_subnet_matches_ip_interface(self, vlanid_vlan, gateway, mask_length, public_name):
-        # L3 manager checks ipif by vlan and compares with user's subnet, ipif name for direct public ip can be last 2 octets of gateway
-        res = self._gateway_manager.check_ip_interface_subnet(vlanid_vlan, gateway, mask_length, public_name)
+    def _check_user_subnet_matches_ip_interface(self, vlan_id: int, ipif_name: str, gateway: str, mask_length: int) -> None:
+        # L3 manager checks ipif by vlan and compares with user's subnet
+        res = self._gateway_manager.check_ip_interface_subnet(vlan_id, ipif_name, gateway, mask_length)
         
         # rarely when ipif doesn't exist or has another name
-        if res == -1:
+        if res is None:
             self._ip_interface_not_found = True
         # if ipif's by vlan subnet differs from user's subnet
-        elif not res:
+        elif res == False:
             self._ip_interface_wrong_subnet = True
     
     # check arpentry by ip and mac and try other options on L3
-    def _check_arpentry_by_ip(self):
+    def _check_arpentry_by_ip(self) -> None:
         # get mac from arp found by ip
         mac = self._gateway_manager.check_arpentry_ip_return_mac()
         
@@ -167,7 +166,7 @@ class DiagHandler(BaseHandler):
                 self._check_mac_visible_on_L3()
     
     # try to check arp on mac if there's only 1 mac
-    def _get_ips_from_arpentry_mac(self):
+    def _get_ips_from_arpentry_mac(self) -> list[str]:
         # if there's no mac or more than 1, can't find
         if len(self._mac_addresses) != 1:
             return []
@@ -176,7 +175,7 @@ class DiagHandler(BaseHandler):
         return self._gateway_manager.check_arpentry_mac_return_ips(*self._mac_addresses)
     
     # check mac visibility on L3 and set a flag if not visible
-    def _check_mac_visible_on_L3(self):
+    def _check_mac_visible_on_L3(self) -> None:
         # if there's no mac or more than 1, can't find
         if len(self._mac_addresses) != 1:
             return
@@ -189,7 +188,7 @@ class DiagHandler(BaseHandler):
     
     # result of L2 and L3 diagnostics
     @abstractmethod
-    def _result_L2_L3(self):
+    def _result_L2_L3(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
     
 
@@ -197,22 +196,22 @@ class DiagHandler(BaseHandler):
 
     # static method to get main data from database and decide country or not
     @staticmethod
-    def decide_country_or_city(usernum):
+    def decide_country_or_city(usernum: int) -> tuple[bool, DatabaseManager, dict[str, Any], bool]:
         try:
             # connect and get record from database
             db_manager = DatabaseManager()
             dict_data = db_manager.get_main_record(usernum)
-            record_data = {Const.KEY_FIELD[key]: value for key, value in dict_data.items() if key != Const.USERNUM}
+            record_data = {Database.KEY_FIELD[key]: value for key, value in dict_data.items() if key != Database.USERNUM}
             
-            # it's country user has active country payment or inactive payment with coutnry nnet
-            inactive_payment = record_data["payment"] in Const.INACTIVE_PAYMENT
-            country = record_data["payment"] in Const.COUNTRY or inactive_payment and record_data["nnet"] == Const.COUNTRY_NSERV_NNET
+            # it's country user has active country payment or inactive/new payment with coutnry nnet
+            inactive_payment = record_data["payment"] in Database.INACTIVE_PAYMENT
+            country = record_data["payment"] in Database.COUNTRY_PAYMENT or (inactive_payment or record_data["payment"] == Database.NEW_PAYMENT) and record_data["nnet"] == Country.NSERV_NNET
             
-            # return True if it's country payment, also return database manager, main data object and flag for inactive payment so not to check it later
+            # return True if it's country payment, return database manager, main data object and flag for inactive payment so not to check it later
             return country, db_manager, record_data, inactive_payment
         
         # exception while checking record
-        except Exception as err:   
-            # delete database manager and print traceback
+        except Exception:   
+            # delete database manager and throw exception again
             del db_manager
-            print("Exception while working with the database record:", traceback.print_exc(), sep="\n")
+            raise

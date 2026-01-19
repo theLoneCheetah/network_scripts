@@ -1,8 +1,9 @@
 #!/usr/bin/python3
+from typing import Any
 import pymysql.cursors
 import os
 # user's modules
-from const import Const
+from const import Database
 
 
 ##### MAIN QUERIES #####
@@ -17,7 +18,7 @@ class Queries:
 
 class DatabaseManager:
     # init data and connect to database
-    def __init__(self):
+    def __init__(self) -> None:
         self.__SERVER = os.getenv("DB_SERVER")
         self.__DATABASE = os.getenv("DB_NAME")
         self.__USER = os.getenv("DB_USER")
@@ -28,13 +29,13 @@ class DatabaseManager:
         self.__start_connection()
     
     # delete, close connection
-    def __del__(self):
+    def __del__(self) -> None:
         print("Closing connection to database...")
         self.__connection.close()
         print("Success")
     
     # start
-    def __start_connection(self):
+    def __start_connection(self) -> None:
         print("Connecting to database...")
         self.__connection = pymysql.connect(host=self.__SERVER,
                                             user=self.__USER,
@@ -45,25 +46,25 @@ class DatabaseManager:
         print("Success")
     
     # get main data about this user
-    def get_main_record(self, usernum):
+    def get_main_record(self, usernum: int):
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_MAIN_RECORD, (usernum,))
             return cursor.fetchone()
     
     # find users on this switch and port
-    def get_usernum_by_switch_port(self, switch, port):
+    def get_usernum_by_switch_port(self, switch: str, port: int):
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_USERNUMS_BY_SWITCH_PORT, (switch, port))
-            return [row[Const.USERNUM] for row in cursor.fetchall()]
+            return [row[Database.USERNUM] for row in cursor.fetchall()]
     
     # find users with this ip
-    def get_usernum_by_ip(self, ip):
+    def get_usernum_by_ip(self, ip: str):
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_USERNUMS_BY_IP, (ip,))
-            return [row[Const.USERNUM] for row in cursor.fetchall()]
+            return [row[Database.USERNUM] for row in cursor.fetchall()]
     
     # get switch and port for user
-    def get_switch_port(self, usernum):
+    def get_switch_port(self, usernum: int):
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_SWITCH_PORT, (usernum,))
             return cursor.fetchone()

@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime
 # user's modules
 from network_manager import NetworkManager
-from const import Const
+from const import Provider, CitySwitch
 import commands
 
 
@@ -12,7 +12,7 @@ import commands
 
 class L2Manager(NetworkManager):
     # L2 manager inits by user's port and base constructor
-    def __init__(self, ipaddress, user_port):
+    def __init__(self, ipaddress: str, user_port: int) -> None:
         super().__init__(ipaddress, "L2")
 
         # remember number of ports for this switch and then save base model for further diagnosing
@@ -23,11 +23,11 @@ class L2Manager(NetworkManager):
         self.__user_port = user_port
     
     # return True is user's port is inside switch's portlist
-    def check_port_in_portlist(self):
+    def check_port_in_portlist(self) -> bool:
         return self.__user_port <= self.__ports
     
     # handler to check and return info about port
-    def get_port_link(self):
+    def get_port_link(self) -> tuple[bool, bool, str | None, str | None, str | None]:
         # get all important parts including port type
         fiber, state, settings, linkdown, linkup = self.__show_port()
         
@@ -38,10 +38,10 @@ class L2Manager(NetworkManager):
         linkup = linkup.decode("utf-8") if linkup else None   # speed if up
         
         # return all modified
-        return (fiber, state, settings, linkdown, linkup)
+        return fiber, state, settings, linkdown, linkup
     
     # show ports and catch groups
-    def __show_port(self):
+    def __show_port(self) -> tuple[bool, str, str, str, str]:
         # command
         command_regex = commands.show_ports(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -56,12 +56,12 @@ class L2Manager(NetworkManager):
         
         # if it's combo port and active type is fiber
         if index == 1 and match.group(10):
-            return (True, *match.group(6, 7, 9, 10))
+            return True, *match.group(6, 7, 9, 10)
         # otherwise
-        return (False, *match.group(1, 2, 4, 5))
+        return False, *match.group(1, 2, 4, 5)
     
     # cable diagnostics
-    def cable_diag(self):
+    def cable_diag(self) -> list[tuple[int, str] | tuple[int, str, int]] | str:
         # command
         command_regex = commands.cable_diag(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -78,7 +78,7 @@ class L2Manager(NetworkManager):
         return match.group(11)
     
     # check log if port is flapping
-    def get_log_port_flapping(self):
+    def get_log_port_flapping(self) -> tuple[int, int]:
         # clipaging is necessary to check limited log output
         self._turn_on_clipaging()
         
@@ -109,7 +109,7 @@ class L2Manager(NetworkManager):
             range_minutes_difference = int((login_datetime - first_datetime).total_seconds() // 60)
             
             # scroll until end found or range max time difference reached
-            while index == 0 and range_minutes_difference < Const.MAX_MINUTE_RANGE_PORT_FLAPPING:
+            while index == 0 and range_minutes_difference < CitySwitch.MAX_MINUTE_RANGE_PORT_FLAPPING:
                 # command to scroll, decide is it continuation or end
                 self._session.send(" ")
                 index = self._session.expect(["CTRL", "#"])
@@ -139,14 +139,12 @@ class L2Manager(NetworkManager):
         
         # if datetime on switch is couldn't be parsed
         except ValueError:
-            # quit log
+            # quit log and disable clipaging back
             self._quit_output()
-            
-            # disable clipaging back
             self._turn_off_clipaging()
             
-            # new exception
-            raise ValueError
+            # throw exception again
+            raise
         
         # if still log continuation, quit
         if index == 0:
@@ -175,7 +173,7 @@ class L2Manager(NetworkManager):
         return count_port_flapping, last_flap_login_minutes_difference
     
     # get mac addresses on port
-    def get_mac_addresses_port(self):
+    def get_mac_addresses_port(self) -> set[str]:
         # command
         command_regex = commands.show_fdb(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -186,7 +184,7 @@ class L2Manager(NetworkManager):
         return {i[2] for i in matches}
     
     # get port security state on port
-    def get_port_security(self):
+    def get_port_security(self) -> bool:
         # command
         command_regex = commands.show_port_security(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -196,7 +194,7 @@ class L2Manager(NetworkManager):
         return self._session.match.group(1).decode("utf-8") == "Enabled"
     
     # get crc errors on port
-    def get_crc_errors_port(self):
+    def get_crc_errors_port(self) -> int:
         # command
         command_regex = commands.show_crc_errors(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -211,7 +209,7 @@ class L2Manager(NetworkManager):
         return int(match.group(1).decode("utf-8"))
     
     # get packages bytes on port
-    def get_packets_port(self):
+    def get_packets_port(self) -> map[int, int]:
         # command
         command_regex = commands.show_packet(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -226,7 +224,7 @@ class L2Manager(NetworkManager):
         return map(int, match.group(2, 3))
 
     # get all vlans on switch
-    def get_switch_vlans(self):
+    def get_switch_vlans(self) -> dict[int, str]:
         # command
         command_regex = commands.show_vlan(self._model)
         self._session.sendline(command_regex["command"])
@@ -236,7 +234,7 @@ class L2Manager(NetworkManager):
         return {int(vlan_id): vlan_name for vlan_id, vlan_name in re.findall(command_regex["regex"], self._session.before.decode("utf-8"))}
     
     # get vlans on port
-    def get_port_vlans(self):
+    def get_port_vlans(self) -> dict[str, list[int]]:
         # command
         command_regex = commands.show_vlan_ports(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -247,14 +245,14 @@ class L2Manager(NetworkManager):
         
         # parse entry, X means actual status
         for match in re.finditer(command_regex["regex"], self._session.before.decode("utf-8")):
-            if int(match[1]) not in Const.VLAN_SKIPPING:   # skip old iptv vlan
+            if int(match[1]) not in Provider.VLAN_SKIPPING:   # skip old iptv vlan
                 port_vlans[next(key for key, val in match.groupdict().items() if val == "X")].append(int(match[1]))
         
         # return completed dictionary
         return port_vlans
     
     # get dhcp servers and vlan ids from switch's dhcp relay
-    def get_dhcp_relay(self):
+    def get_dhcp_relay(self) -> tuple[None, None] | tuple[tuple[str], int] | tuple[tuple[str], list[str]]:
         # command
         command_regex = commands.show_dhcp_relay(self._model)
         self._session.sendline(command_regex["command"])
@@ -289,7 +287,7 @@ class L2Manager(NetworkManager):
             return match_servers.group("dhcp_server1", "dhcp_server2"), -1
 
     # get acl options on port from overall output
-    def get_port_acl(self):
+    def get_port_acl(self) -> list[str]:
         # clipaging is necessary because it's much faster on some models to scroll by space
         self._turn_on_clipaging()
 
