@@ -12,8 +12,8 @@ import commands
 
 class L2Manager(NetworkManager):
     # L2 manager inits by user's port and base constructor
-    def __init__(self, ipaddress: str, user_port: int) -> None:
-        super().__init__(ipaddress, "L2")
+    def __init__(self, ipaddress: str, user_port: int, print_output: bool = False) -> None:
+        super().__init__(ipaddress, "L2", print_output)
 
         # remember number of ports for this switch and then save base model for further diagnosing
         self.__ports = commands.switches[self._model]["ports"]
@@ -209,7 +209,7 @@ class L2Manager(NetworkManager):
         return int(match.group(1).decode("utf-8"))
     
     # get packages bytes on port
-    def get_packets_port(self) -> map[int, int]:
+    def get_packets_port(self) -> tuple[int]:
         # command
         command_regex = commands.show_packet(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -221,7 +221,7 @@ class L2Manager(NetworkManager):
             self._quit_output()
         
         # return rx and tx bytes as integers
-        return map(int, match.group(2, 3))
+        return tuple(map(int, match.group(2, 3)))
 
     # get all vlans on switch
     def get_switch_vlans(self) -> dict[int, str]:

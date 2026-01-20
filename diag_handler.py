@@ -121,9 +121,9 @@ class DiagHandler(BaseHandler):
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
     
     # compare subnet from L3 ip interface with subnet from user card
-    def _check_user_subnet_matches_ip_interface(self, vlan_id: int, ipif_name: str, gateway: str, mask_length: int) -> None:
+    def _check_user_subnet_matches_ip_interface(self, vlan_id: int, vlan_name: str, ipif_name: str, gateway: str, mask_length: int) -> None:
         # L3 manager checks ipif by vlan and compares with user's subnet
-        res = self._gateway_manager.check_ip_interface_subnet(vlan_id, ipif_name, gateway, mask_length)
+        res = self._gateway_manager.check_ip_interface_subnet(vlan_id, vlan_name, ipif_name, gateway, mask_length)
         
         # rarely when ipif doesn't exist or has another name
         if res is None:

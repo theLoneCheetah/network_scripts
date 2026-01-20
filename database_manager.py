@@ -1,9 +1,14 @@
 #!/usr/bin/python3
-from typing import Any
+from typing import TypedDict, Any
 import pymysql.cursors
 import os
 # user's modules
 from const import Database
+
+# typed dict class for result of switch-port query
+class SwitchPortData(TypedDict):
+    switchP: str
+    PortP: int
 
 
 ##### MAIN QUERIES #####
@@ -46,25 +51,25 @@ class DatabaseManager:
         print("Success")
     
     # get main data about this user
-    def get_main_record(self, usernum: int):
+    def get_main_record(self, usernum: int) -> dict[str, Any]:
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_MAIN_RECORD, (usernum,))
             return cursor.fetchone()
     
     # find users on this switch and port
-    def get_usernum_by_switch_port(self, switch: str, port: int):
+    def get_usernum_by_switch_port(self, switch: str, port: int) -> list[int]:
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_USERNUMS_BY_SWITCH_PORT, (switch, port))
             return [row[Database.USERNUM] for row in cursor.fetchall()]
     
     # find users with this ip
-    def get_usernum_by_ip(self, ip: str):
+    def get_usernum_by_ip(self, ip: str) -> list[int]:
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_USERNUMS_BY_IP, (ip,))
             return [row[Database.USERNUM] for row in cursor.fetchall()]
     
     # get switch and port for user
-    def get_switch_port(self, usernum: int):
+    def get_switch_port(self, usernum: int) -> SwitchPortData:
         with self.__connection.cursor() as cursor:
             cursor.execute(Queries.GET_SWITCH_PORT, (usernum,))
             return cursor.fetchone()

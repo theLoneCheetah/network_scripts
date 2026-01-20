@@ -32,7 +32,7 @@ class PacketScanHandler(BaseHandler):
         self.__max_tx_megabit = 0
 
     # handler for safe exiting, gets signal number and stack frame and exits successfully
-    def __handle_exit(self) -> None:
+    def __handle_exit(self, sig, frame) -> None:
         sys.exit(0)
 
     # main function

@@ -236,7 +236,7 @@ def show_log(model: str, user_port: int) -> CommandRegexData:
 
 ##### FOR L3 GATEWAY #####
 
-def show_ip_interface(model: str, vlan_id: int, ipif_name: str) -> CommandRegexData:
+def show_ip_interface(model: str, vlan_id: int, vlan_name: str, ipif_name: str) -> CommandRegexData:
     match model:
         case x if x == cisco_switch:
             return {"command": f"show ip interface vlan {vlan_id}",
@@ -244,11 +244,11 @@ def show_ip_interface(model: str, vlan_id: int, ipif_name: str) -> CommandRegexD
         case "DGS-3120-24TC":
             return {"command": f"show ipif {ipif_name}",
                     "showall": "show ipif",
-                    "regex": rf"VLAN Name\s+:\s+{ipif_name}\s+Interface Admin State\s+:\s+Enabled\s+Link Status\s+:\s+LinkUp\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
+                    "regex": rf"VLAN Name\s+:\s+{vlan_name}\s+Interface Admin State\s+:\s+Enabled\s+Link Status\s+:\s+LinkUp\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
         case _:
             return {"command": f"show ipif {ipif_name}",
                     "showall": "show ipif",
-                    "regex": rf"VLAN Name\s+:\s+{ipif_name}\s+Interface Admin State\s+:\s+Enabled\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
+                    "regex": rf"VLAN Name\s+:\s+{vlan_name}\s+Interface Admin State\s+:\s+Enabled\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
 
 def show_ip_route(model: str, user_ip: str) -> CommandRegexData:
     match model:

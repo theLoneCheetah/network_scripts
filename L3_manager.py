@@ -10,8 +10,8 @@ import commands
 
 class L3Manager(NetworkManager):
     # L3 manager inits by user ip and base constructor
-    def __init__(self, ipaddress: str, user_ip: str) -> None:
-        super().__init__(ipaddress, "L3")
+    def __init__(self, ipaddress: str, user_ip: str, print_output: bool = False) -> None:
+        super().__init__(ipaddress, "L3", print_output)
         self.__user_ip = user_ip
     
     # find ip route for direct public ip
@@ -71,25 +71,25 @@ class L3Manager(NetworkManager):
         return IPv4Address(ip) in IPv4Network(f"{self._ipaddress}/24", strict=False)
     
     # check ip interface's subnet by vlan matches user's gateway and mask length
-    def check_ip_interface_subnet(self, vlan_id: int, ipif_name: str, gateway: str, mask_length: int) -> bool | None:
+    def check_ip_interface_subnet(self, vlan_id: int, vlan_name: str, ipif_name: str, gateway: str, mask_length: int) -> bool | None:
         # on d-link, turn on clipaging because it can bug for a second
         if self._model != commands.cisco_switch:
             self._turn_on_clipaging()
 
         # command, public_name is used for ipif for direct public ip
-        command_regex = commands.show_ip_interface(self._model, vlan_id, ipif_name)
+        command_regex = commands.show_ip_interface(self._model, vlan_id, vlan_name, ipif_name)
         self._session.sendline(command_regex["command"])
         self._session.expect("#")
         
         # find one or several subnets
         match = re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
-
+        
         # on d-link, get back to disabled clipaging
         if self._model != commands.cisco_switch:
             self._turn_off_clipaging()
         
         # check if any of found subnets matches defined subnet
-        if not match:
+        if match:
             return any(g == gateway and int(m) == mask_length for g, m in match)
         # return -1 if ipif not found
         return None

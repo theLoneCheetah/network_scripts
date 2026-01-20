@@ -15,12 +15,15 @@ import commands
 
 class NetworkManager(ABC):
     # init by ip and connect with the same username and password
-    def __init__(self, ipaddress: str, switch_layer_type: str) -> None:
+    def __init__(self, ipaddress: str, switch_layer_type: str, print_output: bool) -> None:
         # define ip
         self._ipaddress = ipaddress
 
         # indicates if switch is L2 or L3 layer, is used for output while starting and closing connection
         self.__switch_layer_type = switch_layer_type
+
+        # write session output if needed
+        self.__output = sys.stdout.buffer if print_output else None
 
         # get connection's environment
         self.__USERNAME = os.getenv("NET_USER")
@@ -57,7 +60,7 @@ class NetworkManager(ABC):
         
         # try connecting to switch
         try:
-            self._session = pexpect.spawn(f"telnet {self._ipaddress}", timeout=5)#, logfile=sys.stdout.buffer)
+            self._session = pexpect.spawn(f"telnet {self._ipaddress}", timeout=5, logfile=self.__output)
             self._session.expect("(U|u)ser(N|n)ame:")
         
         # if timeout or another connection error
@@ -82,7 +85,7 @@ class NetworkManager(ABC):
                 # try connecting again
                 try:
                     print(f"Connecting to {self.__switch_layer_type}...")
-                    self._session = pexpect.spawn(f"telnet {self._ipaddress}", timeout=5)#, logfile=sys.stdout.buffer)
+                    self._session = pexpect.spawn(f"telnet {self._ipaddress}", timeout=5, logfile=self.__output)
                     self._session.expect("(U|u)ser(N|n)ame:")
                 
                 # can't connect if timeout repeatedly

@@ -1,7 +1,8 @@
 #!/usr/bin/python3
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any, override
 import re
 import traceback
-from typing import TYPE_CHECKING, Any, override
 from ipaddress import IPv4Address, IPv4Network, AddressValueError
 # user's modules
 from diag_handler import DiagHandler
@@ -18,13 +19,16 @@ if TYPE_CHECKING:
 ##### MAIN CLASS TO HANDLE CITY USER DIAGNOSTICS #####
 
 class CityDiagHandler(DiagHandler):
-    def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool) -> None:
+    def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool = False) -> None:
         # init with base constructor
         super().__init__(usernum, db_manager, record_data, inactive_payment)
 
         # L2 and L3 managers
         self._switch_manager: L2Manager | None = None
         self._gateway_manager: L3Manager | None = None
+
+        # indicate if terminal output needed
+        self.__print_output = print_output
 
 
         # attributes for diagnostics of the database record
@@ -323,7 +327,7 @@ class CityDiagHandler(DiagHandler):
                 raise MyException(ExceptionType.NO_SWITCH_PORT)
             
             # connect to switch only if switch and port are known
-            self._switch_manager = L2Manager(self._record_data["switch"], self._record_data["port"])
+            self._switch_manager = L2Manager(self._record_data["switch"], self._record_data["port"], self.__print_output)
             
             # exception and flag if port is outside switch's portlist
             if not self.__check_port_in_switch_portlist():
@@ -563,12 +567,12 @@ class CityDiagHandler(DiagHandler):
     def _find_actual_gateway(self) -> None:
         # init L3 manager by user record's gateway if ip is local
         if not self.__direct_public_ip:
-            self._gateway_manager = L3Manager(self._record_data["gateway"], self._record_data["ip"])
+            self._gateway_manager = L3Manager(self._record_data["gateway"], self._record_data["ip"], self.__print_output)
             return
         
         # on Lensoveta 23, define gateway address for direct public ip
         if self._record_data["street"] == Provider.LENSOVETA_ADDRESS_GATEWAY["street"] and self._record_data["house"] == Provider.LENSOVETA_ADDRESS_GATEWAY["house"]:
-            self._gateway_manager = L3Manager(Provider.LENSOVETA_ADDRESS_GATEWAY["gateway"], self._record_data["ip"])
+            self._gateway_manager = L3Manager(Provider.LENSOVETA_ADDRESS_GATEWAY["gateway"], self._record_data["ip"], self.__print_output)
             return
         
         # otherwise, find default gateway address on switch
@@ -577,7 +581,7 @@ class CityDiagHandler(DiagHandler):
         # may need from 1 to 3 iterations
         for _ in range(CitySwitch.MAX_HOPS_DIRECT_PUBLIC_IP):
             # create or update L3 manager and find ip route for direct public ip
-            self._gateway_manager = L3Manager(gateway, self._record_data["ip"])
+            self._gateway_manager = L3Manager(gateway, self._record_data["ip"], self.__print_output)
             gateway = self._gateway_manager.check_ip_route()
 
             # if nothing found, mark flag and keep current L3 manager
@@ -604,7 +608,7 @@ class CityDiagHandler(DiagHandler):
         
         # base method checks ip interface with by vlan and compare with subnet
         # ipif name is vlan name for local ip and last 2 octets of gateway for direct public ip
-        super()._check_user_subnet_matches_ip_interface(self.__untagged_vlan_id,
+        super()._check_user_subnet_matches_ip_interface(self.__untagged_vlan_id, self.__switch_vlans[self.__untagged_vlan_id],
                                                         self._record_data["gateway"][-7:] if self.__direct_public_ip 
                                                                     else self.__switch_vlans[self.__untagged_vlan_id],
                                                         self._record_data["gateway"], self.__mask_length)

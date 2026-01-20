@@ -11,6 +11,9 @@ from country_diag_handler import CountryDiagHandler
 def main() -> None:
     # get usernum
     usernum = int(input("Usernum: "))
+
+    # variable for testing, if True, write L2 and L3 managers output in stdout buffer
+    print_output = False
     
     # try to perform database connection and country check
     try:
@@ -19,9 +22,9 @@ def main() -> None:
 
         # depending on country or not, create main handler object
         if country:
-            handler = CountryDiagHandler(usernum, db_manager, record_data, inactive_payment)
+            handler = CountryDiagHandler(usernum, db_manager, record_data, inactive_payment, print_output)
         else:
-            handler = CityDiagHandler(usernum, db_manager, record_data, inactive_payment)
+            handler = CityDiagHandler(usernum, db_manager, record_data, inactive_payment, print_output)
         
         # delete this function's database manager reference so class instance could control it
         del db_manager

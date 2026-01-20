@@ -19,13 +19,16 @@ from my_exception import ExceptionType, MyException
 ##### MAIN CLASS TO HANDLE COUNTRY USER DIAGNOSTICS #####
 
 class CountryDiagHandler(DiagHandler):
-    def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool) -> None:
+    def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool = False) -> None:
         # init with base constructor
         super().__init__(usernum, db_manager, record_data, inactive_payment)
 
         # L2 and L3 managers
         self._switch_manager: Any | None = None
         self._gateway_manager: L3Manager | None = None
+
+        # indicate if terminal output needed
+        self.__print_output = print_output
 
 
         # attributes for diagnostics of the database record
