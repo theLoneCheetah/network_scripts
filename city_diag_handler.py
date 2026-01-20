@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, override
 import re
 import traceback
-from ipaddress import IPv4Address, IPv4Network, AddressValueError
+from ipaddress import IPv4Address, IPv4Network
 # user's modules
 from diag_handler import DiagHandler
 from L2_manager import L2Manager
@@ -49,7 +49,7 @@ class CityDiagHandler(DiagHandler):
         self.__impossible_mask = False
         self.__ip_out_of_subnet = False
         self.__incorrect_indirect_public_ip = False
-        self.__different_ip_public_ip = False
+        self._different_ip_public_ip = False
         self.__incorrect_subnet = False
         self.__incorrect_switch = False
         self.__double_port: list[int] = []   # there will be usernums if found doubles
@@ -129,7 +129,7 @@ class CityDiagHandler(DiagHandler):
             
             # check and make a note about ip fields
             for field in Provider.IP_FIELDS:
-                self._correctly_filled[field] = self.__check_ip_fields(field)
+                self._correctly_filled[field] = self._check_ip_fields(field)
             
             # check switch ip
             if self._correctly_filled["switch"] == 1:
@@ -167,7 +167,7 @@ class CityDiagHandler(DiagHandler):
                     # if ip is public, check public_ip field is the same
                     elif self.__check_public_ip():
                         if self._record_data["ip"] != self._record_data["public_ip"]:
-                            self.__different_ip_public_ip = True
+                            self._different_ip_public_ip = True
                         else:   # if correct, check default gateway on L2 and ip route on L3
                             self.__direct_public_ip = True
                     
@@ -176,7 +176,7 @@ class CityDiagHandler(DiagHandler):
                         self.__incorrect_subnet = True
                     
                     # if there was no errors, acl and L3 diagnostics is possible
-                    if not any([self.__ip_out_of_subnet, self.__incorrect_indirect_public_ip, self.__different_ip_public_ip, self.__incorrect_subnet]):
+                    if not any([self.__ip_out_of_subnet, self.__incorrect_indirect_public_ip, self._different_ip_public_ip, self.__incorrect_subnet]):
                         self.__ip_mask_gateway = True
         
         except Exception as err:   # exception while checking record
@@ -209,16 +209,6 @@ class CityDiagHandler(DiagHandler):
         elif 1 <= self._record_data[field] <= limit:
             return 1
         return -1
-    
-    # check ip record fields: ip, mask, gateway, switch, public_ip
-    def __check_ip_fields(self, field: str) -> int:
-        if not self._record_data[field]:
-            return 0
-        try:
-            IPv4Address(self._record_data[field])
-            return 1
-        except AddressValueError:
-            return -1
     
     # check users with the same switch and port, return list of doubles if found
     def __check_double_switch_port(self) -> None:
@@ -263,8 +253,8 @@ class CityDiagHandler(DiagHandler):
         # for indirect public ip, check if it lies in public subnet
         return any(IPv4Address(address) in subnet for subnet in Provider.PUBLIC_SUBNETS)
     
-    @override
     # result of database record diagnostics
+    @override
     def _result_user_card(self) -> None:
         # flag to monitor if all diagnostics are ok
         all_correct = True
@@ -308,7 +298,7 @@ class CityDiagHandler(DiagHandler):
             print("Неизвестная подсеть")
         elif self.__ip_out_of_subnet:
             print("Айпи вне подсети")
-        elif self.__different_ip_public_ip:
+        elif self._different_ip_public_ip:
             print("Поле Внешний IP не совпадает с IP")
         elif self.__incorrect_indirect_public_ip:
             print("Некорректный внешний IP")

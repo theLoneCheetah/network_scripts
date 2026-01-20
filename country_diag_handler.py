@@ -12,14 +12,14 @@ from diag_handler import DiagHandler
 from database_manager import DatabaseManager
 from L2_manager import L2Manager
 from L3_manager import L3Manager
-from const import Country
+from const import Database, Country
 from my_exception import ExceptionType, MyException
 
 
 ##### MAIN CLASS TO HANDLE COUNTRY USER DIAGNOSTICS #####
 
 class CountryDiagHandler(DiagHandler):
-    def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool = False) -> None:
+    def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool = True) -> None:
         # init with base constructor
         super().__init__(usernum, db_manager, record_data, inactive_payment)
 
@@ -35,6 +35,10 @@ class CountryDiagHandler(DiagHandler):
 
         # -1 if data from record is incorrect, 0 if empty, 1 if correct
         self._correctly_filled = {}
+
+        # flags for errors in diagnostics of the database record
+        self.__ip_out_of_country_subnets = False
+        self._different_ip_public_ip = False
     
 
     ##### DATABASE AND USER CARD PART #####
@@ -55,9 +59,18 @@ class CountryDiagHandler(DiagHandler):
             
             # check ip fields
             for field in Country.IP_FIELDS:
-                self._correctly_filled[field] = self.__check_country_ip(field)
+                self._correctly_filled[field] = self._check_ip_fields(field)
             
-            # different ip and public ip: base flag?
+            # error flag if ip is not in country subnets
+            if not self.__check_country_ip():
+                self.__ip_out_of_country_subnets = True
+            # otherwise error flag if ip and public ip differ
+            elif self._record_data["ip"] == self._record_data["public_ip"]:
+                self._different_ip_public_ip = True
+            
+            # check for double ip
+            if self._correctly_filled["ip"] == 1:
+                self._check_double_ip()
 
         except Exception as err:   # exception while checking record
             print("Exception while working with the database record:")
@@ -76,28 +89,50 @@ class CountryDiagHandler(DiagHandler):
 
     # check if nserv and nnet match country
     def __check_nserv_nnet(self, field: str) -> int:
-        return 1 if self._record_data[field] == Country.NSERV_NNET else -1
-
-    # check if ip or public_ip are not empty and match country direct public ip subnets
-    def __check_country_ip(self, field: str) -> int:
-        if not self._record_data[field]:
+        if self._record_data[field] == 0:
             return 0
-        try:
-            if IPv4Address(self._record_data[field]) in Country.SUBNETS:
-                return 1
-            return -1
-        except AddressValueError:
-            return -1
+        elif self._record_data[field] == Country.NSERV_NNET:
+            return 1
+        return -1
 
+    # check if ip or public_ip are correct
+    def __check_country_ip(self) -> bool:
+        return IPv4Address(self._record_data["ip"]) in Country.SUBNETS
+    
     # result of database record diagnostics
     @override
     def _result_user_card(self) -> None:
+        # flag to monitor if all diagnostics are ok
         all_correct = True
 
         # if payment is inactive
         if self._inactive_payment:
             print("Неактивный взнос:", self._record_data["payment"])
             all_correct = False
+        
+        # print empty fields that should be filled
+        if any(value == 0 for value in self._correctly_filled.values()):
+            print("Не заполнены поля:", ", ".join(name for key, name in Database.KEY_OUTPUT.items() if self._correctly_filled[key] == 0))
+            all_correct = False
+        
+        # print obviously incorrect fields
+        if any(value == -1 for value in self._correctly_filled.values()):
+            print("Неверно заполнены поля:", ", ".join(name for key, name in Database.KEY_OUTPUT.items() if self._correctly_filled[key] == -1))
+            all_correct = False
+        
+        # double port and ip
+        if self._double_ip:
+            print("Дубль айпи:", ", ".join(map(str, self._double_ip)))
+            all_correct = False
+        
+        # ip address errors
+        if self.__ip_out_of_country_subnets:
+            print("Айпи вне деревенских подсетей")
+        elif self._different_ip_public_ip:
+            print("Поле Внешний IP не совпадает с IP")
+        # if everythin is OK and there was no errors before
+        elif all_correct:
+            print("OK")
     
     
     ##### L2 AND L3 EQUIPMENT DIAGNOSTICS PART #####

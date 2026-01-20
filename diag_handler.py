@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from abc import abstractmethod
 import sys
+from ipaddress import IPv4Address, AddressValueError
 # user's modules
 from base_handler import BaseHandler
 from database_manager import DatabaseManager
@@ -28,6 +29,9 @@ class DiagHandler(BaseHandler):
         self._db_manager = db_manager
         self._record_data = record_data
         self._inactive_payment = inactive_payment
+
+        # this error is typical for both city and country
+        self._different_ip_public_ip = False
         
         # there will be usernums if found doubles, actual for all users
         self._double_ip: list[int] = []
@@ -75,6 +79,16 @@ class DiagHandler(BaseHandler):
     @abstractmethod
     def _check_user_card(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
+    
+    # check ip record fields: ip, mask, gateway, switch, public_ip
+    def _check_ip_fields(self, field: str) -> int:
+        if not self._record_data[field]:
+            return 0
+        try:
+            IPv4Address(self._record_data[field])
+            return 1
+        except AddressValueError:
+            return -1
     
     # check users with the same ip, return list of doubles if found
     def _check_double_ip(self) -> None:

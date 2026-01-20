@@ -30,6 +30,10 @@ class L2Manager(NetworkManager):
     def get_port_link(self) -> tuple[bool, bool, str | None, str | None, str | None]:
         # get all important parts including port type
         fiber, state, settings, linkdown, linkup = self.__show_port()
+
+        # check if it's fiber port on 1210
+        if self.__check_last_fiber_port():
+            fiber = True
         
         # modify to useful form
         state = state.decode("utf-8") == "Disabled"   # boolean
@@ -60,6 +64,10 @@ class L2Manager(NetworkManager):
         # otherwise
         return False, *match.group(1, 2, 4, 5)
     
+    # check if user's port is one of last 4 fiber ports on 1210-28 or 1210-52
+    def __check_last_fiber_port(self):
+        return self._model == "DGS-1210-28/ME" and self.__ports - self.__user_port < 4
+
     # cable diagnostics
     def cable_diag(self) -> list[tuple[int, str] | tuple[int, str, int]] | str:
         # command
