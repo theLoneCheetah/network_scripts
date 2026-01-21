@@ -13,6 +13,7 @@ from database_manager import DatabaseManager
 from L2_manager import L2Manager
 from L3_manager import L3Manager
 from const import Database, Country
+from country_alarm import CountryAlarmManager
 from my_exception import ExceptionType, MyException
 
 
@@ -35,10 +36,19 @@ class CountryDiagHandler(DiagHandler):
 
         # -1 if data from record is incorrect, 0 if empty, 1 if correct
         self._correctly_filled = {}
+        
+        # flag for main record diagnostics
+        self.__ip_correct = False
 
         # flags for errors in diagnostics of the database record
         self.__ip_out_of_country_subnets = False
         self._different_ip_public_ip = False
+
+        # flags for variables and erros in country alarm
+        self.__olt_ip = ""
+        self.__eltex_serial = ""
+        self.__alarm_usernum_not_found = False
+        self.__alarm_several_eltex_found = 0
     
 
     ##### DATABASE AND USER CARD PART #####
@@ -61,16 +71,23 @@ class CountryDiagHandler(DiagHandler):
             for field in Country.IP_FIELDS:
                 self._correctly_filled[field] = self._check_ip_fields(field)
             
-            # error flag if ip is not in country subnets
-            if not self.__check_country_ip():
-                self.__ip_out_of_country_subnets = True
-            # otherwise error flag if ip and public ip differ
-            elif self._record_data["ip"] == self._record_data["public_ip"]:
-                self._different_ip_public_ip = True
-            
-            # check for double ip
+            # if ip exists, check it
             if self._correctly_filled["ip"] == 1:
+                # check for double ip
                 self._check_double_ip()
+
+                # error flag if ip is not in country subnets
+                if not self.__check_country_ip():
+                    self.__ip_out_of_country_subnets = True
+                
+                # if public ip exists
+                elif self._correctly_filled["public_ip"] == 1:
+                    # error flag if ip and public ip differ
+                    if self._record_data["ip"] != self._record_data["public_ip"]:
+                        self._different_ip_public_ip = True
+                    # otherwise, ip settings are correct
+                    else:
+                        self.__ip_correct = True
 
         except Exception as err:   # exception while checking record
             print("Exception while working with the database record:")
@@ -81,11 +98,11 @@ class CountryDiagHandler(DiagHandler):
 
     # check unused number record fields if empty: port, dhcp
     def __check_unused_number_fields(self, field: str) -> int:
-        return 1 if self._record_data[field] is None or self._record_data[field] == 0 else -1
+        return 1 if not self._record_data[field] else -1
 
     # check unused ip record fields if empty: mask, gateway, switch
     def __check_unused_ip_fields(self, field: str) -> int:
-        return 1 if self._record_data[field] is None else -1
+        return 1 if not self._record_data[field] else -1
 
     # check if nserv and nnet match country
     def __check_nserv_nnet(self, field: str) -> int:
@@ -97,7 +114,7 @@ class CountryDiagHandler(DiagHandler):
 
     # check if ip or public_ip are correct
     def __check_country_ip(self) -> bool:
-        return IPv4Address(self._record_data["ip"]) in Country.SUBNETS
+        return any(IPv4Address(self._record_data["ip"]) in subnet for subnet in Country.SUBNETS)
     
     # result of database record diagnostics
     @override
@@ -140,7 +157,24 @@ class CountryDiagHandler(DiagHandler):
     # function to control diagnosing L2 and L3
     @override
     def _check_L2_L3(self) -> None:
-        pass
+        # get data for olt diagnostics
+        self.__get_olt_eltex()
+
+    # get olt and eltex from country alarm for further diagnostics
+    def __get_olt_eltex(self):
+        # catch list of matches
+        olt_eltex = CountryAlarmManager.get_user_data_from_alarm(self._usernum)
+
+        match len(olt_eltex):
+            # error flag if not found
+            case 0:
+                self.__alarm_usernum_not_found = True
+            # save olt and eltex if exactly one found
+            case 1:
+                self.__olt_ip, self.__eltex_serial = olt_eltex[0]
+            # error flag if more than one found
+            case _:
+                self.__alarm_several_eltex_found = True
     
     # check mac addresses and get as a set
     @override
@@ -160,5 +194,10 @@ class CountryDiagHandler(DiagHandler):
     # result of L2 and L3 diagnostics
     @override
     def _result_L2_L3(self) -> None:
-        pass
-    
+        # alarm check: no user or sereval onts
+        if self.__alarm_usernum_not_found:
+            print("Конфиг ONT для юзера не найден")
+        elif self.__alarm_several_eltex_found:
+            print("Несколько конфигов ONT для юзера")
+        else:
+            print(self.__olt_ip, self.__eltex_serial)

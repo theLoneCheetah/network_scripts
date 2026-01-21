@@ -109,7 +109,7 @@ class Country:
     NUMBER_FIELDS = {"nserv", "nnet"}
     IP_FIELDS = {"ip", "public_ip"}
     UNUSED_NUMBER_FIELDS = {"port", "dhcp"}
-    UNUSED_IP_FIELDS = {"Masck", "Gate", "switchP"}
+    UNUSED_IP_FIELDS = {"mask", "gateway", "switch"}
 
     # country's unified mask, main subnets and vlans
     MASK = os.getenv("COUNTRY_MASK")
