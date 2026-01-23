@@ -1,19 +1,18 @@
 #!/usr/bin/python3
 import os
 import requests
+# user's modules
+from const import Country
 
 
 ##### MANAGER TO GET DATA FROM COUNTRY ALARM #####
 
 class CountryAlarmManager:
-    # url for all configured onts, no matter online or not
-    __url = os.getenv("URL_CONFIGURED_ONTS")
-
     # get olt ips and eltex serials by usernum
     @staticmethod
-    def get_user_data_from_alarm(usernum: int):
+    def get_user_data_from_alarm(usernum: int) -> list[tuple[str]]:
         # load json from url
-        response = requests.get(CountryAlarmManager.__url)
+        response = requests.get(Country.ALARM_URL)
         payload = response.json()
 
         # split and collect data as dictionaries

@@ -1,15 +1,20 @@
 #!/usr/bin/python3
-from typing import TypeAlias
+from typing import TypeAlias, TypedDict
 
 # alias for most of returned dictionaries
 CommandRegexData: TypeAlias = dict[str, str]
+
+# typeddist alias for show ports regex result
+class ShowPortsCommandRegex(TypedDict):
+    command: str
+    regex: list[str]
 
 
 ##### SWITCH MODELS #####
 
 # base_switches = {"DES-3028", "DES-3200-28", "DES-3526", "DGS-3000-24TC", "DGS-3200-24", "DGS-1210-28/ME", "DGS-3120-24TC"}
 
-switches = {# L2
+SWITCHES = {# L2
             "DES-3028": {"base_switch": "DES-3028", "ports": 28},
             "DES-3052": {"base_switch": "DES-3028", "ports": 52},
             "DES-3200-28": {"base_switch": "DES-3200-28", "ports": 28},
@@ -27,7 +32,8 @@ switches = {# L2
             "DGS-3620-28SC": {},
             "DGS-3627G": {},
             "DGS-3630-28SC": {}}   # cisco-like
-cisco_switch = "DGS-3630-28SC"
+CISCO_SWITCH = "DGS-3630-28SC"
+
 
 ##### BASE COMMANDS #####
 
@@ -42,16 +48,17 @@ def show_model(cli_type: str) -> CommandRegexData:
 
 def clipaging(model: str) -> CommandRegexData:
     match model:
-        case x if x == cisco_switch:
+        case x if x == CISCO_SWITCH:
             return {"disable": "terminal length 0",
                     "enable": "terminal length 24"}
         case _:
             return {"disable": "disable clipaging",
                     "enable": "enable clipaging"}
 
-##### FOR L2 SWITCH #####
 
-def show_ports(model: str, user_port: int) -> dict[str, str | list[str]]:
+##### COMMANDS FOR L2 SWITCH #####
+
+def show_ports(model: str, user_port: int) -> ShowPortsCommandRegex:
     match model:
         case "DES-3028":
             return {"command": f"show ports {user_port}",
@@ -234,11 +241,12 @@ def show_log(model: str, user_port: int) -> CommandRegexData:
                     "regex": rf"(\d{{4}}-\d{{2}}-\d+)\s+(\d{{2}}:\d{{2}}:\d{{2}})\s+\S+\s+Port {user_port}",
                     "findall": f"Port {user_port} link up"}
 
-##### FOR L3 GATEWAY #####
+
+##### COMMANDS FOR L3 GATEWAY #####
 
 def show_ip_interface(model: str, vlan_id: int, vlan_name: str, ipif_name: str) -> CommandRegexData:
     match model:
-        case x if x == cisco_switch:
+        case x if x == CISCO_SWITCH:
             return {"command": f"show ip interface vlan {vlan_id}",
                     "regex": rf"IP address is ((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
         case "DGS-3120-24TC":
@@ -252,7 +260,7 @@ def show_ip_interface(model: str, vlan_id: int, vlan_name: str, ipif_name: str) 
 
 def show_ip_route(model: str, user_ip: str) -> CommandRegexData:
     match model:
-        case x if x == cisco_switch:
+        case x if x == CISCO_SWITCH:
             return {"command": "show ip route static",
                     "regex": rf"{user_ip}/32\s+via\s+(?P<next_hop>(\d{{1,3}}\.){{3}}\d{{1,3}})(,\s+vlan(\d+))?"}
         case _:
@@ -262,7 +270,7 @@ def show_ip_route(model: str, user_ip: str) -> CommandRegexData:
 
 def show_arp_ip(model: str, user_ip: str) -> CommandRegexData:
     match model:
-        case x if x == cisco_switch:
+        case x if x == CISCO_SWITCH:
             return {"command": f"show arp {user_ip}",
                     "regex": rf"{user_ip}\s+(?P<mac>([A-Z\d]{{2}}-){{5}}[A-Z\d]{{2}})\s+vlan(\d+)"}
         case _:
@@ -271,7 +279,7 @@ def show_arp_ip(model: str, user_ip: str) -> CommandRegexData:
 
 def show_arp_mac(model: str, user_mac: str) -> CommandRegexData:
     match model:
-        case x if x == cisco_switch:
+        case x if x == CISCO_SWITCH:
             return {"command": f"show arp {user_mac}",
                     "regex": rf"(?P<ip>(\d{{1,3}}\.){{3}}\d{{1,3}})\s+{user_mac}\s+vlan(\d+)"}
         case _:
@@ -280,10 +288,9 @@ def show_arp_mac(model: str, user_mac: str) -> CommandRegexData:
 
 def show_fdb_L3(model: str, user_mac: str) -> CommandRegexData:
     match model:
-        case x if x == cisco_switch:
+        case x if x == CISCO_SWITCH:
             return {"command": f"show mac-address-table address {user_mac}",
                     "regex": rf"(\d+)\s+({user_mac})"}
         case _:
             return {"command": f"show fdb mac_address {user_mac}",
                     "regex": rf"(\d+)\s+(\S+)\s+({user_mac})"}
-

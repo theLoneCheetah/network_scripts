@@ -19,6 +19,58 @@ if TYPE_CHECKING:
 ##### MAIN CLASS TO HANDLE CITY USER DIAGNOSTICS #####
 
 class CityDiagHandler(DiagHandler):
+    # annotations of inherited attributes
+    _switch_manager: L2Manager | None
+    _gateway_manager: L3Manager | None
+    # class attributes annotations
+    __print_output: bool
+    __gigabit: bool
+    __switch_port: bool
+    __ip_mask_gateway: bool
+    __direct_public_ip: bool
+    __mask_length: int
+    __unknown_payment: bool
+    __impossible_mask: bool
+    __ip_out_of_subnet: bool
+    __incorrect_indirect_public_ip: bool
+    __incorrect_subnet: bool
+    __incorrect_switch: bool
+    __double_port: list[int]
+    __switch_exception: MyException | None
+    __switch_vlans: dict[int, str]
+    __have_direct_public_vlan: bool
+    __untagged_vlan_id: int
+    __port_vlans: dict[str, list[int]]
+    __vlan_ok: bool
+    __no_vlan: bool
+    __user_vlan_instead_of_direct_public_vlan: bool
+    __direct_public_vlan_instead_of_user_vlan: bool
+    __dhcp_relay_ok: bool
+    __incorrect_dhcp_relay: bool
+    __acl_ok: bool
+    __no_acl: bool
+    __wrong_acl: bool
+    __fiber_port: bool
+    __link_ok: bool
+    __port_disabled: bool
+    __speed_settings: str
+    __linkdown_status: str
+    __lower_speed: str
+    __need_to_cable_diag: bool
+    __open_cable_pairs: list[tuple[int, str] | tuple[int, str, int]]
+    __cable_diag_status: str
+    __invalid_log_time: bool
+    __port_flapping: bool
+    __port_security: bool
+    __crc_errors: int
+    __crc_ok: bool
+    __rx_bytes: int
+    __tx_bytes: int
+    __rx_megabit: int
+    __tx_megabit: int
+    __packets_ok: bool
+    __ip_route_not_found: bool
+
     def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool = False) -> None:
         # init with base constructor
         super().__init__(usernum, db_manager, record_data, inactive_payment)
@@ -49,22 +101,21 @@ class CityDiagHandler(DiagHandler):
         self.__impossible_mask = False
         self.__ip_out_of_subnet = False
         self.__incorrect_indirect_public_ip = False
-        self._different_ip_public_ip = False
         self.__incorrect_subnet = False
         self.__incorrect_switch = False
-        self.__double_port: list[int] = []   # there will be usernums if found doubles
+        self.__double_port = []   # there will be usernums if found doubles
         
 
         # attributes for diagnostics of L2 and L3
         
         # user's exception while working and switch
-        self.__switch_exception: MyException | None = None
+        self.__switch_exception = None
 
         # vlan
-        self.__switch_vlans: dict[int, str] = {}
+        self.__switch_vlans = {}
         self.__have_direct_public_vlan = False
         self.__untagged_vlan_id = 0
-        self.__port_vlans: dict[str, list[int]] = {}   # status: list of VIDs
+        self.__port_vlans = {}   # status: list of VIDs
         self.__vlan_ok = False
         self.__no_vlan = False
         self.__user_vlan_instead_of_direct_public_vlan = False
@@ -83,14 +134,14 @@ class CityDiagHandler(DiagHandler):
         self.__fiber_port = False
         self.__link_ok = False
         self.__port_disabled = False
-        self.__speed_settings = None
-        self.__linkdown_status = None
-        self.__lower_speed = None
+        self.__speed_settings = ""
+        self.__linkdown_status = ""
+        self.__lower_speed = ""
 
         # cable diagnostics
         self.__need_to_cable_diag = False   # if necessary to cable diag later
-        self.__open_cable_pairs: list[tuple[int, str] | tuple[int, str, int]] = []   # list of pairs: number, state, meter optionally
-        self.__cable_diag_status = None
+        self.__open_cable_pairs = []   # list of pairs: number, state, meter optionally
+        self.__cable_diag_status = ""
 
         # log, port flapping
         self.__invalid_log_time = False
@@ -179,7 +230,7 @@ class CityDiagHandler(DiagHandler):
                     if not any([self.__ip_out_of_subnet, self.__incorrect_indirect_public_ip, self._different_ip_public_ip, self.__incorrect_subnet]):
                         self.__ip_mask_gateway = True
         
-        except Exception as err:   # exception while checking record
+        except Exception:   # exception while checking record
             print("Exception while working with the database record:")
             traceback.print_exc()
         

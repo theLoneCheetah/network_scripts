@@ -22,6 +22,13 @@ class Queries:
 ##### CLASS TO GET DATA FROM THE DATABASE #####
 
 class DatabaseManager:
+    __SERVER: str
+    __DATABASE: str
+    __USER: str
+    __PASSWORD: str
+    __CHARSET: str
+    __connection: pymysql.Connection
+    
     # init data and connect to database
     def __init__(self) -> None:
         self.__SERVER = os.getenv("DB_SERVER")
@@ -33,21 +40,21 @@ class DatabaseManager:
         # start session
         self.__start_connection()
     
-    # delete, close connection
-    def __del__(self) -> None:
-        print("Closing connection to database...")
-        self.__connection.close()
-        print("Success")
-    
     # start
     def __start_connection(self) -> None:
         print("Connecting to database...")
         self.__connection = pymysql.connect(host=self.__SERVER,
                                             user=self.__USER,
                                             password=self.__PASSWORD,
-                                            db=self.__DATABASE,
+                                            database=self.__DATABASE,
                                             charset=self.__CHARSET,
                                             cursorclass=pymysql.cursors.DictCursor)
+        print("Success")
+    
+    # delete, close connection
+    def __del__(self) -> None:
+        print("Closing connection to database...")
+        self.__connection.close()
         print("Success")
     
     # get main data about this user

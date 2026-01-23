@@ -20,6 +20,9 @@ def main() -> None:
         # with base handler class, check payment to decide country user or not
         country, db_manager, record_data, inactive_payment = DiagHandler.decide_country_or_city(usernum)
 
+        # base annotation for handler object
+        handler: DiagHandler
+
         # depending on country or not, create main handler object
         if country:
             handler = CountryDiagHandler(usernum, db_manager, record_data, inactive_payment, print_output)
@@ -33,7 +36,7 @@ def main() -> None:
         handler.check_all()
 
     # exception in this function, print traceback
-    except Exception as err:
+    except Exception:
         print("Exception while working with the database record:")
         traceback.print_exc()
     

@@ -17,6 +17,22 @@ if TYPE_CHECKING:
 ##### BASE DIAGNOSTICS HANDLER CLASS #####
 
 class DiagHandler(BaseHandler):
+    # annotations of protected attributes
+    _inactive_payment: bool
+    _different_ip_public_ip: bool
+    _double_ip: list[int]
+    _mac_addresses: set[str]
+    _mac_ok: bool
+    _no_mac: bool
+    _many_macs: int
+    _ip_interface_not_found: bool
+    _ip_interface_wrong_subnet: bool
+    _arp_ok: bool
+    _no_arp: bool
+    _arp_on_unknown_mac: str
+    _ip_incorrect_arp_on_mac: list[str]
+    _need_to_check_mac_on_L3: bool
+    _no_mac_on_L3: bool
     # annotations of objects in child classes: L3 managers, correctly filled indicator dict
     _gateway_manager: L3Manager
     _correctly_filled: dict[str, int]
@@ -34,7 +50,7 @@ class DiagHandler(BaseHandler):
         self._different_ip_public_ip = False
         
         # there will be usernums if found doubles, actual for all users
-        self._double_ip: list[int] = []
+        self._double_ip = []
         
         # mac address
         self._mac_addresses: set[str] = set()

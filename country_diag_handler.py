@@ -20,13 +20,25 @@ from my_exception import ExceptionType, MyException
 ##### MAIN CLASS TO HANDLE COUNTRY USER DIAGNOSTICS #####
 
 class CountryDiagHandler(DiagHandler):
+    # annotations of inherited attributes
+    _switch_manager: Any | None
+    _gateway_manager: L3Manager | None
+    # class attributes annotations
+    __print_output: bool
+    __ip_correct: bool
+    __ip_out_of_country_subnets: bool
+    __olt_ip: str
+    __eltex_serial: str
+    __alarm_usernum_not_found: bool
+    __alarm_several_eltex_found: int
+
     def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool = True) -> None:
         # init with base constructor
         super().__init__(usernum, db_manager, record_data, inactive_payment)
 
         # L2 and L3 managers
-        self._switch_manager: Any | None = None
-        self._gateway_manager: L3Manager | None = None
+        self._switch_manager = None
+        self._gateway_manager = None
 
         # indicate if terminal output needed
         self.__print_output = print_output
@@ -42,7 +54,6 @@ class CountryDiagHandler(DiagHandler):
 
         # flags for errors in diagnostics of the database record
         self.__ip_out_of_country_subnets = False
-        self._different_ip_public_ip = False
 
         # flags for variables and erros in country alarm
         self.__olt_ip = ""
@@ -89,7 +100,7 @@ class CountryDiagHandler(DiagHandler):
                     else:
                         self.__ip_correct = True
 
-        except Exception as err:   # exception while checking record
+        except Exception:   # exception while checking record
             print("Exception while working with the database record:")
             traceback.print_exc()
         
@@ -161,7 +172,7 @@ class CountryDiagHandler(DiagHandler):
         self.__get_olt_eltex()
 
     # get olt and eltex from country alarm for further diagnostics
-    def __get_olt_eltex(self):
+    def __get_olt_eltex(self) -> None:
         # catch list of matches
         olt_eltex = CountryAlarmManager.get_user_data_from_alarm(self._usernum)
 

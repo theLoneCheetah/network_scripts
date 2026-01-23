@@ -1,34 +1,37 @@
 #!/usr/bin/python3
-from enum import Enum
+from enum import StrEnum
 
 
 ##### CLASS FOR ERRORS' CODES #####
 
-class ExceptionType(str, Enum):
-    BASE = "Невозможно продиагностировать "
+class ExceptionType(StrEnum):
+    BASE: str = "Невозможно продиагностировать "
 
-    NO_SWITCH_PORT = "L2: нет свитча и порта"
+    NO_SWITCH_PORT: str = "L2: нет свитча и порта"
 
-    SWITCH_NOT_AVAILABLE = "L2: свитч недоступен"
-    SWITCH_FREEZES = "L2: свитч зависает"
-    SWITCH_CANNOT_CONNECT = "L2: не удаётся подключиться к свитчу, свитч пингуется"
+    SWITCH_NOT_AVAILABLE: str = "L2: свитч недоступен"
+    SWITCH_FREEZES: str = "L2: свитч зависает"
+    SWITCH_CANNOT_CONNECT: str = "L2: не удаётся подключиться к свитчу, свитч пингуется"
 
-    UNKNOWN_MODEL = "L2: неизвестная модель свитча с IP "
+    UNKNOWN_MODEL: str = "L2: неизвестная модель свитча с IP "
 
-    PORT_OUTSIDE_OF_PORTLIST = "L2: порт пользователя вне диапазона портов свитча"
+    PORT_OUTSIDE_OF_PORTLIST: str = "L2: порт пользователя вне диапазона портов свитча"
 
-    NO_SUBNET = "ACL, VLAN и ARP: нет корректных настроек IP"
+    NO_SUBNET: str = "ACL, VLAN и ARP: нет корректных настроек IP"
 
 
 ##### CLASS FOR USER'S EXCEPTION AND ERRORS' CODES #####
 
 class MyException(Exception):
+    __message: str
+    __arg: str
+    
     # init by base init and message
     def __init__(self, message: ExceptionType, arg: str = ""):
         super().__init__()
         
         # save message, add ip argument if unknown model error
-        self.__message: str = message.value
+        self.__message = message.value
         self.__arg = arg
 
     # print with base and specific messages concatenated

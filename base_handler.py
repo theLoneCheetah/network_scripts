@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 ##### ABSTRACT HANDLER CLASS FOR USER #####
 
 class BaseHandler(ABC):
+    # annotation of usernum
+    _usernum: int
     # annotations of objects in child classes: database and L2 managers, record data dict
     _db_manager: DatabaseManager
     _switch_manager: L2SwitchProtocol

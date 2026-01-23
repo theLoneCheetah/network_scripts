@@ -3,6 +3,7 @@ import traceback
 import signal
 import sys
 import os
+from typing import Any
 # user's modules
 from base_handler import BaseHandler
 from database_manager import DatabaseManager
@@ -13,7 +14,15 @@ from const import Database, PacketScan
 ##### CLASS FOR PACKET SCANNING #####
 
 class PacketScanHandler(BaseHandler):
-    def __init__(self, usernum: int):
+    __rx_megabit: int
+    __max_rx_megabit: int
+    __tx_megabit: int
+    __max_tx_megabit: int
+    _db_manager: DatabaseManager
+    _record_data: dict[str, Any]
+    _switch_manager: L2Manager
+
+    def __init__(self, usernum: int) -> None:
         # init with base constructor
         super().__init__(usernum)
 
@@ -40,7 +49,7 @@ class PacketScanHandler(BaseHandler):
         # get data from database for switch connection
         try:
             self.__get_switch_port()
-        except Exception as err:   # exception while checking record
+        except Exception:   # exception while checking record
             print("Exception while working with the database record:")
             traceback.print_exc()
 
@@ -48,7 +57,7 @@ class PacketScanHandler(BaseHandler):
         try:
             self.__scan_packet()
         # exceptions while working with L2, show traceback
-        except Exception as err:
+        except Exception:
             print("Exception while working with equipment:")
             traceback.print_exc()
 

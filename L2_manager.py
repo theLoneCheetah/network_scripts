@@ -11,16 +11,19 @@ import commands
 ##### CLASS TO COMMUNICATE WITH L2 SWITCH #####
 
 class L2Manager(NetworkManager):
+    __ports: int
+    __user_port: str
+
     # L2 manager inits by user's port and base constructor
     def __init__(self, ipaddress: str, user_port: int, print_output: bool = False) -> None:
         super().__init__(ipaddress, "L2", print_output)
 
-        # remember number of ports for this switch and then save base model for further diagnosing
-        self.__ports = commands.switches[self._model]["ports"]
-        self._model = commands.switches[self._model]["base_switch"]
-
         # user's port
         self.__user_port = user_port
+
+        # remember number of ports for this switch and then save base model for further diagnosing
+        self.__ports = commands.SWITCHES[self._model]["ports"]
+        self._model = commands.SWITCHES[self._model]["base_switch"]
     
     # return True is user's port is inside switch's portlist
     def check_port_in_portlist(self) -> bool:

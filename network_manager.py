@@ -5,15 +5,30 @@ import sys
 import os
 from abc import ABC
 from icmplib import ping
+from typing import TYPE_CHECKING
 # user's modules
 from const import CitySwitch
 from my_exception import ExceptionType, MyException
 import commands
 
+# import as type only by Pylance (for VS Code)
+if TYPE_CHECKING:
+    from io import BufferedWriter
+
 
 ##### ABSTRACT CLASS FOR L2-L3 MANAGERS #####
 
 class NetworkManager(ABC):
+    _ipaddress: str
+    __switch_layer_type: str
+    __output: BufferedWriter | None
+    __USERNAME: str
+    __PASSWORD: str
+    _model: str
+    __default_gateway: str
+    __turn_clipaging: commands.CommandRegexData
+    _session: pexpect.spawn
+
     # init by ip and connect with the same username and password
     def __init__(self, ipaddress: str, switch_layer_type: str, print_output: bool) -> None:
         # define ip
@@ -34,25 +49,10 @@ class NetworkManager(ABC):
         self.__default_gateway = ""   # for d-link, is used only in base class
 
         # dict to store commands for clipaging
-        self.__turn_clipaging: commands.CommandRegexData = {}
+        self.__turn_clipaging = {}
         
         # connect
         self.__start_connection()
-    
-    # delete, close connection
-    def __del__(self) -> None:
-        # if clipaging variable is empty, switch connection is not opened, it's nothing to close
-        if not self.__turn_clipaging:
-            return
-        
-        print(f"Closing connection to {self.__switch_layer_type}...")
-        
-        # for d-link, restore clipaging on switch if command is known (if unknown, it means that error occured while connecting to switch)
-        if self._model != commands.cisco_switch:
-            self._turn_on_clipaging()
-        
-        self._session.close()
-        print("Success")
     
     # start
     def __start_connection(self) -> None:
@@ -136,15 +136,30 @@ class NetworkManager(ABC):
         # catch model if found
         if match:
             # if model unknown, quit
-            if match.group("model") not in commands.switches:
+            if match.group("model") not in commands.SWITCHES:
                 raise MyException(ExceptionType.UNKNOWN_MODEL, self._ipaddress)
             
             # define model otherwise
             self._model = match.group("model")
             
             # for d-link, define default_gateway, so as not to check it later
-            if self._model != commands.cisco_switch:
+            if self._model != commands.CISCO_SWITCH:
                 self.__default_gateway = match.group("default_gateway")
+    
+    # delete, close connection
+    def __del__(self) -> None:
+        # if clipaging variable is empty, switch connection is not opened, it's nothing to close
+        if not self.__turn_clipaging:
+            return
+        
+        print(f"Closing connection to {self.__switch_layer_type}...")
+        
+        # for d-link, restore clipaging on switch if command is known (if unknown, it means that error occured while connecting to switch)
+        if self._model != commands.CISCO_SWITCH:
+            self._turn_on_clipaging()
+        
+        self._session.close()
+        print("Success")
 
     # disable clipaging
     def _turn_off_clipaging(self) -> None:
