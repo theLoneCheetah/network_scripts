@@ -11,7 +11,8 @@ from const import Database, Country
 
 # import as type only by Pylance (for VS Code)
 if TYPE_CHECKING:
-    from L3_manager import L3Manager
+    from my_exception import MyException
+    from L3_switch import L3Switch
 
 
 ##### BASE DIAGNOSTICS HANDLER CLASS #####
@@ -21,6 +22,7 @@ class DiagHandler(BaseHandler):
     _inactive_payment: bool
     _different_ip_public_ip: bool
     _double_ip: list[int]
+    _L2_exception: MyException | None
     _mac_addresses: set[str]
     _mac_ok: bool
     _no_mac: bool
@@ -34,7 +36,7 @@ class DiagHandler(BaseHandler):
     _need_to_check_mac_on_L3: bool
     _no_mac_on_L3: bool
     # annotations of objects in child classes: L3 managers, correctly filled indicator dict
-    _gateway_manager: L3Manager
+    _L3_manager: L3Switch
     _correctly_filled: dict[str, int]
 
     def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool) -> None:
@@ -51,9 +53,12 @@ class DiagHandler(BaseHandler):
         
         # there will be usernums if found doubles, actual for all users
         self._double_ip = []
+
+        # user's exception while working with L2
+        self._L2_exception = None
         
         # mac address
-        self._mac_addresses: set[str] = set()
+        self._mac_addresses = set()
         self._mac_ok = False
         self._no_mac = False
         self._many_macs = 0   # count mac addresses if there's more than 1
@@ -66,7 +71,7 @@ class DiagHandler(BaseHandler):
         self._arp_ok = False
         self._no_arp = False
         self._arp_on_unknown_mac = ""   # here wiil be unknown mac if found
-        self._ip_incorrect_arp_on_mac: list[str] = []    # here will be unknown ip addresses if found
+        self._ip_incorrect_arp_on_mac = []    # here will be unknown ip addresses if found
         
         # mac check on L3
         self._need_to_check_mac_on_L3 = False
@@ -128,7 +133,7 @@ class DiagHandler(BaseHandler):
     @abstractmethod
     def _check_mac(self) -> None:
         # get set of all mac addresses
-        self._mac_addresses = self._switch_manager.get_mac_addresses_port()
+        self._mac_addresses = self._L2_manager.get_mac_addresses()
         
         # error when there's no mac, cable diag needed
         if not self._mac_addresses:
@@ -153,7 +158,7 @@ class DiagHandler(BaseHandler):
     # compare subnet from L3 ip interface with subnet from user card
     def _check_user_subnet_matches_ip_interface(self, vlan_id: int, vlan_name: str, ipif_name: str, gateway: str, mask_length: int) -> None:
         # L3 manager checks ipif by vlan and compares with user's subnet
-        res = self._gateway_manager.check_ip_interface_subnet(vlan_id, vlan_name, ipif_name, gateway, mask_length)
+        res = self._L3_manager.check_ip_interface_subnet(vlan_id, vlan_name, ipif_name, gateway, mask_length)
         
         # rarely when ipif doesn't exist or has another name
         if res is None:
@@ -165,7 +170,7 @@ class DiagHandler(BaseHandler):
     # check arpentry by ip and mac and try other options on L3
     def _check_arpentry_by_ip(self) -> None:
         # get mac from arp found by ip
-        mac = self._gateway_manager.check_arpentry_ip_return_mac()
+        mac = self._L3_manager.check_arpentry_ip_return_mac()
         
         # get ip addresses from arp found by mac
         ips = self._get_ips_from_arpentry_mac()
@@ -202,7 +207,7 @@ class DiagHandler(BaseHandler):
             return []
         
         # return list of ip addresses with arp on this mac
-        return self._gateway_manager.check_arpentry_mac_return_ips(*self._mac_addresses)
+        return self._L3_manager.check_arpentry_mac_return_ips(*self._mac_addresses)
     
     # check mac visibility on L3 and set a flag if not visible
     def _check_mac_visible_on_L3(self) -> None:
@@ -214,7 +219,7 @@ class DiagHandler(BaseHandler):
         self._need_to_check_mac_on_L3 = True
         
         # set flag True if no mac found
-        self._no_mac_on_L3 = self._gateway_manager.check_mac_on_L3(*self._mac_addresses)
+        self._no_mac_on_L3 = self._L3_manager.check_mac_on_L3(*self._mac_addresses)
     
     # result of L2 and L3 diagnostics
     @abstractmethod

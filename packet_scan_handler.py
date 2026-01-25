@@ -7,7 +7,7 @@ from typing import Any
 # user's modules
 from base_handler import BaseHandler
 from database_manager import DatabaseManager
-from L2_manager import L2Manager
+from L2_switch import L2Switch
 from const import Database, PacketScan
 
 
@@ -20,7 +20,7 @@ class PacketScanHandler(BaseHandler):
     __max_tx_megabit: int
     _db_manager: DatabaseManager
     _record_data: dict[str, Any]
-    _switch_manager: L2Manager
+    _L2_manager: L2Switch
 
     def __init__(self, usernum: int) -> None:
         # init with base constructor
@@ -83,14 +83,14 @@ class PacketScanHandler(BaseHandler):
 
         try:
             # connect to switch
-            self._switch_manager = L2Manager(self._record_data["switch"], self._record_data["port"])
+            self._L2_manager = L2Switch(self._record_data["switch"], self._record_data["port"])
             
             # open pipe with buffering by every line, not to collect lines in python script's buffer
             with open(PacketScan.PIPE, "w", buffering=1) as pipe:
                 # run until interrupted
                 while True:
                     # get bytes and calculate megabit with max
-                    calculate_current_and_max(*self._switch_manager.get_packets_port())
+                    calculate_current_and_max(*self._L2_manager.get_packets_port())
 
                     # try block needed because bash script always reads data from pipe and closes promtply
                     try:
@@ -110,4 +110,4 @@ class PacketScanHandler(BaseHandler):
             
         # always close connection and delete L2 and L3 managers
         finally:
-            del self._switch_manager
+            del self._L2_manager

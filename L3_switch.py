@@ -2,18 +2,18 @@
 import re
 from ipaddress import IPv4Address, IPv4Network
 # user's modules
-from network_manager import NetworkManager
+from base_switch import BaseSwitch
 import commands
 
 
 ##### CLASS TO COMMUNICATE WITH L3 GATEWAY #####
 
-class L3Manager(NetworkManager):
+class L3Switch(BaseSwitch):
     __user_ip: str
 
     # L3 manager inits by user ip and base constructor
     def __init__(self, ipaddress: str, user_ip: str, print_output: bool = False) -> None:
-        super().__init__(ipaddress, "L3", print_output)
+        super().__init__(ipaddress, "L3 gateway", print_output)
         self.__user_ip = user_ip
     
     # find ip route for direct public ip
@@ -71,7 +71,7 @@ class L3Manager(NetworkManager):
     # check if ip is in the local switches subnet with 24-bit mask
     def __ip_in_L3_subnet(self, ip: str) -> bool:
         return IPv4Address(ip) in IPv4Network(f"{self._ipaddress}/24", strict=False)
-    
+
     # check ip interface's subnet by vlan matches user's gateway and mask length
     def check_ip_interface_subnet(self, vlan_id: int, vlan_name: str, ipif_name: str, gateway: str, mask_length: int) -> bool | None:
         # on d-link, turn on clipaging because it can bug for a second

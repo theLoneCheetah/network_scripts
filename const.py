@@ -124,8 +124,8 @@ class Country:
     ALARM_URL: Final[str] = os.getenv("URL_CONFIGURED_ONTS")
 
     # ip addresses of olt swtiches version 2 and 3
-    OLT2_SWITCHES: Final[set[str]] = set(json.loads(os.getenv("OLT2_SWITCHES")))
-    OLT3_SWITCHES: Final[set[str]] = set(json.loads(os.getenv("OLT3_SWITCHES")))
+    OLTS_VERSION2: Final[set[str]] = set(json.loads(os.getenv("OLTS_VERSION2")))
+    OLTS_VERSION3: Final[set[str]] = set(json.loads(os.getenv("OLTS_VERSION3")))
 
     # unified gateway
     ACTUAL_GATEWAY: Final[str] = os.getenv("COUNTRY_ACTUAL_GATEWAY")

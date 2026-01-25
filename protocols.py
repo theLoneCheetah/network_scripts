@@ -6,5 +6,5 @@ from typing import Protocol
 
 class L2SwitchProtocol(Protocol):
     # L2 switch manager should be able to find and return a set of mac addresses
-    def get_mac_addresses_port(self) -> set[str]:
+    def get_mac_addresses(self) -> set[str]:
         ...

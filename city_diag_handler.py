@@ -6,8 +6,8 @@ import traceback
 from ipaddress import IPv4Address, IPv4Network
 # user's modules
 from diag_handler import DiagHandler
-from L2_manager import L2Manager
-from L3_manager import L3Manager
+from L2_switch import L2Switch
+from L3_switch import L3Switch
 from const import Database, Provider, CitySwitch
 from my_exception import ExceptionType, MyException
 
@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
 class CityDiagHandler(DiagHandler):
     # annotations of inherited attributes
-    _switch_manager: L2Manager | None
-    _gateway_manager: L3Manager | None
+    _L2_manager: L2Switch | None
+    _L3_manager: L3Switch | None
     # class attributes annotations
     __print_output: bool
     __gigabit: bool
@@ -36,7 +36,6 @@ class CityDiagHandler(DiagHandler):
     __incorrect_subnet: bool
     __incorrect_switch: bool
     __double_port: list[int]
-    __switch_exception: MyException | None
     __switch_vlans: dict[int, str]
     __have_direct_public_vlan: bool
     __untagged_vlan_id: int
@@ -76,8 +75,8 @@ class CityDiagHandler(DiagHandler):
         super().__init__(usernum, db_manager, record_data, inactive_payment)
 
         # L2 and L3 managers
-        self._switch_manager: L2Manager | None = None
-        self._gateway_manager: L3Manager | None = None
+        self._L2_manager: L2Switch | None = None
+        self._L3_manager: L3Switch | None = None
 
         # indicate if terminal output needed
         self.__print_output = print_output
@@ -107,9 +106,6 @@ class CityDiagHandler(DiagHandler):
         
 
         # attributes for diagnostics of L2 and L3
-        
-        # user's exception while working and switch
-        self.__switch_exception = None
 
         # vlan
         self.__switch_vlans = {}
@@ -368,7 +364,7 @@ class CityDiagHandler(DiagHandler):
                 raise MyException(ExceptionType.NO_SWITCH_PORT)
             
             # connect to switch only if switch and port are known
-            self._switch_manager = L2Manager(self._record_data["switch"], self._record_data["port"], self.__print_output)
+            self._L2_manager = L2Switch(self._record_data["switch"], self._record_data["port"], self.__print_output)
             
             # exception and flag if port is outside switch's portlist
             if not self.__check_port_in_switch_portlist():
@@ -418,12 +414,13 @@ class CityDiagHandler(DiagHandler):
 
             # check arpentry
             self._check_arpentry_by_ip()
-       
+        
         # user's exception include special text for output
         except MyException as err:
             # save exception's text if it's not subnet error, it's switch error
-            if self.__ip_mask_gateway:
-                self.__switch_exception = err
+            if not err.is_subnet_error():
+                self._L2_exception = err
+        
         # exceptions while working with L2 or L3, show traceback
         except Exception:
             print("Exception while working with equipment:")
@@ -431,33 +428,23 @@ class CityDiagHandler(DiagHandler):
         
         # always close connection and delete L2 and L3 managers
         finally:
-            if self._switch_manager:
-                del self._switch_manager
-            if self._gateway_manager:
-                del self._gateway_manager
-        
-        """ # user's exception include special text for output
-        except MyException as err:
-            # save exception's text if it's not subnet error, it's switch error
-            if self.__ip_mask_gateway:
-                self.__switch_exception = err
-        # exceptions while working with L2 or L3, show traceback
-        except Exception:
-            print("Exception while working with equipment:")
-            traceback.print_exc()"""
+            if self._L2_manager:
+                del self._L2_manager
+            if self._L3_manager:
+                del self._L3_manager
     
     # check if port in user card belongs to switch's portlist
     def __check_port_in_switch_portlist(self) -> bool:
-        return self._switch_manager.check_port_in_portlist()
+        return self._L2_manager.check_port_in_portlist()
     
     # check vlans on switch and on port
     def __check_vlan(self) -> None:
         # get switch vlans
-        self.__switch_vlans = self._switch_manager.get_switch_vlans()
+        self.__switch_vlans = self._L2_manager.get_switch_vlans()
         self.__have_direct_public_vlan = Provider.DIRECT_PUBLIC_VLAN in self.__switch_vlans
         
         # get port vlans
-        self.__port_vlans = self._switch_manager.get_port_vlans()
+        self.__port_vlans = self._L2_manager.get_port_vlans()
         
         # no_vlan flag if port has no vlans of any status
         if not self.__port_vlans:
@@ -489,7 +476,7 @@ class CityDiagHandler(DiagHandler):
             return any([i != "" and self.__untagged_vlan_id in range(int(i.split("-")[0]), int(i.split("-")[-1]) + 1) for i in vlan_ids_list])
         
         # get servers and vlan ids
-        dhcp_servers, vlan_ids = self._switch_manager.get_dhcp_relay()
+        dhcp_servers, vlan_ids = self._L2_manager.get_dhcp_relay()
 
         # vlan_ids = -1 means switch doesn't have to have dhcp relay
         if vlan_ids == -1:
@@ -508,7 +495,7 @@ class CityDiagHandler(DiagHandler):
     # check access profile options on port
     def __check_acl(self) -> None:
         # get acl entries on port in hex notation
-        hex_entries = self._switch_manager.get_port_acl()
+        hex_entries = self._L2_manager.get_port_acl()
         
         # if there's less than needed entries
         if len(hex_entries) < 2:
@@ -527,7 +514,7 @@ class CityDiagHandler(DiagHandler):
     # check port and mark flags
     def __check_port(self) -> None:
         # check port, get its type, settings and status, linkdown_status is actual if port is enabled
-        self.__fiber_port, self.__port_disabled, self.__speed_settings, self.__linkdown_status, speed = self._switch_manager.get_port_link()
+        self.__fiber_port, self.__port_disabled, self.__speed_settings, self.__linkdown_status, speed = self._L2_manager.get_port_link()
         
         # if there's link
         if not self.__port_disabled and not self.__linkdown_status:
@@ -542,7 +529,7 @@ class CityDiagHandler(DiagHandler):
     # check crc errors
     def __check_crc(self) -> None:
         # get numbers of rx crc errors, will be zero if OK
-        self.__crc_errors = self._switch_manager.get_crc_errors_port()
+        self.__crc_errors = self._L2_manager.get_crc_errors_port()
         
         # flag if crc ok
         if self.__crc_errors == 0:
@@ -555,7 +542,7 @@ class CityDiagHandler(DiagHandler):
             return
         
         # result can be different pairs or just status
-        res = self._switch_manager.cable_diag()
+        res = self._L2_manager.cable_diag()
         
         # if result is list, it marks opened pairs
         if isinstance(res, list):
@@ -568,7 +555,7 @@ class CityDiagHandler(DiagHandler):
     def __check_log(self) -> None:
         # get flapping count and last flap remoteness in time
         try:
-            count_flapping, last_flap_remoteness = self._switch_manager.get_log_port_flapping()
+            count_flapping, last_flap_remoteness = self._L2_manager.get_log_port_flapping()
         except ValueError:
             self.__invalid_log_time = True
             return
@@ -589,12 +576,12 @@ class CityDiagHandler(DiagHandler):
             self.__need_to_cable_diag = True
         
         # check if port security is enabled
-        self.__port_security = self._switch_manager.get_port_security()
+        self.__port_security = self._L2_manager.get_port_security()
     
     # check packet bytes and calculate megabit
     def __check_packets(self) -> None:
         # get rx and tx bytes
-        self.__rx_bytes, self.__tx_bytes = self._switch_manager.get_packets_port()
+        self.__rx_bytes, self.__tx_bytes = self._L2_manager.get_packets_port()
         
         # calculate to megabit
         self.__rx_megabit = super()._byte_to_megabit(self.__rx_bytes)
@@ -608,22 +595,22 @@ class CityDiagHandler(DiagHandler):
     def _find_actual_gateway(self) -> None:
         # init L3 manager by user record's gateway if ip is local
         if not self.__direct_public_ip:
-            self._gateway_manager = L3Manager(self._record_data["gateway"], self._record_data["ip"], self.__print_output)
+            self._L3_manager = L3Switch(self._record_data["gateway"], self._record_data["ip"], self.__print_output)
             return
         
         # on Lensoveta 23, define gateway address for direct public ip
         if self._record_data["street"] == Provider.LENSOVETA_ADDRESS_GATEWAY["street"] and self._record_data["house"] == Provider.LENSOVETA_ADDRESS_GATEWAY["house"]:
-            self._gateway_manager = L3Manager(Provider.LENSOVETA_ADDRESS_GATEWAY["gateway"], self._record_data["ip"], self.__print_output)
+            self._L3_manager = L3Switch(Provider.LENSOVETA_ADDRESS_GATEWAY["gateway"], self._record_data["ip"], self.__print_output)
             return
         
         # otherwise, find default gateway address on switch
-        gateway = self._switch_manager.get_default_gateway()
+        gateway = self._L2_manager.get_default_gateway()
         
         # may need from 1 to 3 iterations
         for _ in range(CitySwitch.MAX_HOPS_DIRECT_PUBLIC_IP):
             # create or update L3 manager and find ip route for direct public ip
-            self._gateway_manager = L3Manager(gateway, self._record_data["ip"], self.__print_output)
-            gateway = self._gateway_manager.check_ip_route()
+            self._L3_manager = L3Switch(gateway, self._record_data["ip"], self.__print_output)
+            gateway = self._L3_manager.check_ip_route()
 
             # if nothing found, mark flag and keep current L3 manager
             if not gateway:
@@ -635,7 +622,7 @@ class CityDiagHandler(DiagHandler):
                 return
             
             # delete previous and continue with new L3 manager if new next hop found
-            del self._gateway_manager
+            del self._L3_manager
         
         # if self-route not found in 3 iterations, mark error flag
         self.__ip_route_not_found = True
@@ -658,8 +645,8 @@ class CityDiagHandler(DiagHandler):
     @override
     def _result_L2_L3(self) -> None:
         # terminate when any fatal error discovered
-        if self.__switch_exception:
-            print(self.__switch_exception)
+        if self._L2_exception:
+            print(self._L2_exception)
             return
 
         # port: if it is fiber or has settings

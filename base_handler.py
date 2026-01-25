@@ -18,7 +18,7 @@ class BaseHandler(ABC):
     _usernum: int
     # annotations of objects in child classes: database and L2 managers, record data dict
     _db_manager: DatabaseManager
-    _switch_manager: L2SwitchProtocol
+    _L2_manager: L2SwitchProtocol
     _record_data: dict[str, Any]
 
     # abstract constructor so base class is abstract

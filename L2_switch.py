@@ -3,20 +3,20 @@ import re
 from collections import defaultdict
 from datetime import datetime
 # user's modules
-from network_manager import NetworkManager
+from base_switch import BaseSwitch
 from const import Provider, CitySwitch
 import commands
 
 
 ##### CLASS TO COMMUNICATE WITH L2 SWITCH #####
 
-class L2Manager(NetworkManager):
+class L2Switch(BaseSwitch):
     __ports: int
     __user_port: str
 
     # L2 manager inits by user's port and base constructor
     def __init__(self, ipaddress: str, user_port: int, print_output: bool = False) -> None:
-        super().__init__(ipaddress, "L2", print_output)
+        super().__init__(ipaddress, "L2 switch", print_output)
 
         # user's port
         self.__user_port = user_port
@@ -184,7 +184,7 @@ class L2Manager(NetworkManager):
         return count_port_flapping, last_flap_login_minutes_difference
     
     # get mac addresses on port
-    def get_mac_addresses_port(self) -> set[str]:
+    def get_mac_addresses(self) -> set[str]:
         # command
         command_regex = commands.show_fdb(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
@@ -306,7 +306,7 @@ class L2Manager(NetworkManager):
         command_regex = commands.show_access_profile(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
         # for 1210, it's important to skip ## sequence and expect only one # symbol
-        index = self._session.expect(["CTRL", r'(?<!#)#(?!#)'])
+        index = self._session.expect(["CTRL", r"(?<!#)#(?!#)"])
 
         # save output and try to find end of permit block
         acl = self._session.before.decode("utf-8")
@@ -317,7 +317,7 @@ class L2Manager(NetworkManager):
             # command to scroll, decide is it continuation or end
             self._session.send(" ")
             # to skip ## sequence and expect only one # symbol
-            index = self._session.expect(["CTRL", r'(?<!#)#(?!#)'])
+            index = self._session.expect(["CTRL", r"(?<!#)#(?!#)"])
 
             # try to find end of permit block and concatenate output
             match = re.search("Deny", self._session.before.decode("utf-8"))
