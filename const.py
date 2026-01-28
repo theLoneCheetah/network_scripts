@@ -130,6 +130,9 @@ class Country:
     # unified gateway
     ACTUAL_GATEWAY: Final[str] = os.getenv("COUNTRY_ACTUAL_GATEWAY")
 
+    # log flapping
+    MAX_MINUTE_RANGE_ONT_FLAPPING: Final[int] = 10
+    MIN_COUNT_FLAPPING: Final[int] = 4
 
 ##### PACKET SCANNING CONSTANTS #####
 

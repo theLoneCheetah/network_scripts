@@ -23,6 +23,15 @@ from my_exception import ExceptionType, MyException
 class OLTVersion3(BaseOLT):
     def __init__(self, ipaddress: str, eltex_serial: str, print_output: bool) -> None:
         super().__init__(ipaddress, eltex_serial, print_output)
+        
+        # flag for terminal model type
+        self.__ntu1 = False
+    
+    # base prompt symbol
+    @override
+    @property
+    def _base_prompt(self):
+        return "#"
     
     # command and regex for get_state
     @override
@@ -34,21 +43,30 @@ class OLTVersion3(BaseOLT):
     # include flag for ntu1 while parsing get_state match
     @override
     def _parse_get_state_match(self, match):
-        ntu1 = match.group("model") == "NTU-1"
-        return super()._parse_get_state_match(match)[:-1] + (ntu1,)
+        self.__ntu1 = match.group("model") == "NTU-1"
+        return super()._parse_get_state_match(match)[:-1] + (self.__ntu1,)
     
     # command and regex for get_service_profile_config
     @override
     @property
     def _command_regex_service_profile_config(self):
-        pass
+        return {"command": f"show interface ont {self._eltex_serial} configuration",
+                "regex": r"Service \[0\]:\s+(?:\[T\])?\s+Profile cross connect:\s+(?P<service>\S+)"}
 
-    # command and regex for get_log
+    # for ntu1, return another regex to find vlan id
+    @override
+    @property
+    def _regex_configured_vlan_id(self):
+        return r"NTU1_(?P<vlan>\d{4})" if self.__ntu1 else super()._regex_configured_vlan_id
+
+    # command and regex for get_log, adding command
     @override
     @property
     def _command_regex_log(self):
-        pass
-
+        data = super()._command_regex_log
+        data["command"] = f"show interface ont {self._eltex_serial} connections"
+        return data
+    
     # command and regex for get_ports
     @override
     @property

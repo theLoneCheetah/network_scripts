@@ -69,11 +69,10 @@ class CountryDiagHandler(DiagHandler):
         self.__ntu1 = False
         self.__state_ok = False
         self.__state_error = ""
-        self.__rssi = 0.0
-        self.__state_checked = False
+        self.__rssi: float | None = None
 
         # service profile config
-        self.__vlan_config = 0
+        self.__configured_vlan = 0
         self.__service_profile_error = False
 
         # log
@@ -207,6 +206,12 @@ class CountryDiagHandler(DiagHandler):
             with self._L2_manager.terminal_context():
                 # state
                 self.__check_state()
+
+                # config
+                self.__check_config()
+
+                # log
+                self.__check_log()
         
         # user's exception include special text for output
         except MyException as err:
@@ -259,8 +264,29 @@ class CountryDiagHandler(DiagHandler):
         # if ont connection status is ok, mark flag
         if not self.__ont_not_connected and not self.__state_error:
             self.__state_ok = True
-        
-        self.__state_checked = True
+    
+    # check ont configuration
+    def __check_config(self):
+        # check service profile config and get vlan id
+        res = self._L2_manager.get_service_profile_config()
+
+        # mark flag if not found or save configured vlan id
+        if res is None:
+            self.__service_profile_error = True
+        else:
+            self.__configured_vlan = res
+    
+    # check log, ont last state and flapping
+    def __check_log(self):
+        # get data from olt manager
+        res = self._L2_manager.get_log(self.__state_ok)
+
+        # if string was returned, save last state error
+        if isinstance(res, str):
+            self.__last_state_error = res
+        # if integer, it's flapping count, mark flag if there's too many flapping
+        elif res >= Country.MIN_COUNT_FLAPPING:
+            self.__ont_flapping = True
 
     # check mac addresses and get as a set
     @override
@@ -287,114 +313,21 @@ class CountryDiagHandler(DiagHandler):
         
         if self.__ont_not_connected:
             print("ONT не подключён")
-        elif self.__state_checked:
-            print(f"State OK: {self.__state_ok}\nState not OK: {self.__state_error}\nRSSI: {self.__rssi} dBm\nNTU-1: {self.__ntu1}")
-
-"""
-ont_not_connected = False
-ntu1 = False
-state_ok = False
-state_error = ""
-rssi = 0.0
-vlan_config = 0
-service_profile_error = False
-last_state_error = ""
-ont_flapping = False
-ports_link_up = []
-no_ports_active = False
-mac_addresses = set()
-
-
-
-session.sendline(f"show interface ont {eltex_serial} state")
-session.expect("#")
-
-temp = session.before.decode("utf-8")
-match = re.search(r"(?:(?P<not_connected>ONT is not connected)|(Equipment ID:\s+(?P<model>[A-Z0-9-]+).*State:\s+(?P<state>[A-Z]+).*RSSI:\s+(?P<rssi>-\d+\.\d+)))", temp, re.DOTALL)
-print(match.groupdict())
-
-if match.group("not_connected"):
-    ont_not_connected = True
-    print("ONT is not connected")
-else:
-    ntu1 = match.group("model") == "NTU-1"
-    if match.group("state") == "OK":
-        state_ok = True
-    else:
-        state_error = match.group("state")
-    rssi = float(match.group("rssi"))
-    print(f"NTU-1: {ntu1}\nState not OK: {state_error}\nRSSI: {rssi} dBm")
-
-
-
-session.sendline(f"show interface ont {eltex_serial} configuration")
-session.expect("#")
-
-temp = session.before.decode("utf-8")
-match = re.search(r"Service \[0\]:\s+(?:\[T\])?\s+Profile cross connect:\s+(?P<service>\S+)", temp, re.DOTALL)
-print(match.groupdict())
-
-if ntu1:
-    match_vlan = re.fullmatch(r"NTU1_(?P<vlan>\d{4})", match.group("service"))
-else:
-    match_vlan = re.fullmatch(r"(?P<vlan>\d{4})", match.group("service"))
-
-if match_vlan:
-    vlan_config = int(match_vlan.group("vlan"))
-    print(f"VLAN config: {vlan_config}")
-else:
-    service_profile_error = True
-    print("Неверный конфиг service profile")
-
-
-
-session.sendline(f"show interface ont {eltex_serial} connections")
-session.expect("#")
-
-temp = session.before.decode("utf-8")
-match = re.search(r".*Last state :\s+(?P<last_state>[A-Za-z]+[ -]?[A-Za-z]+)", temp, re.DOTALL)
-print(match.groupdict())
-
-if not state_ok or match.group("last_state") != "Working":
-    last_state_error = match.group("last_state")
-
-if state_ok:
-    matches = re.findall(r"LinkUp :\s+(\d{4}-\d{2}-\d+)\s+(\d{2}:\d{2}:\d{2})", temp)
-    match_datetimes = [datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M:%S") for date, time in matches]
-
-    if len(match_datetimes) >= 4 and int((match_datetimes[-1] - match_datetimes[-4]).total_seconds() // 60) <= 10:
-        ont_flapping = True
-
-print(f"Last state error: {last_state_error}\nLink flapping: {ont_flapping}")
-
-
-
-if state_ok:
-    session.sendline(f"show interface ont {eltex_serial} ports")
-    session.expect(r"(?<!#)#(?!#)")
-
-    temp = session.before.decode("utf-8")
-    ports_count = 1 if ntu1 else 4
-    match = re.search(fr"UNI ##(?P<port>(?:\s+\d){{{ports_count}}})\s+Link:(?P<link>(?:\s+\S+){{{ports_count}}})\s+Speed:(?P<speed>(?:\s+\S+){{{ports_count}}})\s+Duplex:(?P<duplex>(?:\s+\S+){{{ports_count}}})", temp, re.DOTALL)
-    
-    for port, link, speed, duplex in zip(*[group.split() for group in match.group("port", "link", "speed", "duplex")]):
-        if link == "up":
-            ports_link_up.append({"port": int(port), "speed": speed.replace("1G", "1000M"), "duplex": duplex})
-    
-    if not ports_link_up:
-        no_ports_active = True
-        print("Нет активных портов")
-    else:
-        print("Порты:", ", ".join([f"{i["port"]} - {i["speed"]}/{i["duplex"]}" for i in ports_link_up]))
-
-
-
-    session.sendline(f"show mac interface ont {eltex_serial}")
-    session.expect(r"(?<!#)#(?!#)")
-
-    temp = session.before.decode("utf-8")
-    for match in re.finditer(r"(\d+)\s+(?P<mac>(?:[A-Z\d]{2}:){5}[A-Z\d]{2})", temp):
-        mac_addresses.add(match.group("mac").replace(":", "-"))
-    
-    print("Маки:", mac_addresses)
-"""
+        elif self.__state_error or self.__state_ok:
+            if self.__state_error:
+                print("Ошибка состояния:", self.__state_error)
+            else:
+                print(f"State OK")
+            print(f"RSSI: {f'{self.__rssi} dBm' if self.__rssi is not None else 'N/A'}")
+        if self.__ntu1:
+            print("Терминал NTU-1")
+        
+        if self.__service_profile_error:
+            print("Неверно настроен влан в config service profile")
+        elif self.__configured_vlan:
+            print(f"Configured VLAN: {self.__configured_vlan}")
+        
+        if self.__last_state_error:
+            print("Last state:", self.__last_state_error)
+        elif self.__ont_flapping:
+            print("Соединение с ONT скачет")
