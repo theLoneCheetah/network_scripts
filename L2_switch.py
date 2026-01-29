@@ -183,7 +183,7 @@ class L2Switch(BaseSwitch):
         count_port_flapping = len(re.findall(command_regex["findall"], log))
         return count_port_flapping, last_flap_login_minutes_difference
     
-    # get mac addresses on port
+    # get mac addresses on port, method is used for L2Protocol
     def get_mac_addresses(self) -> set[str]:
         # command
         command_regex = commands.show_fdb(self._model, self.__user_port)

@@ -31,7 +31,8 @@ class OLTVersion3(BaseOLT):
     @override
     @property
     def _base_prompt(self):
-        return "#"
+        # expect exactly one # symbol because there're ## constructions in some commands' outputs
+        return r"(?<!#)#(?!#)"
     
     # command and regex for get_state
     @override
@@ -67,15 +68,33 @@ class OLTVersion3(BaseOLT):
         data["command"] = f"show interface ont {self._eltex_serial} connections"
         return data
     
-    # command and regex for get_ports
+    # command and regex for get_ports, specify command
     @override
     @property
     def _command_regex_ports(self):
-        pass
+        data = super()._command_regex_ports
+        data["command"] = f"show interface ont {self._eltex_serial} ports"
+        return data
     
-    # command and regex for get_mac_addresses
+    # get ont ports count, only 1 port for ntu1
+    @override
+    @property
+    def _ports_count(self):
+        return 1 if self.__ntu1 else 4
+
+    # command and regex for get_mac_addresses, specify command
     @override
     @property
     def _command_regex_mac_addresses(self):
-        pass
+        data = super()._command_regex_mac_addresses
+        data["command"] = f"show mac interface ont {self._eltex_serial}"
+        return data
+    
+    # command and regex for get_acs_profile_config, specify regex
+    @override
+    @property
+    def _command_regex_acs_profile_config(self):
+        data = super()._command_regex_acs_profile_config
+        data["regex"] = r'Base profile = "(?:(?P<default>1402_default_v2)|(?P<bridge>1402_bridge_v2))"'
+        return data
     

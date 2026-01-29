@@ -129,8 +129,7 @@ class DiagHandler(BaseHandler):
     def _check_L2_L3(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
     
-    # check mac addresses and get as a set
-    @abstractmethod
+    # base method to check mac addresses and get as a set
     def _check_mac(self) -> None:
         # get set of all mac addresses
         self._mac_addresses = self._L2_manager.get_mac_addresses()
@@ -225,7 +224,6 @@ class DiagHandler(BaseHandler):
     @abstractmethod
     def _result_L2_L3(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
-    
 
     ##### BASE FIRST CHECK PART #####
 

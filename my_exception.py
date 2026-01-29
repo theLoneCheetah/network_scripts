@@ -33,6 +33,10 @@ class ExceptionType(StrEnum):
 
     ONT_NOT_FOUND: str = "L2: ONT не найден"
 
+    NO_ACS_MODE: str = "acs-profile и acs-ont: терминал NTU-1"
+    ACS_PROFILE_NOT_FOUND: str = "acs-profile: не найден"
+    ACS_ONT_NOT_FOUND: str = "acs-ont: не найден"
+
 
 ##### CLASS FOR USER'S EXCEPTION AND ERRORS' CODES #####
 
@@ -52,6 +56,19 @@ class MyException(Exception):
     def __str__(self) -> str:
         return ExceptionType.BASE.value + self.__message + self.__arg
     
-    # check if it's subnet error
+    # for city, check if it's subnet error
     def is_subnet_error(self):
         return self.__message == ExceptionType.NO_SUBNET
+    
+    # for country, check if it's no acs mode error
+    def is_acs_mode_error(self):
+        return self.__message == ExceptionType.NO_ACS_MODE
+    
+    # for country, check if it's acs profile mode error
+    def is_acs_profile_mode_error(self):
+        return self.__message == ExceptionType.ACS_PROFILE_NOT_FOUND
+    
+    # for country, check if it's acs ont mode error
+    def is_acs_ont_mode_error(self):
+        return self.__message == ExceptionType.ACS_ONT_NOT_FOUND
+    

@@ -90,15 +90,32 @@ class OLTVersion2(BaseOLT):
         data["command"] = f"show connections"
         return data
     
-    # command and regex for get_ports
+    # command and regex for get_ports, specify command
     @override
     @property
     def _command_regex_ports(self):
-        pass
+        data = super()._command_regex_ports
+        data["command"] = f"show ports"
+        return data
     
-    # command and regex for get_mac_addresses
+    # replace some symbols in ont ports' speed output
+    @override
+    def _ports_speed_replace_operation(self, speed):
+        return speed.replace("1G", "1000M")
+
+    # command and regex for get_mac_addresses, specify command
     @override
     @property
     def _command_regex_mac_addresses(self):
-        pass
+        data = super()._command_regex_mac_addresses
+        data["command"] = f"show mac"
+        return data
+    
+    # command and regex for get_acs_profile_config, specify regex
+    @override
+    @property
+    def _command_regex_acs_profile_config(self):
+        data = super()._command_regex_acs_profile_config
+        data["regex"] = r'Base profile = "(?:(?P<default>1402_default)|(?P<bridge>1402_bridge))"'
+        return data
     

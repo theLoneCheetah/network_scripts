@@ -166,21 +166,181 @@ class BaseOLT(BaseNetworkDevice):
                 "regex": r".*Last state :\s+(?P<last_state>[A-Za-z ]+)",
                 "findall": r"LinkUp :\s+(\d{4}-\d{2}-\d+)\s+(\d{2}:\d{2}:\d{2})"}
     
+    # get active ports info 
     def get_ports(self):
-        pass
+        # command
+        self._session.sendline(self._command_regex_ports["command"])
+        self._session.expect(self._base_prompt)
 
-    # command and regex for get_ports
+        # regex
+        temp = self._session.before.decode("utf-8")
+        match = re.search(self._command_regex_ports["regex"], temp, re.DOTALL)
+
+        # list of dictionaries to store active ports data
+        ports_link_up = []
+        
+        # for each active port, save its speed and duplex
+        for port, link, speed, duplex in zip(*[group.split() for group in match.group("port", "link", "speed", "duplex")]):
+            if link == "up":
+                # replace some speed symbols if needed
+                ports_link_up.append({"port": int(port), "speed": self._ports_speed_replace_operation(speed), "duplex": duplex})
+        
+        # return final active ports list
+        return ports_link_up
+
+    # command and regex for get_ports, regex is common
     @property
     @abstractmethod
     def _command_regex_ports(self):
-        raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
+        return {"regex": fr"UNI ##(?P<port>(?:\s+\d){{{self._ports_count}}})\s+Link:(?P<link>(?:\s+\S+){{{self._ports_count}}})\s+Speed:(?P<speed>(?:\s+\S+){{{self._ports_count}}})\s+Duplex:(?P<duplex>(?:\s+\S+){{{self._ports_count}}})"}
     
-    def get_mac_addresses(self):
-        pass
+    # get ont ports count
+    @property
+    def _ports_count(self):
+        return 4
+
+    # replace some symbols in ont ports' speed output if needed
+    def _ports_speed_replace_operation(self, speed):
+        return speed
+
+    # get mac addresses and return as a set, method is used for L2Protocol
+    def get_mac_addresses(self) -> set[str]:
+        # command
+        self._session.sendline(self._command_regex_mac_addresses["command"])
+        self._session.expect(self._base_prompt)
+
+        # regex
+        temp = self._session.before.decode("utf-8")
+        mac_addresses = set()
+
+        # for each found mac address, replace : with - for standard view
+        for match in re.finditer(self._command_regex_mac_addresses["regex"], temp):
+            mac_addresses.add(match.group("mac").replace(":", "-"))
+        
+        # return set of macs
+        return mac_addresses
     
-    # command and regex for get_mac_addresses
+    # command and regex for get_mac_addresses, regex is common
     @property
     @abstractmethod
     def _command_regex_mac_addresses(self):
-        raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
+        return {"regex": r"(\d+)\s+(?P<mac>(?:[A-Z\d]{2}:){5}[A-Z\d]{2})"}
+    
+    # context manager for acs mode
+    @contextmanager
+    def acs_context(self):
+        try:
+            # enter
+            self._session.sendline("acs")
+            self._session.expect(r"\(acs\)")
+            yield
+        
+        finally:
+            # exit
+            self._session.sendline("exit")
+            self._session.expect(self._base_prompt)
+    
+    # context manager for acs-profile mode
+    @contextmanager
+    def acs_profile_context(self):
+        try:
+            # enter profile
+            self._session.sendline("profile")
+            self._session.expect(r"\(acs-profile\)")
+
+            # enter certain profile or catch message if profile not found
+            self._session.sendline(f"profile {self._eltex_serial}")
+            index = self._session.expect([fr"\(acs-profile-name='{self._eltex_serial}'\)", "not found"])
+
+            # raise exception if profile not found
+            if index == 1:
+                raise MyException(ExceptionType.ACS_PROFILE_NOT_FOUND)
+            
+            yield
+        
+        finally:
+            # first exit, expect acs-profile or acs mode
+            self._session.sendline("exit")
+            index = self._session.expect([r"\(acs-profile\)", r"\(acs\)"])
+
+            # second exit if in acs-profile mode
+            if index == 0:
+                self._session.sendline("exit")
+                self._session.expect(r"\(acs\)")
+    
+    # context manager for acs-ont mode
+    @contextmanager
+    def acs_ont_context(self):
+        try:
+            # enter ont
+            self._session.sendline("ont")
+            self._session.expect(r"\(acs-ont\)")
+
+            # enter certain ont or catch message if ont not found
+            self._session.sendline(f"ont {self._eltex_serial}")
+            index = self._session.expect([fr"\(acs-ont-sn='{self._eltex_serial}'\)", "not found"])
+
+            # raise exception if profile not found
+            if index == 1:
+                raise MyException(ExceptionType.ACS_ONT_NOT_FOUND)
+            
+            yield
+        
+        finally:
+            # first exit, expect acs-ont or acs mode
+            self._session.sendline("exit")
+            index = self._session.expect([r"\(acs-ont\)", r"\(acs\)"])
+
+            # second exit if in acs-ont mode
+            if index == 0:
+                self._session.sendline("exit")
+                self._session.expect(r"\(acs\)")
+    
+    # get acs profile config and base profile name
+    def get_acs_profile_config(self):
+        # command
+        self._session.sendline(self._command_regex_acs_profile_config["command"])
+        self._session.expect(self._base_prompt)
+
+        # regex
+        temp = self._session.before.decode("utf-8")
+        match = re.search(self._command_regex_acs_profile_config["regex"], temp, re.DOTALL)
+
+        # catch base acs profile name: default, bridge or no base profile
+        acs_profile_type = None
+        if match.group("default"):
+            acs_profile_type = "default"
+        elif match.group("bridge"):
+            acs_profile_type = "bridge"
+        
+        # return base profile
+        return acs_profile_type
+
+    # command and regex for get_acs_profile_config, command is common
+    @property
+    @abstractmethod
+    def _command_regex_acs_profile_config(self):
+        return {"command": "show config"}
+    
+    def get_acs_profile_property(self):
+        pass
+
+    # command and regex for get_acs_profile_property
+    @property
+    def _command_regex_acs_profile_property(self):
+        return {"command": "show property",
+                "regex_vlan": r'Name = "InternetGatewayDevice\.WANDevice\.5\.WANConnectionDevice\.1\.WANIPConnection\.1\.X_BROADCOM_COM_VlanMuxID"\s+Value = "(?P<vlan>\d{4})"',
+                "regex_ip": r'Name = "InternetGatewayDevice\.WANDevice\.5\.WANConnectionDevice\.1\.WANIPConnection\.1\.ExternalIPAddress"\s+Value = "(?P<ip>(?:\d{1,3}\.){3}\d{1,3})"',
+                "regex_mask": r'Name = "InternetGatewayDevice\.WANDevice\.5\.WANConnectionDevice\.1\.WANIPConnection\.1\.SubnetMask"\s+Value = "(?P<mask>(?:\d{1,3}\.){3}\d{1,3})"',
+                "regex_gateway": r'Name = "InternetGatewayDevice\.WANDevice\.5\.WANConnectionDevice\.1\.WANIPConnection\.1\.DefaultGateway"\s+Value = "(?P<gateway>(?:\d{1,3}\.){3}\d{1,3})"'}
+    
+    def get_acs_ont(self):
+        pass
+
+    # command and regex for get_acs_ont
+    @property
+    @abstractmethod
+    def _command_regex_acs_ont(self):
+        return {"command": "show full",
+                "regex": f"Profile '{self._eltex_serial}'"}
     

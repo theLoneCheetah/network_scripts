@@ -114,8 +114,8 @@ class Country:
 
     # country's unified mask, main subnets and vlans
     MASK: Final[str] = os.getenv("COUNTRY_MASK")
-    GATEWAY_VLAN: Final[dict[str, int]] = json.loads(os.getenv("COUNTRY_GATEWAY_VLAN"))
-    SUBNETS: Final[set[IPv4Network]] = set(map(lambda gateway, mask=MASK: IPv4Network(f"{gateway}/{mask}", strict=False), GATEWAY_VLAN.keys()))
+    VLAN_GATEWAY: Final[dict[str, int]] = {int(key): val for key, val in json.loads(os.getenv("COUNTRY_VLAN_GATEWAY")).items()}
+    SUBNETS: Final[set[IPv4Network]] = set(map(lambda gateway, mask=MASK: IPv4Network(f"{gateway}/{mask}", strict=False), VLAN_GATEWAY.values()))
 
     # nserv and nnet
     NSERV_NNET: Final[int] = int(os.getenv("COUNTRY_NSERV_NNET"))
@@ -133,6 +133,9 @@ class Country:
     # log flapping
     MAX_MINUTE_RANGE_ONT_FLAPPING: Final[int] = 10
     MIN_COUNT_FLAPPING: Final[int] = 4
+
+    # rssi
+    HIGH_RSSI: Final[float] = -30.0
 
 ##### PACKET SCANNING CONSTANTS #####
 

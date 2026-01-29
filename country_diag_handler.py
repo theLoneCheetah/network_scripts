@@ -82,6 +82,10 @@ class CountryDiagHandler(DiagHandler):
         # ports
         self.__ports_link_up = []
         self.__no_ports_active = False
+
+        # 
+        self.__acs_profile_not_found = False
+        self.__acs_ont_not_found = False
     
 
     ##### DATABASE AND USER CARD PART #####
@@ -212,10 +216,35 @@ class CountryDiagHandler(DiagHandler):
 
                 # log
                 self.__check_log()
+
+                # only if state ok
+                if self.__state_ok:
+                    # ports
+                    self.__check_ports()
+
+                    # base method is used to check mac addresses
+                    self._check_mac()
+            
+            # if it's ntu1, quit with special exception
+            if self.__ntu1:
+                raise MyException(ExceptionType.NO_ACS_MODE)
+            
+            with self._L2_manager.acs_context():
+                with self._L2_manager.acs_profile_context():
+                    print("acs-profile")
+                with self._L2_manager.acs_ont_context():
+                    print("acs-ont")
         
         # user's exception include special text for output
         except MyException as err:
-            self._L2_exception = err
+            if err.is_acs_mode_error():
+                print(err)
+            elif err.is_acs_profile_mode_error():
+                self.__acs_profile_not_found = True
+            elif err.is_acs_ont_mode_error():
+                self.__acs_ont_not_found = True
+            else:
+                self._L2_exception = err
         
         # exceptions while working with L2 or L3, show traceback
         except Exception:
@@ -288,11 +317,15 @@ class CountryDiagHandler(DiagHandler):
         elif res >= Country.MIN_COUNT_FLAPPING:
             self.__ont_flapping = True
 
-    # check mac addresses and get as a set
-    @override
-    def _check_mac(self) -> None:
-        pass
-    
+    # check ont active ports
+    def __check_ports(self):
+        # get info
+        self.__ports_link_up = self._L2_manager.get_ports()
+
+        # mark flag if there's no active ports
+        if not self.__ports_link_up:
+            self.__no_ports_active = True
+
     # find actual gateway and create L3 manager
     @override
     def _find_actual_gateway(self) -> None:
@@ -318,7 +351,7 @@ class CountryDiagHandler(DiagHandler):
                 print("Ошибка состояния:", self.__state_error)
             else:
                 print(f"State OK")
-            print(f"RSSI: {f'{self.__rssi} dBm' if self.__rssi is not None else 'N/A'}")
+            print(f"RSSI: {f'{self.__rssi} dBm{" (высокий)" if self.__rssi <= Country.HIGH_RSSI else ""}' if self.__rssi is not None else 'N/A'}")
         if self.__ntu1:
             print("Терминал NTU-1")
         
@@ -331,3 +364,21 @@ class CountryDiagHandler(DiagHandler):
             print("Last state:", self.__last_state_error)
         elif self.__ont_flapping:
             print("Соединение с ONT скачет")
+        
+        # ports: no active, info about active
+        if self.__no_ports_active:
+            print("Нет активных портов")
+        elif self.__ports_link_up:
+            print("Порты:", ", ".join([f"{p["port"]} - {p["speed"]}/{p["duplex"]}" for p in self.__ports_link_up]))
+        
+        # mac address: no mac, many macs
+        if self._no_mac:
+            print("Не отображается мак")
+        elif self._many_macs:
+            print("Маков отображается:", self._many_macs)
+        
+        if self.__acs_profile_not_found:
+            print("Не найден acs-profile")
+        
+        if self.__acs_ont_not_found:
+            print("Не найден acs-ont")
