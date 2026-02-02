@@ -33,7 +33,7 @@ class ExceptionType(StrEnum):
 
     ONT_NOT_FOUND: str = "L2: ONT не найден"
 
-    NO_ACS_MODE: str = "acs-profile и acs-ont: терминал NTU-1"
+    CANNOT_CHECK_ACS_MODE: str = "acs-profile и acs-ont: нет корректных настроек IP"
     ACS_PROFILE_NOT_FOUND: str = "acs-profile: не найден"
     ACS_ONT_NOT_FOUND: str = "acs-ont: не найден"
 
@@ -61,8 +61,8 @@ class MyException(Exception):
         return self.__message == ExceptionType.NO_SUBNET
     
     # for country, check if it's no acs mode error
-    def is_acs_mode_error(self):
-        return self.__message == ExceptionType.NO_ACS_MODE
+    def is_cannot_check_acs_mode_error(self):
+        return self.__message == ExceptionType.CANNOT_CHECK_ACS_MODE
     
     # for country, check if it's acs profile mode error
     def is_acs_profile_mode_error(self):

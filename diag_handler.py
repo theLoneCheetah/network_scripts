@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 class DiagHandler(BaseHandler):
     # annotations of protected attributes
+    _print_output: bool
     _inactive_payment: bool
     _different_ip_public_ip: bool
     _double_ip: list[int]
@@ -27,6 +28,7 @@ class DiagHandler(BaseHandler):
     _mac_ok: bool
     _no_mac: bool
     _many_macs: int
+    _vlan_ok: bool
     _ip_interface_not_found: bool
     _ip_interface_wrong_subnet: bool
     _arp_ok: bool
@@ -39,9 +41,12 @@ class DiagHandler(BaseHandler):
     _L3_manager: L3Switch
     _correctly_filled: dict[str, int]
 
-    def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool) -> None:
+    def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool) -> None:
         # init with base constructor
         super().__init__(usernum)
+
+        # indicate if terminal output needed
+        self._print_output = print_output
 
         # database managers and record data object are be given by child class
         self._db_manager = db_manager
@@ -62,6 +67,9 @@ class DiagHandler(BaseHandler):
         self._mac_ok = False
         self._no_mac = False
         self._many_macs = 0   # count mac addresses if there's more than 1
+
+        # vlan
+        self._vlan_ok = False
 
         # ip interface on L3
         self._ip_interface_not_found = False
@@ -224,6 +232,27 @@ class DiagHandler(BaseHandler):
     @abstractmethod
     def _result_L2_L3(self) -> None:
         raise NotImplementedError(f"Method {sys._getframe(0).f_code.co_name} not implemented in child class")
+    
+    # base method to print result of arpentry and mac on L3 diagnostics
+    def _result_arp_check(self) -> None:
+        # arp: no arp, arp on unknown mac, correct
+        if self._no_arp:
+            print("ARP не найдена")
+        elif self._arp_on_unknown_mac:
+            print("ARP найдена на неизвестный мак:", self._arp_on_unknown_mac)
+        elif self._arp_ok:
+            print("ARP OK")
+        
+        # if found arp by mac with wrong ip addresses, is possible even if arp ok or unknown mac
+        if self._ip_incorrect_arp_on_mac:
+            print("По маку найдена неверная ARP:", ", ".join(self._ip_incorrect_arp_on_mac))
+        
+        # if mac was checked, print found or not
+        if self._need_to_check_mac_on_L3:
+            if self._no_mac_on_L3:
+                print("Мак не виден на L3")
+            else:
+                print("Мак виден на L3")
 
     ##### BASE FIRST CHECK PART #####
 

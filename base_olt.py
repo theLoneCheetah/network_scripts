@@ -146,6 +146,10 @@ class BaseOLT(BaseNetworkDevice):
         temp = self._session.before.decode("utf-8")
         match = re.search(self._command_regex_log["regex"], temp, re.DOTALL)
 
+        # return None if no log history found
+        if not match:
+            return None
+
         # if last state is not ok, return it
         if not state_ok or match.group("last_state") != "Working":
             return match.group("last_state")
@@ -268,6 +272,65 @@ class BaseOLT(BaseNetworkDevice):
                 self._session.sendline("exit")
                 self._session.expect(r"\(acs\)")
     
+    # get acs profile config and base profile name
+    def get_acs_profile_config(self):
+        # command
+        self._session.sendline(self._command_regex_acs_profile_config["command"])
+        self._session.expect(r"\)")
+
+        # regex
+        temp = self._session.before.decode("utf-8")
+        match = re.search(self._command_regex_acs_profile_config["regex"], temp, re.DOTALL)
+
+        # catch base acs profile name: default, bridge or no base profile
+        acs_profile_type = None
+        if match.group("default"):
+            acs_profile_type = "default"
+        elif match.group("bridge"):
+            acs_profile_type = "bridge"
+        
+        # return base profile
+        return acs_profile_type
+
+    # command and regex for get_acs_profile_config, command is common
+    @property
+    @abstractmethod
+    def _command_regex_acs_profile_config(self):
+        return {"command": "show config"}
+    
+    # get acs profile property, vlan and ip settings
+    def get_acs_profile_property(self):
+        # command
+        self._session.sendline(self._command_regex_acs_profile_property["command"])
+        self._session.expect(r"\)")
+
+        # regex
+        temp = self._session.before.decode("utf-8")
+        regex = re.compile(self._command_regex_acs_profile_property["regex"])
+
+        # dict to store results
+        res = {key: None for key in regex.groupindex}
+
+        # find by finditer as profile strings can be in different order
+        for match in regex.finditer(temp, re.DOTALL):
+            for key, val in match.groupdict().items():
+                # save existing groups, convert vlan to int
+                if val:
+                    res[key] = int(val) if key == "vlan" else val
+
+        # return all found/not found settings: vlan, ip, mask, gateway
+        return (res[key] for key in regex.groupindex)
+
+    # command and regex for get_acs_profile_property
+    @property
+    def _command_regex_acs_profile_property(self):
+        prefix = r'Name = "InternetGatewayDevice\.WANDevice\.5\.WANConnectionDevice\.1\.WANIPConnection\.1\.'
+        return {"command": "show property",
+                "regex": (fr'{prefix}X_BROADCOM_COM_VlanMuxID"\s+Value = "(?P<vlan>\d{{4}})"'
+                          fr'|{prefix}ExternalIPAddress"\s+Value = "(?P<ip>(?:\d{{1,3}}\.){{3}}\d{{1,3}})"'
+                          fr'|{prefix}SubnetMask"\s+Value = "(?P<mask>(?:\d{{1,3}}\.){{3}}\d{{1,3}})"'
+                          fr'|{prefix}DefaultGateway"\s+Value = "(?P<gateway>(?:\d{{1,3}}\.){{3}}\d{{1,3}})"')}
+    
     # context manager for acs-ont mode
     @contextmanager
     def acs_ont_context(self):
@@ -296,50 +359,21 @@ class BaseOLT(BaseNetworkDevice):
                 self._session.sendline("exit")
                 self._session.expect(r"\(acs\)")
     
-    # get acs profile config and base profile name
-    def get_acs_profile_config(self):
+    # get acs ont full config
+    def get_acs_ont(self):
         # command
-        self._session.sendline(self._command_regex_acs_profile_config["command"])
-        self._session.expect(self._base_prompt)
+        self._session.sendline(self._command_regex_acs_ont["command"])
+        self._session.expect(r"\)")
 
         # regex
         temp = self._session.before.decode("utf-8")
-        match = re.search(self._command_regex_acs_profile_config["regex"], temp, re.DOTALL)
+        match = re.search(self._command_regex_acs_ont["regex"], temp, re.DOTALL)
 
-        # catch base acs profile name: default, bridge or no base profile
-        acs_profile_type = None
-        if match.group("default"):
-            acs_profile_type = "default"
-        elif match.group("bridge"):
-            acs_profile_type = "bridge"
-        
-        # return base profile
-        return acs_profile_type
-
-    # command and regex for get_acs_profile_config, command is common
-    @property
-    @abstractmethod
-    def _command_regex_acs_profile_config(self):
-        return {"command": "show config"}
-    
-    def get_acs_profile_property(self):
-        pass
-
-    # command and regex for get_acs_profile_property
-    @property
-    def _command_regex_acs_profile_property(self):
-        return {"command": "show property",
-                "regex_vlan": r'Name = "InternetGatewayDevice\.WANDevice\.5\.WANConnectionDevice\.1\.WANIPConnection\.1\.X_BROADCOM_COM_VlanMuxID"\s+Value = "(?P<vlan>\d{4})"',
-                "regex_ip": r'Name = "InternetGatewayDevice\.WANDevice\.5\.WANConnectionDevice\.1\.WANIPConnection\.1\.ExternalIPAddress"\s+Value = "(?P<ip>(?:\d{1,3}\.){3}\d{1,3})"',
-                "regex_mask": r'Name = "InternetGatewayDevice\.WANDevice\.5\.WANConnectionDevice\.1\.WANIPConnection\.1\.SubnetMask"\s+Value = "(?P<mask>(?:\d{1,3}\.){3}\d{1,3})"',
-                "regex_gateway": r'Name = "InternetGatewayDevice\.WANDevice\.5\.WANConnectionDevice\.1\.WANIPConnection\.1\.DefaultGateway"\s+Value = "(?P<gateway>(?:\d{1,3}\.){3}\d{1,3})"'}
-    
-    def get_acs_ont(self):
-        pass
+        # return True if profile with the same eltex serial is set for this ont
+        return match is not None
 
     # command and regex for get_acs_ont
     @property
-    @abstractmethod
     def _command_regex_acs_ont(self):
         return {"command": "show full",
                 "regex": f"Profile '{self._eltex_serial}'"}

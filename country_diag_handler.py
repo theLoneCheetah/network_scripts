@@ -27,7 +27,6 @@ class CountryDiagHandler(DiagHandler):
     _L2_manager: BaseOLT | None
     _L3_manager: L3Switch | None
     # class attributes annotations
-    __print_output: bool
     __ip_correct: bool
     __ip_out_of_country_subnets: bool
     __olt_ip: str
@@ -35,14 +34,11 @@ class CountryDiagHandler(DiagHandler):
 
     def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool = False) -> None:
         # init with base constructor
-        super().__init__(usernum, db_manager, record_data, inactive_payment)
+        super().__init__(usernum, db_manager, record_data, inactive_payment, print_output)
 
         # L2 and L3 managers
         self._L2_manager = None
         self._L3_manager = None
-
-        # indicate if terminal output needed
-        self.__print_output = True
 
 
         # attributes for diagnostics of the database record
@@ -76,6 +72,7 @@ class CountryDiagHandler(DiagHandler):
         self.__service_profile_error = False
 
         # log
+        self.__log_history_not_found = False
         self.__last_state_error = ""
         self.__ont_flapping = False
 
@@ -83,9 +80,20 @@ class CountryDiagHandler(DiagHandler):
         self.__ports_link_up = []
         self.__no_ports_active = False
 
-        # 
+        # acs-profile
         self.__acs_profile_not_found = False
+        self.__no_base_profile = False
+        self.__bridge_profile = False
+        self.__wrong_acs_profile_settings = False
+        self.__acs_profile_ok = False
+
+        # acs-ont
         self.__acs_ont_not_found = False
+        self.__wrong_acs_ont_settings = False
+        self.__acs_ont_ok = False
+
+        # acs overall
+        self.__acs_ok = False
     
 
     ##### DATABASE AND USER CARD PART #####
@@ -200,9 +208,9 @@ class CountryDiagHandler(DiagHandler):
             
             # create L2 manager with one of two versions, depending on olt ip
             if self.__olt_ip in Country.OLTS_VERSION2:
-                self._L2_manager = OLTVersion2(self.__olt_ip, self.__eltex_serial, self.__print_output)
+                self._L2_manager = OLTVersion2(self.__olt_ip, self.__eltex_serial, self._print_output)
             elif self.__olt_ip in Country.OLTS_VERSION3:
-                self._L2_manager = OLTVersion3(self.__olt_ip, self.__eltex_serial, self.__print_output)
+                self._L2_manager = OLTVersion3(self.__olt_ip, self.__eltex_serial, self._print_output)
             else:
                 raise MyException(ExceptionType.UNKNOWN_OLT_IP)
             
@@ -211,8 +219,9 @@ class CountryDiagHandler(DiagHandler):
                 # state
                 self.__check_state()
 
-                # config
-                self.__check_config()
+                # config if record's ip is correct
+                if self.__ip_correct:
+                    self.__check_config()
 
                 # log
                 self.__check_log()
@@ -225,24 +234,48 @@ class CountryDiagHandler(DiagHandler):
                     # base method is used to check mac addresses
                     self._check_mac()
             
-            # if it's ntu1, quit with special exception
-            if self.__ntu1:
-                raise MyException(ExceptionType.NO_ACS_MODE)
+            # if ip is not correct, quit with special exceptions
+            if not self.__ip_correct:
+                raise MyException(ExceptionType.CANNOT_CHECK_ACS_MODE)
             
-            with self._L2_manager.acs_context():
-                with self._L2_manager.acs_profile_context():
-                    print("acs-profile")
-                with self._L2_manager.acs_ont_context():
-                    print("acs-ont")
+            # if it's ntu1, skip acs mode checking
+            if not self.__ntu1:
+                # in acs mode
+                with self._L2_manager.acs_context():
+                    # in acs-profile mode
+                    with self._L2_manager.acs_profile_context():
+                        # acs profile settings
+                        self.__check_acs_profile()
+                    
+                    # in acs-ont mode
+                    with self._L2_manager.acs_ont_context():
+                        # acs ont settings
+                        self.__check_acs_ont()
+                    
+                    # mark flag if the whole olt config is ok
+                    if self.__acs_profile_ok and self.__acs_ont_ok:
+                        self.__acs_ok = True
+            
+            # create L3 manager
+            self._find_actual_gateway()
+
+            # check ip interface
+            self._check_vlan_subnet()
+
+            # check arpentry
+            self._check_arpentry_by_ip()
         
         # user's exception include special text for output
         except MyException as err:
-            if err.is_acs_mode_error():
+            # when acs mode cannot be checked, just print message
+            if err.is_cannot_check_acs_mode_error():
                 print(err)
+            # mark flag if acs-profile/ont not found
             elif err.is_acs_profile_mode_error():
                 self.__acs_profile_not_found = True
             elif err.is_acs_ont_mode_error():
                 self.__acs_ont_not_found = True
+            # save if another, fatal exception
             else:
                 self._L2_exception = err
         
@@ -299,20 +332,27 @@ class CountryDiagHandler(DiagHandler):
         # check service profile config and get vlan id
         res = self._L2_manager.get_service_profile_config()
 
-        # mark flag if not found or save configured vlan id
+        # error flag if not found
         if res is None:
             self.__service_profile_error = True
+        # correct flag if ok, save configured vlan id
         else:
             self.__configured_vlan = res
+            self._vlan_ok = True
     
     # check log, ont last state and flapping
     def __check_log(self):
         # get data from olt manager
         res = self._L2_manager.get_log(self.__state_ok)
 
+        # error flag if no log found
+        if res is None:
+            self.__log_history_not_found = True
+        
         # if string was returned, save last state error
-        if isinstance(res, str):
+        elif isinstance(res, str):
             self.__last_state_error = res
+        
         # if integer, it's flapping count, mark flag if there's too many flapping
         elif res >= Country.MIN_COUNT_FLAPPING:
             self.__ont_flapping = True
@@ -325,16 +365,57 @@ class CountryDiagHandler(DiagHandler):
         # mark flag if there's no active ports
         if not self.__ports_link_up:
             self.__no_ports_active = True
+    
+    # check acs profile settings
+    def __check_acs_profile(self):
+        # get base profile type
+        res = self._L2_manager.get_acs_profile_config()
+        
+        # error flag and return if no base profile found
+        if res is None:
+            self.__no_base_profile = True
+            return
+        # mark flag if it's bridge profile, otherwise it's default
+        elif res == "bridge":
+            self.__bridge_profile = True
+        
+        # get vlan and ip settings
+        vlan, ip, mask, gateway = self._L2_manager.get_acs_profile_property()
 
-    # find actual gateway and create L3 manager
+        # check profile settings: vlan should be defined in bridge profile, vlan and ip settings in default profile
+        # vlan can be configured in service profile, otherwise check defined vlan in acs profile
+        if ((vlan == self.__configured_vlan or not self.__configured_vlan and vlan in Country.VLAN_GATEWAY) and 
+                (self.__bridge_profile and ip is None and mask is None and gateway is None or
+                 not self.__bridge_profile and ip == self._record_data["ip"] and mask == Country.MASK and gateway == Country.VLAN_GATEWAY[self.__configured_vlan])):
+            self.__acs_profile_ok = True
+        # or set error flag
+        else:
+            self.__wrong_acs_profile_settings = True
+    
+    # check acs ont settings
+    def __check_acs_ont(self):
+        # if profile it set correctly for this ont
+        if self._L2_manager.get_acs_ont():
+            self.__acs_ont_ok = True
+        # if not
+        else:
+            self.__wrong_acs_ont_settings = True
+
+    # create L3 manager, gateway ip is defined
     @override
     def _find_actual_gateway(self) -> None:
-        pass
+        self._L3_manager = L3Switch(Country.ACTUAL_GATEWAY, self._record_data["ip"], self._print_output)
     
     # check if vlan's ip interface on L3 matches user's subnet
     @override
     def _check_vlan_subnet(self) -> None:
-        pass
+        # can't diagnose if don't have exact configured vlan in service profile
+        if not self.__configured_vlan:
+            return
+        
+        # base method checks ip interface with by vlan (id, name and ipif name are the same) and compare with subnet
+        super()._check_user_subnet_matches_ip_interface(self.__configured_vlan, self.__configured_vlan, self.__configured_vlan,
+                                                        Country.VLAN_GATEWAY[self.__configured_vlan], Country.MASK_LENGTH)
     
     # result of L2 and L3 diagnostics
     @override
@@ -344,6 +425,13 @@ class CountryDiagHandler(DiagHandler):
             print(self._L2_exception)
             return
         
+        # specialized terminal model/mode: ntu1, bridge
+        if self.__ntu1:
+            print("Терминал NTU-1")
+        elif self.__bridge_profile:
+            print("Терминал в режиме моста")
+        
+        # state: not connected, error, ok, rssi
         if self.__ont_not_connected:
             print("ONT не подключён")
         elif self.__state_error or self.__state_ok:
@@ -351,19 +439,32 @@ class CountryDiagHandler(DiagHandler):
                 print("Ошибка состояния:", self.__state_error)
             else:
                 print(f"State OK")
-            print(f"RSSI: {f'{self.__rssi} dBm{" (высокий)" if self.__rssi <= Country.HIGH_RSSI else ""}' if self.__rssi is not None else 'N/A'}")
-        if self.__ntu1:
-            print("Терминал NTU-1")
+            
+            # rssi: not available, dbm, high
+            rssi_string = "RSSI: "
+            if self.__rssi is None:
+                rssi_string += "N/A"
+            else:
+                rssi_string += f"{self.__rssi} dBm"
+                if self.__rssi <= Country.HIGH_RSSI:
+                    rssi_string += " (высокий)"
+            print(rssi_string)
         
-        if self.__service_profile_error:
-            print("Неверно настроен влан в config service profile")
-        elif self.__configured_vlan:
-            print(f"Configured VLAN: {self.__configured_vlan}")
-        
-        if self.__last_state_error:
-            print("Last state:", self.__last_state_error)
+        # log: not found, last state, flapping
+        if self.__log_history_not_found:
+            print("История соединений не найдена")
+        elif self.__last_state_error:
+            print("Последнее состояние:", self.__last_state_error)
         elif self.__ont_flapping:
             print("Соединение с ONT скачет")
+        
+        # mac address: no mac, many macs, ok
+        if self._no_mac:
+            print("Не отображается мак")
+        elif self._many_macs:
+            print("Маков отображается:", self._many_macs)
+        elif self._mac_ok:
+            print("Мак OK")
         
         # ports: no active, info about active
         if self.__no_ports_active:
@@ -371,14 +472,35 @@ class CountryDiagHandler(DiagHandler):
         elif self.__ports_link_up:
             print("Порты:", ", ".join([f"{p["port"]} - {p["speed"]}/{p["duplex"]}" for p in self.__ports_link_up]))
         
-        # mac address: no mac, many macs
-        if self._no_mac:
-            print("Не отображается мак")
-        elif self._many_macs:
-            print("Маков отображается:", self._many_macs)
+        # service profile config: error, ok
+        if self.__service_profile_error:
+            print("Неверно настроен влан в config service profile")
+        elif self._vlan_ok:
+            print("Влан OK")
         
+        # acs-profile: mode not found, no base profile, wrong
         if self.__acs_profile_not_found:
             print("Не найден acs-profile")
+        elif self.__no_base_profile:
+            print("Не назначен базовый профиль в acs-profile")
+        elif self.__wrong_acs_profile_settings:
+            print("Неверный конфиг acs-profile")
         
+        # acs-ont: mode not found, wrong
         if self.__acs_ont_not_found:
             print("Не найден acs-ont")
+        elif self.__wrong_acs_ont_settings:
+            print("Не настроен верный профиль в acs-ont")
+        
+        # acs overall: ok
+        if self.__acs_ok:
+            print("Настройки acs OK")
+        
+        # arp and mac on L3
+        self._result_arp_check()
+        
+        # ip interface on L3: if not found or subnet for vlan is wrong
+        if self._ip_interface_not_found:
+            print("Не найден интерфейс для назначенного влана")
+        elif self._ip_interface_wrong_subnet:
+            print("Подсеть интерфейса для назначенного влана не соответствует подсети айпи из карточки")

@@ -23,7 +23,6 @@ class CityDiagHandler(DiagHandler):
     _L2_manager: L2Switch | None
     _L3_manager: L3Switch | None
     # class attributes annotations
-    __print_output: bool
     __gigabit: bool
     __switch_port: bool
     __ip_mask_gateway: bool
@@ -40,7 +39,6 @@ class CityDiagHandler(DiagHandler):
     __have_direct_public_vlan: bool
     __untagged_vlan_id: int
     __port_vlans: dict[str, list[int]]
-    __vlan_ok: bool
     __no_vlan: bool
     __user_vlan_instead_of_direct_public_vlan: bool
     __direct_public_vlan_instead_of_user_vlan: bool
@@ -72,14 +70,11 @@ class CityDiagHandler(DiagHandler):
 
     def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool = False) -> None:
         # init with base constructor
-        super().__init__(usernum, db_manager, record_data, inactive_payment)
+        super().__init__(usernum, db_manager, record_data, inactive_payment, print_output)
 
         # L2 and L3 managers
         self._L2_manager: L2Switch | None = None
         self._L3_manager: L3Switch | None = None
-
-        # indicate if terminal output needed
-        self.__print_output = print_output
 
 
         # attributes for diagnostics of the database record
@@ -112,7 +107,6 @@ class CityDiagHandler(DiagHandler):
         self.__have_direct_public_vlan = False
         self.__untagged_vlan_id = 0
         self.__port_vlans = {}   # status: list of VIDs
-        self.__vlan_ok = False
         self.__no_vlan = False
         self.__user_vlan_instead_of_direct_public_vlan = False
         self.__direct_public_vlan_instead_of_user_vlan = False
@@ -243,7 +237,7 @@ class CityDiagHandler(DiagHandler):
             self.__gigabit = True
         # if it's new user or it has high payment for juridical, ask for speed
         elif self._record_data["payment"] == Database.NEW_PAYMENT or self._record_data["payment"] > Database.MAX_KNOWN_PAYMENT:
-            self.__gigabit = input(f"Vznos is {self._record_data["payment"]}. Gigabit? (y/n) ").lower() == "y"
+            self.__gigabit = input(f"Vznos is {self._record_data["payment"]}. Gigabit? (y/n) ").lower() in {"y", "д"}
         # in other cases, if it's not old payment
         elif not self._inactive_payment:
             self.__unknown_payment = True
@@ -364,7 +358,7 @@ class CityDiagHandler(DiagHandler):
                 raise MyException(ExceptionType.NO_SWITCH_PORT)
             
             # connect to switch only if switch and port are known
-            self._L2_manager = L2Switch(self._record_data["switch"], self._record_data["port"], self.__print_output)
+            self._L2_manager = L2Switch(self._record_data["switch"], self._record_data["port"], self._print_output)
             
             # exception and flag if port is outside switch's portlist
             if not self.__check_port_in_switch_portlist():
@@ -462,7 +456,7 @@ class CityDiagHandler(DiagHandler):
                 self.__direct_public_vlan_instead_of_user_vlan = True
             # correct flag if port has only 1 vlan in untagged
             elif len(self.__port_vlans.keys()) == 1:
-                self.__vlan_ok = True
+                self._vlan_ok = True
             
             # when there's 1 untagged vlan on port, check dhcp relay
             self.__check_dhcp_relay()
@@ -595,12 +589,12 @@ class CityDiagHandler(DiagHandler):
     def _find_actual_gateway(self) -> None:
         # init L3 manager by user record's gateway if ip is local
         if not self.__direct_public_ip:
-            self._L3_manager = L3Switch(self._record_data["gateway"], self._record_data["ip"], self.__print_output)
+            self._L3_manager = L3Switch(self._record_data["gateway"], self._record_data["ip"], self._print_output)
             return
         
         # on Lensoveta 23, define gateway address for direct public ip
         if self._record_data["street"] == Provider.LENSOVETA_ADDRESS_GATEWAY["street"] and self._record_data["house"] == Provider.LENSOVETA_ADDRESS_GATEWAY["house"]:
-            self._L3_manager = L3Switch(Provider.LENSOVETA_ADDRESS_GATEWAY["gateway"], self._record_data["ip"], self.__print_output)
+            self._L3_manager = L3Switch(Provider.LENSOVETA_ADDRESS_GATEWAY["gateway"], self._record_data["ip"], self._print_output)
             return
         
         # otherwise, find default gateway address on switch
@@ -609,7 +603,7 @@ class CityDiagHandler(DiagHandler):
         # may need from 1 to 3 iterations
         for _ in range(CitySwitch.MAX_HOPS_DIRECT_PUBLIC_IP):
             # create or update L3 manager and find ip route for direct public ip
-            self._L3_manager = L3Switch(gateway, self._record_data["ip"], self.__print_output)
+            self._L3_manager = L3Switch(gateway, self._record_data["ip"], self._print_output)
             gateway = self._L3_manager.check_ip_route()
 
             # if nothing found, mark flag and keep current L3 manager
@@ -716,7 +710,7 @@ class CityDiagHandler(DiagHandler):
                 print(f"Назначен юзерский влан вместо {Provider.DIRECT_PUBLIC_VLAN}")
             elif self.__direct_public_vlan_instead_of_user_vlan:
                 print(f"Назначен влан {Provider.DIRECT_PUBLIC_VLAN} вместо юзерского")
-            elif self.__vlan_ok:
+            elif self._vlan_ok:
                 print("Влан OK")
         
         # dhcp relay: incorrect, ok
@@ -737,22 +731,8 @@ class CityDiagHandler(DiagHandler):
         if self.__ip_route_not_found:
             print("Не найден маршрут для прямого внешнего IP на L3")
         
-        # arp: no arp, arp on unknown mac, correct
-        if self._no_arp:
-            print("ARP не найдена")
-        elif self._arp_on_unknown_mac:
-            print("ARP найдена на неизвестный мак:", self._arp_on_unknown_mac)
-        elif self._arp_ok:
-            print("ARP OK")
-        # if found arp by mac with wrong ip addresses, is possible even if arp ok or unknown mac
-        if self._ip_incorrect_arp_on_mac:
-            print("По маку на порту найдена неверная ARP:", ", ".join(self._ip_incorrect_arp_on_mac))
-        # if mac was checked, print found or not
-        if self._need_to_check_mac_on_L3:
-            if self._no_mac_on_L3:
-                print("Мак не виден на L3")
-            else:
-                print("Мак виден на L3")
+        # arp and mac on L3
+        self._result_arp_check()
         
         # ip interface on L3: if not found or subnet for vlan is wrong
         if self._ip_interface_not_found:

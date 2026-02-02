@@ -114,6 +114,7 @@ class Country:
 
     # country's unified mask, main subnets and vlans
     MASK: Final[str] = os.getenv("COUNTRY_MASK")
+    MASK_LENGTH: Final[str] = IPv4Network(f"0.0.0.0/{MASK}").prefixlen
     VLAN_GATEWAY: Final[dict[str, int]] = {int(key): val for key, val in json.loads(os.getenv("COUNTRY_VLAN_GATEWAY")).items()}
     SUBNETS: Final[set[IPv4Network]] = set(map(lambda gateway, mask=MASK: IPv4Network(f"{gateway}/{mask}", strict=False), VLAN_GATEWAY.values()))
 
