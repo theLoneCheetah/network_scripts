@@ -40,11 +40,12 @@ class Database:
     
     # speed by payments (vznos), country payments, 555 is an exception
     NEW_PAYMENT: Final[int] = 555
-    FAST_ETHERNET: Final[set[int]] = {52, 53, 54, 301, 303, 330, 400, 490, 492, 494, 497, 503, 508, 509, 580, 582, 583, 586, 592, 598, 666, 667, 1000, 1300, 2000}
+    FAST_ETHERNET: Final[set[int]] = {52, 53, 54, 75, 301, 303, 330, 400, 490, 492, 494, 497, 503, 508, 509, 580, 582, 583, 586, 592, 598, 666, 667, 1000, 1300, 2000}
     GIGABIT_ETHERNET: Final[set[int]] = {650, 652, 653, 656, 662, 668, 720, 722, 723, 726, 732, 738, 950, 951, 952, 953, 956, 962, 968, 1330}
     INACTIVE_PAYMENT: Final[set[int]] = {10, 48, 49, 95, 96, 97, 98, 99}
     COUNTRY_PAYMENT: Final[set[int]] = {801, 1001, 1006, 1012, 1501, 1506, 1512, 2001, 2006, 2012}
-    MAX_KNOWN_PAYMENT: Final[int] = 2099   # more than 2100 let's decide there's only gigabit
+    CAN_BE_COUNTRY_PAYMENT: Final[set[int]] = {52, 53, 54, NEW_PAYMENT} | INACTIVE_PAYMENT   # payments that can relate to country
+    MAX_KNOWN_PAYMENT: Final[int] = 2099   # more than 2100 let's decide if there's gigabit
 
 
 ##### MAIN PROVIDER SETTINGS AND CONSTANTS FOR CITY #####

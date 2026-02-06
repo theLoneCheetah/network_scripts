@@ -1,12 +1,8 @@
 #!/usr/bin/python3
-import re
 import traceback
-import signal
-import sys
-import os
-from abc import ABC
 from typing import Any, override
-from ipaddress import IPv4Address, IPv4Network, AddressValueError
+from ipaddress import IPv4Address
+import gc
 # user's modules
 from diag_handler import DiagHandler
 from database_manager import DatabaseManager
@@ -52,13 +48,15 @@ class CountryDiagHandler(DiagHandler):
         # flags for errors in diagnostics of the database record
         self.__ip_out_of_country_subnets = False
 
-
         # flags for variables and erros in country alarm
         self.__olt_ip = ""
         self.__eltex_serial = ""
 
 
         # attributes for diagnostics of L2 and L3
+
+        # ont freezing error
+        self.__ont_freezing = False
 
         # ont state
         self.__ont_not_connected = False
@@ -267,8 +265,11 @@ class CountryDiagHandler(DiagHandler):
         
         # user's exception include special text for output
         except MyException as err:
+            # if ont freezes, mark error flag
+            if err.is_ont_freezes_error():
+                self.__ont_freezing = True
             # when acs mode cannot be checked, just print message
-            if err.is_cannot_check_acs_mode_error():
+            elif err.is_cannot_check_acs_mode_error():
                 print(err)
             # mark flag if acs-profile/ont not found
             elif err.is_acs_profile_mode_error():
@@ -471,6 +472,10 @@ class CountryDiagHandler(DiagHandler):
             print("Нет активных портов")
         elif self.__ports_link_up:
             print("Порты:", ", ".join([f"{p["port"]} - {p["speed"]}/{p["duplex"]}" for p in self.__ports_link_up]))
+        
+        # after main diagnostics output, print message if ont freezes
+        if self.__ont_freezing:
+            print("ONT зависает")
         
         # service profile config: error, ok
         if self.__service_profile_error:

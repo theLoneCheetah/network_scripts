@@ -32,6 +32,7 @@ class CityDiagHandler(DiagHandler):
     __impossible_mask: bool
     __ip_out_of_subnet: bool
     __incorrect_indirect_public_ip: bool
+    __double_indirect_public_ip: list[int]
     __incorrect_subnet: bool
     __incorrect_switch: bool
     __double_port: list[int]
@@ -39,7 +40,7 @@ class CityDiagHandler(DiagHandler):
     __have_direct_public_vlan: bool
     __untagged_vlan_id: int
     __port_vlans: dict[str, list[int]]
-    __no_vlan: bool
+    __no_untagged_vlan: bool
     __user_vlan_instead_of_direct_public_vlan: bool
     __direct_public_vlan_instead_of_user_vlan: bool
     __dhcp_relay_ok: bool
@@ -95,6 +96,7 @@ class CityDiagHandler(DiagHandler):
         self.__impossible_mask = False
         self.__ip_out_of_subnet = False
         self.__incorrect_indirect_public_ip = False
+        self.__double_indirect_public_ip = []
         self.__incorrect_subnet = False
         self.__incorrect_switch = False
         self.__double_port = []   # there will be usernums if found doubles
@@ -107,7 +109,7 @@ class CityDiagHandler(DiagHandler):
         self.__have_direct_public_vlan = False
         self.__untagged_vlan_id = 0
         self.__port_vlans = {}   # status: list of VIDs
-        self.__no_vlan = False
+        self.__no_untagged_vlan = False
         self.__user_vlan_instead_of_direct_public_vlan = False
         self.__direct_public_vlan_instead_of_user_vlan = False
         
@@ -200,10 +202,16 @@ class CityDiagHandler(DiagHandler):
                     if not self.__check_ip_in_subnet():
                         self.__ip_out_of_subnet = True
                     
-                    # if ip is local and has indirect public_ip, check if it's correct
+                    # if ip is local
                     elif self.__check_local_ip():
-                        if self._correctly_filled["public_ip"] == 1 and not self.__check_public_ip(self._record_data["public_ip"]):
-                            self.__incorrect_indirect_public_ip = True
+                        # if user has indirect public_ip
+                        if self._correctly_filled["public_ip"] == 1:
+                            # mark flag if indirect public ip is not correct
+                            if not self.__check_public_ip(self._record_data["public_ip"]):
+                                self.__incorrect_indirect_public_ip = True
+                            # or check for doubles on indirect public ip
+                            else:
+                                self.__check_double_indirect_public_ip()
                     
                     # if ip is public, check public_ip field is the same
                     elif self.__check_public_ip():
@@ -294,6 +302,11 @@ class CityDiagHandler(DiagHandler):
         # for indirect public ip, check if it lies in public subnet
         return any(IPv4Address(address) in subnet for subnet in Provider.PUBLIC_SUBNETS)
     
+    # check users with the same public ip, return list of doubles if found
+    def __check_double_indirect_public_ip(self) -> None:
+        usernums = self._db_manager.get_usernum_by_public_ip(self._record_data["public_ip"])
+        self.__double_indirect_public_ip = usernums if len(usernums) > 1 else []
+
     # result of database record diagnostics
     @override
     def _result_user_card(self) -> None:
@@ -319,12 +332,15 @@ class CityDiagHandler(DiagHandler):
             print("Неверно заполнены поля:", ", ".join(name for key, name in Database.KEY_OUTPUT.items() if self._correctly_filled[key] == -1))
             all_correct = False
         
-        # double port and ip
-        if self.__double_port:
-            print("Дубль порт:", ", ".join(map(str, self.__double_port)))
-            all_correct = False
+        # double ip, indirect public ip and port
         if self._double_ip:
             print("Дубль айпи:", ", ".join(map(str, self._double_ip)))
+            all_correct = False
+        if self.__double_indirect_public_ip:
+            print("Дубль непрямой внешний айпи:", ", ".join(map(str, self.__double_indirect_public_ip)))
+            all_correct = False
+        if self.__double_port:
+            print("Дубль порт:", ", ".join(map(str, self.__double_port)))
             all_correct = False
         
         # switch error separately
@@ -440,12 +456,12 @@ class CityDiagHandler(DiagHandler):
         # get port vlans
         self.__port_vlans = self._L2_manager.get_port_vlans()
         
-        # no_vlan flag if port has no vlans of any status
-        if not self.__port_vlans:
-            self.__no_vlan = True
+        # no_untagged vlan flag if port has no configured vlan
+        if CitySwitch.VLAN_STATUSES[0] not in self.__port_vlans:
+            self.__no_untagged_vlan = True
         
-        # check if there's only 1 untagged vlan, remember it
-        elif CitySwitch.VLAN_STATUSES[0] in self.__port_vlans and len(self.__port_vlans[CitySwitch.VLAN_STATUSES[0]]) == 1:
+        # otherwise, check if there's only 1 untagged vlan, remember it
+        elif len(self.__port_vlans[CitySwitch.VLAN_STATUSES[0]]) == 1:
             self.__untagged_vlan_id = self.__port_vlans[CitySwitch.VLAN_STATUSES[0]][0]
             
             # mark flag if port doesn't have direct_public_vlan when it's on switch
@@ -699,9 +715,9 @@ class CityDiagHandler(DiagHandler):
         if not self.__ip_mask_gateway:
             return
         
-        # vlan: no vlan, wrong tags, wrong untagged vlan, ok
-        if self.__no_vlan:
-            print("Нет влана на порту")
+        # vlan: no untagged vlan, wrong tags, wrong untagged vlan, ok
+        if self.__no_untagged_vlan:
+            print("Не назначен влан на порт")
         for ind, status in enumerate(CitySwitch.VLAN_STATUSES):
             if status in self.__port_vlans and (ind != 0 or not self.__untagged_vlan_id):
                 print("Влан", ", ".join(map(str, self.__port_vlans[status])), "в", status)

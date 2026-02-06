@@ -32,6 +32,7 @@ class ExceptionType(StrEnum):
     OLT_CANNOT_CONNECT: str = "L2: не удаётся подключиться к бошке, бошка пингуется"
 
     ONT_NOT_FOUND: str = "L2: ONT не найден"
+    ONT_FREEZES: str = "L2: ONT зависает"
 
     CANNOT_CHECK_ACS_MODE: str = "acs-profile и acs-ont: нет корректных настроек IP"
     ACS_PROFILE_NOT_FOUND: str = "acs-profile: не найден"
@@ -60,7 +61,11 @@ class MyException(Exception):
     def is_subnet_error(self):
         return self.__message == ExceptionType.NO_SUBNET
     
-    # for country, check if it's no acs mode error
+    # for country, check if it's ont freezes error
+    def is_ont_freezes_error(self):
+        return self.__message == ExceptionType.ONT_FREEZES
+    
+    # for country, check if it's acs mode error
     def is_cannot_check_acs_mode_error(self):
         return self.__message == ExceptionType.CANNOT_CHECK_ACS_MODE
     

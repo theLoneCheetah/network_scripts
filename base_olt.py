@@ -70,9 +70,15 @@ class BaseOLT(BaseNetworkDevice):
     # context manager for working with terminal commands
     @contextmanager
     def terminal_context(self):
-        # nothing to do by default
+        # just return control by default
         try:
             yield
+        
+        # if eof or timeout during terminal check, ont freezes error
+        except (pexpect.EOF, pexpect.TIMEOUT):
+            raise MyException(ExceptionType.ONT_FREEZES)
+        
+        # nothing to do by default in the end
         finally:
             pass
     
@@ -179,6 +185,10 @@ class BaseOLT(BaseNetworkDevice):
         # regex
         temp = self._session.before.decode("utf-8")
         match = re.search(self._command_regex_ports["regex"], temp, re.DOTALL)
+
+        # return None if not found
+        if not match:
+            return None
 
         # list of dictionaries to store active ports data
         ports_link_up = []

@@ -49,14 +49,21 @@ class OLTVersion2(BaseOLT):
             # raise exception if ont not found (not exist)
             if index == 1:
                 raise MyException(ExceptionType.ONT_NOT_FOUND)
-            
-            # return control
-            yield
         
         # if ont not found, raise special exception
         except (pexpect.EOF, pexpect.TIMEOUT):
             raise MyException(ExceptionType.ONT_NOT_FOUND)
         
+        
+        # another try block to catch exceptions differently
+        try:
+            # return control
+            yield
+        
+        # if eof or timeout during terminal check, ont freezes error
+        except (pexpect.EOF, pexpect.TIMEOUT):
+            raise MyException(ExceptionType.ONT_FREEZES)
+
         # exiting manager
         finally:
             # first exit, expect pon or main mode
@@ -116,6 +123,6 @@ class OLTVersion2(BaseOLT):
     @property
     def _command_regex_acs_profile_config(self):
         data = super()._command_regex_acs_profile_config
-        data["regex"] = r'Base profile = "(?:(?P<default>1402_default)|(?P<bridge>1402_bridge))"'
+        data["regex"] = r'Base profile = "(?:(?P<default>1402_default)|(?P<bridge>1402_bridge))?"'
         return data
     
