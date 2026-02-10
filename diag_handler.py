@@ -259,10 +259,9 @@ class DiagHandler(BaseHandler):
     # static method to get main data from database and decide country or not
     @staticmethod
     def decide_country_or_city(usernum: int) -> tuple[bool, DatabaseManager, dict[str, Any], bool]:
-        # it's country if user has active country payment or inactive/new/free/high juridical payment with country nnet
+        # it's country if user has active country nnet or payment
         def check_country_or_city(payment, nnet):
-            if (payment in Database.COUNTRY_PAYMENT or nnet == Country.NSERV_NNET and 
-                    (payment in Database.CAN_BE_COUNTRY_PAYMENT or payment > Database.MAX_KNOWN_PAYMENT)):
+            if (nnet == Country.NSERV_NNET or payment in Database.COUNTRY_PAYMENT):
                 return True
             return False
 

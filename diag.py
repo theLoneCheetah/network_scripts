@@ -1,16 +1,19 @@
 #!/usr/bin/python3
 import traceback
+import time
 # user's modules
 from diag_handler import DiagHandler
 from city_diag_handler import CityDiagHandler
 from country_diag_handler import CountryDiagHandler
+from test_db import TestDatabaseManager
 
 
 ##### START DIAGNOSTICS #####
 
-def main() -> None:
+def main(usernum: int = None) -> None:
     # get usernum
-    usernum = int(input("Usernum: "))
+    if usernum is None:
+        usernum = int(input("Usernum: "))
 
     # variable for testing, if True, write L2 and L3 managers output in stdout buffer
     print_output = False
@@ -41,4 +44,14 @@ def main() -> None:
         traceback.print_exc()
     
 if __name__ == "__main__":
+    start_time = time.perf_counter()
     main()
+    print(time.perf_counter() - start_time)
+
+    # test_db_manager = TestDatabaseManager()
+
+    # for usernum in test_db_manager.get_random_usernums():
+    #     print(usernum)
+    #     start_time = time.perf_counter()
+    #     main(usernum)
+    #     print(time.perf_counter() - start_time)
