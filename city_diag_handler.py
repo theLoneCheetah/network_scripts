@@ -662,15 +662,16 @@ class CityDiagHandler(DiagHandler):
         # port: if it is fiber or has settings
         if self.__fiber_port:
             print("Оптический порт")
-        if self.__speed_settings:
+        if self.__speed_settings and not self.__lower_speed:
             print("Скорость ограничена вручную в", self.__speed_settings)
         # port: status and speed
         if self.__port_disabled:
             print("Порт выключен")
         elif self.__linkdown_status:
             print("Состояние порта:", self.__linkdown_status)
-        elif self.__lower_speed and not self.__speed_settings:
-            print("Линк", self.__lower_speed, "вместо", CitySwitch.NORMAL_SPEED[self.__gigabit])
+        elif self.__lower_speed:
+            print(f"Линк {self.__lower_speed} вместо {CitySwitch.NORMAL_SPEED[self.__gigabit]}"
+                  f"{f', ограничено вручную в {self.__speed_settings}' if self.__speed_settings else ''}")
         elif self.__link_ok:
             print("Линк OK")
         
