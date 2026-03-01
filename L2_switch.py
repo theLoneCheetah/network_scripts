@@ -2,9 +2,11 @@
 import re
 from collections import defaultdict
 from datetime import datetime
+from pexpect import TIMEOUT
 # user's modules
 from base_switch import BaseSwitch
 from const import Provider, CitySwitch
+from my_exception import MyException, ExceptionType
 import commands
 
 
@@ -185,12 +187,21 @@ class L2Switch(BaseSwitch):
     
     # get mac addresses on port, method is used for L2Protocol
     def get_mac_addresses(self) -> set[str]:
-        # command
+        # command, expect cli prompt or timeout 
         command_regex = commands.show_fdb(self._model, self.__user_port)
         self._session.sendline(command_regex["command"])
-        self._session.expect("#")
+        index = self._session.expect(["#", TIMEOUT], timeout=2)
+
+        # if timeout
+        if index == 1:
+            # break mac output with CTRL+C
+            self._session.sendcontrol("c")
+            self._session.expect("#")
+
+            # raise exception about mac flooding
+            raise MyException(ExceptionType.MAC_FLOODING_ON_PORT)
         
-        # get rows as "vid vlan mac type" and return set of macs
+        # otherwise, get rows as "vid vlan mac type" and return set of macs
         matches = re.findall(command_regex["regex"], self._session.before.decode("utf-8"))
         return {i[2] for i in matches}
     

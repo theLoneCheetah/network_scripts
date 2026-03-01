@@ -59,6 +59,7 @@ class CityDiagHandler(DiagHandler):
     __cable_diag_status: str
     __invalid_log_time: bool
     __port_flapping: bool
+    __mac_flooding: bool
     __port_security: bool
     __crc_errors: int
     __crc_ok: bool
@@ -138,6 +139,9 @@ class CityDiagHandler(DiagHandler):
         # log, port flapping
         self.__invalid_log_time = False
         self.__port_flapping = False
+
+        # mac address
+        self.__mac_flooding = False
         
         # port security
         self.__port_security = False
@@ -579,7 +583,11 @@ class CityDiagHandler(DiagHandler):
     @override
     def _check_mac(self) -> None:
         # get mac addresses and main flags using base method
-        super()._check_mac()
+        try:
+            super()._check_mac()
+        # mark flag if mac flooding on port
+        except MyException:
+            self.__mac_flooding = True
         
         # error when there's no mac, cable diag needed
         if self._no_mac:
@@ -689,8 +697,10 @@ class CityDiagHandler(DiagHandler):
         
         # if linkup, show mac and packets
         if not self.__linkdown_status:
-            # mac address: no mac, many macs
-            if self._no_mac:
+            # mac address: flooding, no mac, many macs, ok
+            if self.__mac_flooding:
+                print("Флуд маков на порту")
+            elif self._no_mac:
                 print("Нет мака на порту")
             elif self._many_macs:
                 print("Маков на порту:", self._many_macs)

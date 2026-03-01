@@ -19,6 +19,8 @@ class ExceptionType(StrEnum):
 
     PORT_OUTSIDE_OF_PORTLIST: str = "L2: порт пользователя вне диапазона портов свитча"
 
+    MAC_FLOODING_ON_PORT: str = "мак: флуд маков на порту"
+
     NO_SUBNET: str = "ACL, VLAN и ARP: нет корректных настроек IP"
 
     # country
