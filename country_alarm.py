@@ -20,6 +20,9 @@ class CountryAlarmManager:
         data = payload["data"]
         configured_onts = [dict(zip(columns, line)) for line in data]
 
+        # print ltp-channel
+        # print(" ".join(f"{ont["LTP"][-1:]}-{ont["CHANNEL"]}" for ont in configured_onts if ont["USERNUM"] == str(usernum)))
+
         # find and return all pairs of olt and eltex for usernum
         return [(ont["LTP"], ont["ELTX"]) for ont in configured_onts if ont["USERNUM"] == str(usernum)]
     

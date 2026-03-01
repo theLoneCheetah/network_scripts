@@ -330,16 +330,21 @@ class CountryDiagHandler(DiagHandler):
     
     # check ont configuration
     def __check_config(self):
-        # check service profile config and get vlan id
-        res = self._L2_manager.get_service_profile_config()
+        # check service profile config and get vlan id and ntu-1 flag that helps when it isn't connected
+        vlan_id, ntu1 = self._L2_manager.get_service_profile_config(self.__ont_not_connected)
 
         # error flag if not found
-        if res is None:
+        if vlan_id is None:
             self.__service_profile_error = True
+        
         # correct flag if ok, save configured vlan id
         else:
-            self.__configured_vlan = res
+            self.__configured_vlan = vlan_id
             self._vlan_ok = True
+
+            # mark ntu-1 flag if service profile for ntu-1 found when it isn't connected
+            if ntu1:
+                self.__ntu1 = True
     
     # check log, ont last state and flapping
     def __check_log(self):

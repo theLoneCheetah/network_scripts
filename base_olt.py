@@ -116,7 +116,7 @@ class BaseOLT(BaseNetworkDevice):
         return ont_not_connected, state_error, rssi, False
     
     # check ont service profile config
-    def get_service_profile_config(self):
+    def get_service_profile_config(self, ont_not_connected):
         # command
         self._session.sendline(self._command_regex_service_profile_config["command"])
         self._session.expect(self._base_prompt)
@@ -125,11 +125,8 @@ class BaseOLT(BaseNetworkDevice):
         temp = self._session.before.decode("utf-8")
         match = re.search(self._command_regex_service_profile_config["regex"], temp, re.DOTALL)
 
-        # get vlan id from config with specialized regex
-        match_vlan = re.fullmatch(self._regex_configured_vlan_id, match.group("service"))
-
-        # return vlan id or None if not found   
-        return int(match_vlan.group("vlan")) if match_vlan else None
+        # parse match and return results
+        return self._parse_get_service_profile_config_match(match.group("service"), ont_not_connected)
     
     # command and regex for get_service_profile_config
     @property
@@ -140,7 +137,17 @@ class BaseOLT(BaseNetworkDevice):
     # regex to find vlan id from profile service output, basically a 4-digit number
     @property
     def _regex_configured_vlan_id(self):
-        return r"(?P<vlan>\d{4})"
+        regex = r"(?P<vlan>\d{4})"
+        return {"main": regex,
+                "reserve": regex}
+    
+    # parsing get_service_profile_config match object to get vlan, basically without checking for ntu-1
+    def _parse_get_service_profile_config_match(self, match, ont_not_connected):
+        # get vlan id from config with specialized regex
+        match_vlan = re.fullmatch(self._regex_configured_vlan_id["main"], match)
+
+        # return vlan id or None if not found, also False for ntu-1 by default
+        return int(match_vlan.group("vlan")) if match_vlan else None, False
 
     # get connections and check last state and ont flapping
     def get_log(self, state_ok):

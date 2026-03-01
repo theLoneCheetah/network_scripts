@@ -54,11 +54,32 @@ class OLTVersion3(BaseOLT):
         return {"command": f"show interface ont {self._eltex_serial} configuration",
                 "regex": r"Service \[0\]:\s+(?:\[T\])?\s+Profile cross connect:\s+(?P<service>\S+)"}
 
-    # for ntu1, return another regex to find vlan id
+    # basically regex for ntu-1/not, also reserve regex for ntu-1
     @override
     @property
     def _regex_configured_vlan_id(self):
-        return r"NTU1_(?P<vlan>\d{4})" if self.__ntu1 else super()._regex_configured_vlan_id
+        regex = r"NTU1_(?P<vlan>\d{4})"
+        return {"main": regex if self.__ntu1 else super()._regex_configured_vlan_id["main"],
+                "reserve": regex}
+    
+    # parsing get_service_profile_config match object to get vlan, also check reserve regex for ntu-1
+    def _parse_get_service_profile_config_match(self, match, ont_not_connected):
+        # get base results
+        vlan_id, ntu1 = super()._parse_get_service_profile_config_match(match, ont_not_connected)
+
+        # if vlan id was already found or ont is connected (it means that ntu-1/not was checked), return same results
+        if vlan_id or not ont_not_connected:
+            return vlan_id, ntu1
+        
+        # otherwise, try to find ntu-1 vlan profile with reserve regex
+        match_vlan = re.fullmatch(self._regex_configured_vlan_id["reserve"], match)
+
+        # if found, mark flag for ntu-1
+        if match_vlan:
+            self.__ntu1 = True
+        
+        # return vlan id or None if not found, also flag for ntu-1
+        return int(match_vlan.group("vlan")) if match_vlan else None, self.__ntu1
 
     # command and regex for get_log, adding command
     @override
