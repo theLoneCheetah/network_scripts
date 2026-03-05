@@ -13,12 +13,7 @@ class CountryAlarmManager:
     def get_user_data_from_alarm(usernum: int) -> list[tuple[str]]:
         # load json from url
         response = requests.get(Country.ALARM_URL)
-        payload = response.json()
-
-        # split and collect data as dictionaries
-        columns = payload["columns"]
-        data = payload["data"]
-        configured_onts = [dict(zip(columns, line)) for line in data]
+        configured_onts = response.json()
 
         # print ltp-channel
         # print(" ".join(f"{ont["LTP"][-1:]}-{ont["CHANNEL"]}" for ont in configured_onts if ont["USERNUM"] == str(usernum)))
