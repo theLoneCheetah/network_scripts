@@ -63,7 +63,7 @@ class L3Switch(BaseSwitch):
                 match = re.search(command_regex["subnet_regex"], self._session.before.decode("utf-8"))
 
                 # subnet route as "X.X.115.0/24 X.X.X.248" is correct because mask >= 24 and next hop ip is in L3 24-bit subnet, None otherwise
-                if int(match.group("mask")) < 24 or not self.__ip_in_L3_subnet(match.group("next_hop")):
+                if not match or int(match.group("mask")) < 24 or not self.__ip_in_L3_subnet(match.group("next_hop")):
                     return None
         
         return match.group("next_hop") if match else None
