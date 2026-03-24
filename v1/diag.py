@@ -5,7 +5,7 @@ import time
 from diag_handler import DiagHandler
 from city_diag_handler import CityDiagHandler
 from country_diag_handler import CountryDiagHandler
-from test_db import TestDatabaseManager
+# from test_db import TestDatabaseManager
 
 
 ##### START DIAGNOSTICS #####

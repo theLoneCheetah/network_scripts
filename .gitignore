@@ -4,3 +4,6 @@
 # test files and scripts
 *.txt
 test*
+
+# temporary python files
+**/__pycache__/
