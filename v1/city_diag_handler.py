@@ -717,10 +717,10 @@ class CityDiagHandler(DiagHandler):
         
         # cable diag: just status or a list of open pairs
         if self.__cable_diag_status:
-            print("Кабдиаг", self.__cable_diag_status)
+            print("Кабдиаг:", self.__cable_diag_status)
         elif self.__open_cable_pairs:
             # list has records as [pair, status, meter]
-            print("Кабдиаг", ", ".join(map(lambda x: f"{x[0]}п {x[2]}м {x[1].upper()}" if len(x) == 3 and all(x) else f"{x[0]}п {x[1].upper()}", self.__open_cable_pairs)))
+            print("Кабдиаг:", ", ".join(map(lambda x: f"{x[0]}п {x[2]}м {x[1].upper()}" if len(x) == 3 and all(x) else f"{x[0]}п {x[1].upper()}", self.__open_cable_pairs)))
         
         # if there's no correct subnet, end output
         if not self.__ip_mask_gateway:

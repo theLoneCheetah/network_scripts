@@ -4,7 +4,7 @@
 source "$(dirname "$0")/../.env"
 
 # python script name
-PYTHON_SCRIPT="packet.py"
+PYTHON_SCRIPT="v1/packet.py"
 
 # read usernum for python script
 read -p "Usernum: " USERNUM
