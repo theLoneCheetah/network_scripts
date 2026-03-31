@@ -1,60 +1,52 @@
 #!/usr/bin/python3
+from time import perf_counter
 import asyncio
+import yaml
 from pysnmp.hlapi.v3arch.asyncio import *
 from const import SNMP
 
 
-async def run():
-    snmpEngine = SnmpEngine()
+async def port_diagnostics(port):
+    with open("v2/oid.yaml", "r") as F:
+        config = yaml.safe_load(F)
+    
+    Engine = SnmpEngine()
+    Community = CommunityData(SNMP.READ_ONLY)
+    Transport = await UdpTransportTarget.create((SNMP.TEST_3028, 161))
+    Context = ContextData()
 
-    iterator = get_cmd(
-        snmpEngine,
-        CommunityData(SNMP.READ_ONLY),
-        await UdpTransportTarget.create((SNMP.TEST_3028, 161)),
-        ContextData(),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.1.25.100")),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.2.25.100")),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.4.25.100")),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.25.100")),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.1.25.101")),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.2.25.101")),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.4.25.101")),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.25.101")),
+    request_data = [{"command": command,
+                    **data}
+                    for command, data in config["models"]["DES-3028"]["oids"].items()]
+    
+    oid_objects = [ObjectType(ObjectIdentity(request["oid"].format(port=port))) for request in request_data]
+    
+    start_time = perf_counter()
+
+    errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+        Engine,
+        Community,
+        Transport,
+        Context,
+        *oid_objects
     )
 
-    errorIndication, errorStatus, errorIndex, varBinds = await iterator
+    print(perf_counter() - start_time)
+
+    for data, varBind in zip(request_data, varBinds):
+        print(data["command"], end="; ")
+        if data["type"] == "integer":
+            print(data["values"][int(varBind[1].prettyPrint())])
+        else:
+            print(varBind[1].prettyPrint())
     
-    for varBind in varBinds:
-        print(varBind.prettyPrint())
-    
+    Engine.close_dispatcher()
 
+async def main():
+    port = 2
 
-    iterator = get_cmd(
-        snmpEngine,
-        CommunityData(SNMP.READ_ONLY),
-        await UdpTransportTarget.create((SNMP.TEST_3028, 161)),
-        ContextData(),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.25.100")),
-    )
+    task1 = asyncio.create_task(port_diagnostics(port))
 
-    errorIndication, errorStatus, errorIndex, varBinds = await iterator
-    
-    for varBind in varBinds:
-        print(varBind.prettyPrint())
+    await asyncio.gather(task1)
 
-    iterator = get_cmd(
-        snmpEngine,
-        CommunityData(SNMP.READ_ONLY),
-        await UdpTransportTarget.create((SNMP.TEST_3028, 161)),
-        ContextData(),
-        ObjectType(ObjectIdentity(".1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.25.101")),
-    )
-
-    errorIndication, errorStatus, errorIndex, varBinds = await iterator
-    
-    for varBind in varBinds:
-        print(varBind.prettyPrint())
-
-    snmpEngine.close_dispatcher()
-
-asyncio.run(run())
+asyncio.run(main())
