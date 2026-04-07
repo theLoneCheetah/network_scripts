@@ -11,3 +11,4 @@ class SNMP:
     READ_ONLY = os.getenv("SNMP_READ_ONLY")
     READ_WRITE = os.getenv("SNMP_READ_WRITE")
     TEST_3028 = os.getenv("SNMP_TEST_3028")
+    TEST_1210 = os.getenv("SNMP_TEST_1210")

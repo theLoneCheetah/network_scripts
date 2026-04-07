@@ -3,27 +3,27 @@ models:
     oids:
       switch:
         ip:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.1.2.2.0
+          oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.2.0
           type: ipaddress
         mask:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.1.2.3.0
+          oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.3.0
           type: ipaddress
         default_gateway:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.1.2.4.0
+          oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.4.0
           type: ipaddress
         management_vlan_id:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.1.2.5.0
+          oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.5.0
           type: integer
       port:
         admin_state:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.2.2.1.3.{port}.100
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.3.{port}.100
           type: integer
           values:
             1: other
             2: disabled
             3: enabled
         speed_duplex_settings:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.2.2.1.4.{port}.100
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.4.{port}.100
           type: integer
           values:
             1: auto
@@ -35,21 +35,21 @@ models:
             8: 1000M/Full-Master
             9: 1000M/Full-Slave
         flow_control:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.2.2.1.5.{port}.100
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.5.{port}.100
           type: integer
           values:
             1: other
             2: disabled
             3: enabled
         address_learning:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.2.2.1.7.{port}.100
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.7.{port}.100
           type: integer
           values:
             1: other
             2: disabled
             3: enabled
         mdix_state:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.2.2.1.10.{port}.100
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.10.{port}.100
           type: integer
           values:
             1: auto
@@ -57,14 +57,14 @@ models:
             3: cross
             4: other
         link_status:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.2.1.1.4.{port}.100
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.1.1.4.{port}.100
           type: integer
           values:
             1: other
             2: link_pass
             3: link_fail
         speed_duplex_status:
-          oid: .1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.{port}.100
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.{port}.100
           type: integer
           values:
             1: auto
