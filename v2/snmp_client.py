@@ -67,35 +67,42 @@ class SNMPClient:
         
         return results
     
-    async def _walk(self, config_fragment: dict[str, Any]) -> dict[str, Any] | None:
+    async def _bulk_walk(self, request_data: dict[str, Any]) -> list[tuple[str, Any]] | None:
         await self._initialize()
 
-        request_data = [{"command": command, **data} for command, data in config_fragment.items()]
-        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"]))) for request in request_data]
+        oid_object = ObjectType(ObjectIdentity(self._render_oid(request_data["oid"])))
+        max_repetitions = 49   # can be changed
 
-        errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+        results = []
+
+        async for (errorIndication, errorStatus, errorIndex, varBinds) in bulk_walk_cmd(
             self._engine,
             self._community,
             self._transport,
             self._context,
-            *oid_objects
-        )
-        
-        if errorIndication:
-            print("SNMP error:", errorIndication)
-            return None
-        
-        if errorStatus:
-            print("SNMP error:", errorStatus)
-            return None
-        
-        results = {}
+            0, max_repetitions,
+            oid_object,
+            lexicographicMode=False
+        ):
+            if errorIndication:
+                print("SNMP error:", errorIndication)
+                return None
+            
+            if errorStatus:
+                print("SNMP error:", errorStatus)
+                return None
+            
+            for varBind in varBinds:
+                oid = str(varBind[0])
 
-        for data, varBind in zip(request_data, varBinds):
-            if data["type"] == "integer" and "values" in data:
-                results[data["command"]] = data["values"][int(varBind[1].prettyPrint())]
-            else:
-                results[data["command"]] = varBind[1].prettyPrint()
+                if request_data["type"] == "integer":
+                    value = int(varBind[1].prettyPrint())
+                    if "values" in request_data:
+                        value = request_data["values"][value]
+                else:
+                    value = varBind[1].prettyPrint()
+
+                results.append((oid, value))
         
         return results
     
