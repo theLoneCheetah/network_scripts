@@ -1,0 +1,63 @@
+#!/usr/bin/python3
+import asyncio
+from typing import Any
+from collections import defaultdict
+from pysnmp.hlapi.v3arch.asyncio import *
+from L2_switch_client import L2SwitchClient
+from const import SNMP
+
+class L2SwitchHandler:
+    _port: int
+    _client: L2SwitchClient
+
+    def __init__(self, ipaddress: str, port: int, model: str, ports_count: int) -> None:
+        self._port = port
+        self._client = L2SwitchClient(ipaddress, self._port, model, ports_count)
+    
+    async def get_default_gateway(self) -> dict[str, str]:
+        include_oids = ["default_gateway"]
+        return await self._client.get_switch_info(include_oids)
+    
+    async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
+        return await self._client.get_vlan_static_table()
+    
+    async def get_vlan_on_port(self) -> defaultdict[str, set[int]]:
+        vlan_static_table = await self.get_vlan_static_table()
+        result = defaultdict(dict)
+
+        for vlan_id, vlan_info in vlan_static_table.items():
+            vlan_name =  vlan_info["vlan_name"]
+            if self._port in vlan_info["tagged_ports"]:
+                result["tagged"][vlan_id] = vlan_name
+            elif self._port in vlan_info["untagged_ports"]:
+                result["untagged"][vlan_id] = vlan_name
+
+        return result
+    
+    async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
+        return await self._client.get_fdb_table()
+    
+    async def get_mac_addresses_on_port(self) -> defaultdict[str, dict[int, dict[str, str]]]:
+        fdb_table = await self.get_fdb_table()
+        result = defaultdict(dict)
+
+        for vlan_id, mac_list in fdb_table.items():
+            for mac, mac_info in mac_list.items():
+                if mac_info["port"] == self._port and mac_info["status"] not in {"invalid" , "self"}:
+                    result[mac][vlan_id] = {"status": "dynamic" if mac_info["status"] == "learned" else "static"}
+        
+        return result
+    
+    async def get_port_info(self) -> dict[str, str]:
+        include_oids = ["admin_state", "speed_duplex_settings", "link_status", "speed_duplex_status"]
+        result = await self._client.get_port_diagnostics(include_oids)
+
+        result["link_speed_duplex_status"] = "link_down" if result["link_status"] != "link_pass" else result["speed_duplex_status"]
+        del result["link_status"]
+        del result["speed_duplex_status"]
+
+        return result
+    
+    async def get_port_security_on_port(self) -> dict[str, Any]:
+        include_oids = ["port_security_max_learning_addresses", "port_security_lock_address_mode", "port_security_admin_state"]
+        return await self._client.get_port_diagnostics(include_oids)

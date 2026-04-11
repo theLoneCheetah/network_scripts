@@ -7,6 +7,9 @@ import os
 import json
 
 
+class Database:
+    USERNUM: Final[str] = "Number"
+
 class SNMP:
     READ_ONLY = os.getenv("SNMP_READ_ONLY")
     READ_WRITE = os.getenv("SNMP_READ_WRITE")

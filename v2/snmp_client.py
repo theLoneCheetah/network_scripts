@@ -60,8 +60,11 @@ class SNMPClient:
         results = {}
 
         for data, varBind in zip(request_data, varBinds):
-            if data["type"] == "integer" and "values" in data:
-                results[data["command"]] = data["values"][int(varBind[1].prettyPrint())]
+            if data["type"] == "integer":
+                if "values" in data:
+                    results[data["command"]] = data["values"][int(varBind[1].prettyPrint())]
+                else:
+                    results[data["command"]] = int(varBind[1].prettyPrint())
             else:
                 results[data["command"]] = varBind[1].prettyPrint()
         

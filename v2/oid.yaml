@@ -1,5 +1,6 @@
 models:
   DES-3028:
+    firmware_release: 2.94
     oids:
       switch:
         ip:
@@ -14,6 +15,16 @@ models:
         management_vlan_id:
           oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.5.0
           type: integer
+      vlan:
+        name:
+          oid: 1.3.6.1.2.1.17.7.1.4.3.1.1
+          type: octetstring
+        egress_ports:
+          oid: 1.3.6.1.2.1.17.7.1.4.3.1.2
+          type: octetstring
+        untagged_ports:
+          oid: 1.3.6.1.2.1.17.7.1.4.3.1.4
+          type: octetstring
       fdb:
         port:
           oid: 1.3.6.1.2.1.17.7.1.2.2.1.2
@@ -87,3 +98,21 @@ models:
             5: 100M/Full
             6: 1000M/Half
             7: 1000M/Full
+        port_security_max_learning_addresses:
+          oid: 1.3.6.1.4.1.171.11.63.6.2.15.1.1.2.{port}
+          type: integer
+        port_security_lock_address_mode:
+          oid: 1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.{port}
+          type: integer
+          values:
+            1: other
+            2: permanent
+            3: deleteOnTimeout
+            4: deleteOnReset
+        port_security_admin_state:
+          oid: 1.3.6.1.4.1.171.11.63.6.2.15.1.1.4.{port}
+          type: integer
+          values:
+            1: other
+            2: enable
+            3: disable
