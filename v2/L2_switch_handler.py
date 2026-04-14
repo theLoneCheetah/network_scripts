@@ -44,9 +44,12 @@ class L2SwitchHandler:
         for vlan_id, mac_list in fdb_table.items():
             for mac, mac_info in mac_list.items():
                 if mac_info["port"] == self._port and mac_info["status"] not in {"invalid" , "self"}:
-                    result[mac][vlan_id] = {"status": "dynamic" if mac_info["status"] == "learned" else "static"}
+                    result[mac][vlan_id] = {"status": mac_info["status"]}
         
         return result
+    
+    async def get_cable_diagnostics(self):
+        return await self._client.get_cable_diagnostics()
     
     async def get_port_info(self) -> dict[str, str]:
         include_oids = ["admin_state", "speed_duplex_settings", "link_status", "speed_duplex_status"]

@@ -14,13 +14,18 @@ class L2SwitchClient(SNMPClient):
     
     def __init__(self, ipaddress: str, port: int, model: str, ports_count: int) -> None:
         super().__init__(ipaddress)
+
+        self._ports_count = self._config["models"][model]["ports_count"]
+        self._model = self._config["models"][model]["base_model"]
         self._port = port
-        self._model = model
-        self._ports_count = ports_count
+        self._gigabit_ethernet_port = self._port >= self._config["models"][self._model]["first_gigabit_port"]
+        self._combo_port = self._port in self._config["models"][self._model]["combo_ports"]
+        self._fiber_port = self._port in self._config["models"][self._model]["fiber_ports"]
+
         self._switch_config = self._config["models"][self._model]["oids"]
     
     async def get_switch_info(self, include_oids: list[str]) -> dict[str, Any]:
-        return await self._get(self._filter_request_config(self._switch_config["switch"], include_oids))
+        return await self._get(SNMPClient._filter_request_config(self._switch_config["switch"], include_oids))
     
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
         def parse_vlan_id(oid: str) -> int:
@@ -65,12 +70,27 @@ class L2SwitchClient(SNMPClient):
 
         for oid, status in status_port:
             vlan_id, mac = parse_vlan_id_mac(oid, self._switch_config["fdb"]["status"]["oid"])
+            if status not in {"invalid" , "self"}:
+                status = "dynamic" if status == "learned" else "static"
             results[vlan_id][mac]["status"] = status
+
+        return results
+    
+    async def get_cable_diagnostics(self):
+        filtered_request_config = SNMPClient._filter_request_config(self._switch_config["port"], ["cable_diagnostics_action"])
+
+        action_status = await self._set(filtered_request_config, {"cable_diagnostics_action": "action"})
+        while action_status["cable_diagnostics_action"] in {"action", "processing"}:
+            action_status = await self._get(filtered_request_config)
+        
+        include_oids = ["cable_diagnostics_pair1_status", "cable_diagnostics_pair2_status", "cable_diagnostics_pair3_status", "cable_diagnostics_pair4_status",
+                        "cable_diagnostics_pair1_length", "cable_diagnostics_pair2_length", "cable_diagnostics_pair3_length", "cable_diagnostics_pair4_length"]
+        results = await self._get(SNMPClient._filter_request_config(self._switch_config["port"], include_oids))
 
         return results
 
     async def get_port_diagnostics(self, include_oids: list[str]) -> dict[str, Any]:
-        return await self._get(self._filter_request_config(self._switch_config["port"], include_oids))
+        return await self._get(SNMPClient._filter_request_config(self._switch_config["port"], include_oids))
 
     @override
     def _render_oid(self, oid: str) -> str:

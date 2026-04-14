@@ -2,6 +2,7 @@
 from time import perf_counter
 import asyncio
 from pysnmp.hlapi.v3arch.asyncio import *
+from collections import defaultdict
 from const import SNMP
 from L2_switch_handler import L2SwitchHandler
 
@@ -15,15 +16,24 @@ async def main():
 
     switch_handler = L2SwitchHandler(ipaddress, port, model, ports_count)
 
+    print(await switch_handler.get_cable_diagnostics())
+
+    """ results = defaultdict(list)
+    for i in range(12):
+        for oid, value in await switch_handler.get_cable_diagnostics():
+            results[oid].append(value)
+    for oid, value in results.items():
+        print(oid, value, set(value))
+
     task1 = asyncio.create_task(switch_handler.get_default_gateway())
     task2 = asyncio.create_task(switch_handler.get_port_info())
     task3 = asyncio.create_task(switch_handler.get_mac_addresses_on_port())
     task4 = asyncio.create_task(switch_handler.get_port_security_on_port())
     task5 = asyncio.create_task(switch_handler.get_vlan_on_port())
+    task6 = asyncio.create_task(switch_handler.get_cable_diagnostics())
 
-    results = await asyncio.gather(task1, task2, task3, task4, task5)
-
-    print(results)
+    results = await asyncio.gather(task1, task2, task3, task4, task5, task6)
+    print(results) """
     print("Overall time:", perf_counter() - start_time)
 
 
