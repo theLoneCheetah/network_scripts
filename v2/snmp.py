@@ -10,20 +10,10 @@ async def main():
     ipaddress = SNMP.TEST_3028
     port = 2
     model = "DES-3028"
-    ports_count = 28
 
     start_time = perf_counter()
 
-    switch_handler = L2SwitchHandler(ipaddress, port, model, ports_count)
-
-    print(await switch_handler.get_cable_diagnostics())
-
-    """ results = defaultdict(list)
-    for i in range(12):
-        for oid, value in await switch_handler.get_cable_diagnostics():
-            results[oid].append(value)
-    for oid, value in results.items():
-        print(oid, value, set(value))
+    switch_handler = L2SwitchHandler(ipaddress, port, model)
 
     task1 = asyncio.create_task(switch_handler.get_default_gateway())
     task2 = asyncio.create_task(switch_handler.get_port_info())
@@ -33,8 +23,8 @@ async def main():
     task6 = asyncio.create_task(switch_handler.get_cable_diagnostics())
 
     results = await asyncio.gather(task1, task2, task3, task4, task5, task6)
-    print(results) """
-    print("Overall time:", perf_counter() - start_time)
 
+    print(results)
+    print("Overall time:", perf_counter() - start_time)
 
 asyncio.run(main())

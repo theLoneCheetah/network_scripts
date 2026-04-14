@@ -66,14 +66,26 @@ models:
             5: management
       
       port:
-        admin_state:
+        # show ports
+        combo_ports_oids: !!set   # technical information about oids separated for combo ports
+          ? admin_state
+          ? speed_duplex_settings
+          ? flow_control
+          ? address_learning
+          ? mdix_state
+          ? link_status
+          ? speed_duplex_status
+        admin_state: &admin_state
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.3.{port}.100
           type: integer
           values:
             1: other
             2: disabled
             3: enabled
-        speed_duplex_settings:
+        admin_state_combo_fiber:
+          <<: *admin_state
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.3.{port}.101
+        speed_duplex_settings: &speed_duplex_settings
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.4.{port}.100
           type: integer
           values:
@@ -83,23 +95,32 @@ models:
             4: 100M/Half
             5: 100M/Full
             7: 1000M/Full
-            8: 1000M/Full-Master
-            9: 1000M/Full-Slave
-        flow_control:
+            8: 1000M/Full_Master
+            9: 1000M/Full_Slave
+        speed_duplex_settings_combo_fiber:
+          <<: *speed_duplex_settings
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.4.{port}.101
+        flow_control: &flow_control
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.5.{port}.100
           type: integer
           values:
             1: other
             2: disabled
             3: enabled
-        address_learning:
+        flow_control_combo_fiber:
+          <<: *flow_control
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.5.{port}.101
+        address_learning: &address_learning
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.7.{port}.100
           type: integer
           values:
             1: other
             2: disabled
             3: enabled
-        mdix_state:
+        address_learning_combo_fiber:
+          <<: *address_learning
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.7.{port}.101
+        mdix_state: &mdix_state
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.10.{port}.100
           type: integer
           values:
@@ -107,14 +128,20 @@ models:
             2: normal
             3: cross
             4: other
-        link_status:
+        mdix_state_combo_fiber:
+          <<: *mdix_state
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.10.{port}.101
+        link_status: &link_status
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.1.1.4.{port}.100
           type: integer
           values:
             1: other
             2: link_pass
             3: link_fail
-        speed_duplex_status:
+        link_status_combo_fiber:
+          <<: *link_status
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.1.1.4.{port}.101
+        speed_duplex_status: &speed_duplex_status
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.{port}.100
           type: integer
           values:
@@ -125,6 +152,10 @@ models:
             5: 100M/Full
             6: 1000M/Half
             7: 1000M/Full
+        speed_duplex_status_combo_fiber:
+          <<: *speed_duplex_status
+          oid: 1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.{port}.101
+        # port_security
         port_security_max_learning_addresses:
           oid: 1.3.6.1.4.1.171.11.63.6.2.15.1.1.2.{port}
           type: integer
@@ -143,6 +174,7 @@ models:
             1: other
             2: enable
             3: disable
+        # cable diagnostics
         cable_diagnostics_action:
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.12.{port}
           type: integer

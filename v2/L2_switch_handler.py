@@ -10,9 +10,9 @@ class L2SwitchHandler:
     _port: int
     _client: L2SwitchClient
 
-    def __init__(self, ipaddress: str, port: int, model: str, ports_count: int) -> None:
+    def __init__(self, ipaddress: str, port: int, model: str) -> None:
         self._port = port
-        self._client = L2SwitchClient(ipaddress, self._port, model, ports_count)
+        self._client = L2SwitchClient(ipaddress, self._port, model)
     
     async def get_default_gateway(self) -> dict[str, str]:
         include_oids = ["default_gateway"]
@@ -48,7 +48,7 @@ class L2SwitchHandler:
         
         return result
     
-    async def get_cable_diagnostics(self):
+    async def get_cable_diagnostics(self) -> dict[str, Any]:
         return await self._client.get_cable_diagnostics()
     
     async def get_port_info(self) -> dict[str, str]:
