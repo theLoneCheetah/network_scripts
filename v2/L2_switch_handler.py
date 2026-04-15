@@ -18,6 +18,9 @@ class L2SwitchHandler:
         include_oids = ["default_gateway"]
         return await self._client.get_switch_info(include_oids)
     
+    async def get_dhcp_relay(self):
+        return await self._client.get_dhcp_relay()
+    
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
         return await self._client.get_vlan_static_table()
     
@@ -48,8 +51,8 @@ class L2SwitchHandler:
         
         return result
     
-    async def get_cable_diagnostics(self) -> dict[str, Any]:
-        return await self._client.get_cable_diagnostics()
+    async def get_cable_diagnostics_port(self) -> dict[str, Any]:
+        return await self._client.get_cable_diagnostics_port()
     
     async def get_port_info(self) -> dict[str, str]:
         include_oids = ["admin_state", "speed_duplex_settings", "link_status", "speed_duplex_status"]

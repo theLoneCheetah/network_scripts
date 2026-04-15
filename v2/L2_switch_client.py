@@ -10,12 +10,12 @@ class L2SwitchClient(SNMPClient):
     _ports_count: int
     _model: str
     _port: int
-    _gigabit_ethernet_port: bool
+    _is_gigabit_ethernet_port: bool
     _is_combo_port: bool
     _check_combo_fiber_port_lock: asyncio.Lock
-    _combo_fiber_port: bool | None
-    _fiber_port: bool
-    _switch_config: dict[str, Any]
+    _is_combo_fiber_port: bool | None
+    _is_fiber_port: bool
+    _switch_oids_config: dict[str, Any]
     
     def __init__(self, ipaddress: str, port: int, model: str) -> None:
         super().__init__(ipaddress)
@@ -24,16 +24,19 @@ class L2SwitchClient(SNMPClient):
         self._model = self._config["models"][model]["base_model"]
         self._port = port
 
-        self._gigabit_ethernet_port = self._port >= self._config["models"][self._model]["first_gigabit_port"]
+        self._is_gigabit_ethernet_port = self._port >= self._config["models"][self._model]["first_gigabit_port"]
         self._is_combo_port = self._port in self._config["models"][self._model]["combo_ports"]
         self._check_combo_fiber_port_lock = asyncio.Lock()
-        self._combo_fiber_port = None
-        self._fiber_port = self._port in self._config["models"][self._model]["fiber_ports"]
+        self._is_combo_fiber_port = None
+        self._is_fiber_port = self._port in self._config["models"][self._model]["fiber_ports"]
 
-        self._switch_config = self._config["models"][self._model]["oids"]
+        self._switch_oids_config = self._config["models"][self._model]["oids"]
     
     async def get_switch_info(self, include_oids: list[str]) -> dict[str, Any]:
-        return await self._get(SNMPClient._filter_request_config(self._switch_config["switch"], include_oids))
+        return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], include_oids))
+    
+    async def get_dhcp_relay(self):
+        pass
     
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
         def parse_vlan_id(oid: str) -> int:
@@ -45,13 +48,13 @@ class L2SwitchClient(SNMPClient):
         
         results = defaultdict(dict)
         
-        for oid, vlan_name in await self._bulk_walk(self._switch_config["vlan"]["name"]):
+        for oid, vlan_name in await self._bulk_walk(self._switch_oids_config["vlan"]["name"]):
             results[parse_vlan_id(oid)]["vlan_name"] = vlan_name
         
-        for oid, octet_string in await self._bulk_walk(self._switch_config["vlan"]["egress_ports"]):
+        for oid, octet_string in await self._bulk_walk(self._switch_oids_config["vlan"]["egress_ports"]):
             results[parse_vlan_id(oid)]["tagged_ports"] = parse_assignes_ports(octet_string)
         
-        for oid, octet_string in await self._bulk_walk(self._switch_config["vlan"]["untagged_ports"]):
+        for oid, octet_string in await self._bulk_walk(self._switch_oids_config["vlan"]["untagged_ports"]):
             vlan_id = parse_vlan_id(oid)
             results[vlan_id]["untagged_ports"] = parse_assignes_ports(octet_string)
             results[vlan_id]["tagged_ports"] -= results[vlan_id]["untagged_ports"]
@@ -68,72 +71,94 @@ class L2SwitchClient(SNMPClient):
         
         results = defaultdict(dict)
 
-        mac_port = await self._bulk_walk(self._switch_config["fdb"]["port"])
+        mac_port = await self._bulk_walk(self._switch_oids_config["fdb"]["port"])
 
         for oid, port in mac_port:
-            vlan_id, mac = parse_vlan_id_mac(oid, self._switch_config["fdb"]["port"]["oid"])
-            results[vlan_id][mac] = {"port": port}
+            vlan_id, mac = parse_vlan_id_mac(oid, self._switch_oids_config["fdb"]["port"]["oid"])
+            # default status is dynamic, so if mac's status won't be found it means it's dynamic
+            results[vlan_id][mac] = {"port": port, "status": "dynamic"}
         
-        status_port = await self._bulk_walk(self._switch_config["fdb"]["status"])
+        status_port = await self._bulk_walk(self._switch_oids_config["fdb"]["status"])
 
         for oid, status in status_port:
-            vlan_id, mac = parse_vlan_id_mac(oid, self._switch_config["fdb"]["status"]["oid"])
+            vlan_id, mac = parse_vlan_id_mac(oid, self._switch_oids_config["fdb"]["status"]["oid"])
             if status not in {"invalid" , "self"}:
                 status = "dynamic" if status == "learned" else "static"
-            results[vlan_id][mac]["status"] = status
+            if mac in results[vlan_id]:   # if mac's port is unknown, don't count it
+                results[vlan_id][mac]["status"] = status
 
         return results
     
-    async def get_cable_diagnostics(self) -> dict[str, Any]:
-        filtered_request_config = SNMPClient._filter_request_config(self._switch_config["port"], ["cable_diagnostics_action"])
+    async def get_cable_diagnostics_port(self) -> dict[str, Any]:
+        if self._is_combo_port and self._is_combo_fiber_port is None:
+            await self._check_fiber_combo_port()
+        
+        if self._is_combo_fiber_port or self._is_fiber_port:
+            print("hey")
+            return {"unable_to_perform": True}
+
+        filtered_request_config = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["cable_diagnostics_action"])
 
         action_status = await self._set(filtered_request_config, {"cable_diagnostics_action": "action"})
         while action_status["cable_diagnostics_action"] in {"action", "processing"}:
             action_status = await self._get(filtered_request_config)
         
         include_oids = []
-        pairs = 4 if self._gigabit_ethernet_port else 2
+        pairs = 4 if self._is_gigabit_ethernet_port else 2
 
         for i in range(1, pairs + 1):
             include_oids.append(f"cable_diagnostics_pair{i}_status")
             include_oids.append(f"cable_diagnostics_pair{i}_length")
         
-        pairs_tests = await self._get(SNMPClient._filter_request_config(self._switch_config["port"], include_oids))
+        pairs_tests = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
         results = {f"pair{i}": {} for i in range(1, pairs + 1)}
 
+        results["unable_to_perform"] = False
         results["no_cable"] = True
+        need_to_order_pairs = self._is_gigabit_ethernet_port and not self._config["models"][self._model]["is_cable_diagnostics_pairs_ordered"]
+
+        def get_actual_pair_number(pair_number: int) -> int:
+            if not need_to_order_pairs or pair_number == 4:
+                return pair_number
+            if pair_number == 1:
+                return 3
+            if pair_number == 2:
+                return 1
+            return 2
+
         for i in range(1, pairs + 1):
-            results[f"pair{i}"] = {"status": pairs_tests[f"cable_diagnostics_pair{i}_status"], "length": pairs_tests[f"cable_diagnostics_pair{i}_length"]}
+            results[f"pair{get_actual_pair_number(i)}"] = {"status": pairs_tests[f"cable_diagnostics_pair{i}_status"],
+                                                           "length": pairs_tests[f"cable_diagnostics_pair{i}_length"]}
             if pairs_tests[f"cable_diagnostics_pair{i}_status"] != "no_cable":
                 results["no_cable"] = False
-        
+
         return results
     
     async def _check_fiber_combo_port(self) -> None:
         async with self._check_combo_fiber_port_lock:
-            if self._combo_fiber_port is None:
+            if self._is_combo_fiber_port is None:
                 include_oids = ["link_status", "link_status_combo_fiber"]
-                copper_fiber_statuses = await self._get(SNMPClient._filter_request_config(self._switch_config["port"], include_oids))
+                copper_fiber_statuses = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
 
                 if copper_fiber_statuses["link_status"] != "link_pass" and copper_fiber_statuses["link_status_combo_fiber"] == "link_pass":
-                    self._combo_fiber_port = True
+                    self._is_combo_fiber_port = True
                 else:
-                    self._combo_fiber_port = False
+                    self._is_combo_fiber_port = False
 
     async def get_port_diagnostics(self, include_oids: list[str]) -> dict[str, Any]:
         combo_fiber_suffix = None
         
         if self._is_combo_port:
-            if self._combo_fiber_port is None and any([oid in self._switch_config["port"]["combo_ports_oids"] for oid in include_oids]):
+            if self._is_combo_fiber_port is None and any([oid in self._switch_oids_config["port"]["combo_ports_oids"] for oid in include_oids]):
                 await self._check_fiber_combo_port()
             
-            if self._combo_fiber_port:
+            if self._is_combo_fiber_port:
                 combo_fiber_suffix = "_combo_fiber"
-                include_oids = [oid + combo_fiber_suffix if oid in self._switch_config["port"]["combo_ports_oids"] else oid for oid in include_oids]
+                include_oids = [oid + combo_fiber_suffix if oid in self._switch_oids_config["port"]["combo_ports_oids"] else oid for oid in include_oids]
         
-        results = await self._get(SNMPClient._filter_request_config(self._switch_config["port"], include_oids))
+        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
         
-        if self._combo_fiber_port and combo_fiber_suffix is not None:
+        if self._is_combo_fiber_port and combo_fiber_suffix is not None:
             results = {key.removesuffix(combo_fiber_suffix) if key.endswith(combo_fiber_suffix) else key: value for key, value in results.items()}
         
         return results

@@ -5,10 +5,20 @@ data_types:
   - octetstring
 
 models:
+  base_models:
+    - DES-3028
+    - DES-3200-28
+    - DES-3526
+    - DGS-3000-24TC
+    - DGS-3200-24
+    - DGS-1210-28/ME
+    - DGS-3120-24TC
+
   L2_switch_defaults: &L2_switch_defaults
     first_gigabit_port: 1
     combo_ports: !!set {}
     fiber_ports: !!set {}
+    is_cable_diagnostics_pairs_ordered: false
   
   # L2
   DES-3028:
@@ -17,6 +27,7 @@ models:
     ports_count: 28
     first_gigabit_port: 25
     combo_ports: !!set { ? 25, ? 26 }
+    is_cable_diagnostics_pairs_ordered: true
     firmware_release: 2.94
 
     oids:
@@ -40,6 +51,42 @@ models:
           oid: 1.3.6.1.2.1.17.1.2.0
           type: integer
       
+      dhcp_relay:
+        state:
+          oid: 1.3.6.1.4.1.171.12.42.1.1.0
+          type: integer
+          values:
+            1: enabled
+            2: disabled
+        interface_name_for_server:
+          oid: 1.3.6.1.4.1.171.12.42.3.1.1.1
+          type: octetstring
+        option82_state:
+          oid: 1.3.6.1.4.1.171.12.42.3.2.1.0
+          type: integer
+          values:
+            1: enabled
+            2: disabled
+        option82_check_state:
+          oid: 1.3.6.1.4.1.171.12.42.3.2.2.0
+          type: integer
+          values:
+            1: enabled
+            2: disabled
+        option82_policy:
+          oid: 1.3.6.1.4.1.171.12.42.3.2.3.0
+          type: integer
+          values:
+            1: replace
+            2: drop
+            3: keep
+        option82_remote_id_type:
+          oid: 1.3.6.1.4.1.171.12.42.3.2.4.0
+          type: integer
+          values:
+            1: default
+            2: user-defined
+      
       vlan:
         name:
           oid: 1.3.6.1.2.1.17.7.1.4.3.1.1
@@ -50,7 +97,7 @@ models:
         untagged_ports:
           oid: 1.3.6.1.2.1.17.7.1.4.3.1.4
           type: octetstring
-      
+
       fdb:
         port:
           oid: 1.3.6.1.2.1.17.7.1.2.2.1.2
@@ -224,6 +271,7 @@ models:
     base_model: DES-3028
     ports_count: 52
     first_gigabit_port: 49
+    is_cable_diagnostics_pairs_ordered: true
     combo_ports: !!set { ? 49, ? 50 }
   
   DES-3200-28:
@@ -231,6 +279,7 @@ models:
     base_model: DES-3200-28
     ports_count: 28
     first_gigabit_port: 25
+    is_cable_diagnostics_pairs_ordered: true
     combo_ports: !!set { ? 25, ? 26, ? 27, ? 28 }
   
   DES-3526: # may be unused
@@ -238,6 +287,7 @@ models:
     base_model: DES-3526
     ports_count: 26
     first_gigabit_port: 25
+    is_cable_diagnostics_pairs_ordered: true
     combo_ports: !!set { ? 25, ? 26 }
   
   DGS-3000-24TC:

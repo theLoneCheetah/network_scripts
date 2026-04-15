@@ -8,7 +8,7 @@ from L2_switch_handler import L2SwitchHandler
 
 async def main():
     ipaddress = SNMP.TEST_3028
-    port = 2
+    port = 27
     model = "DES-3028"
 
     start_time = perf_counter()
@@ -20,7 +20,7 @@ async def main():
     task3 = asyncio.create_task(switch_handler.get_mac_addresses_on_port())
     task4 = asyncio.create_task(switch_handler.get_port_security_on_port())
     task5 = asyncio.create_task(switch_handler.get_vlan_on_port())
-    task6 = asyncio.create_task(switch_handler.get_cable_diagnostics())
+    task6 = asyncio.create_task(switch_handler.get_cable_diagnostics_port())
 
     results = await asyncio.gather(task1, task2, task3, task4, task5, task6)
 
