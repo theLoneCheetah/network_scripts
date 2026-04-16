@@ -14,11 +14,14 @@ class L2SwitchHandler:
         self._port = port
         self._client = L2SwitchClient(ipaddress, self._port, model)
     
+    async def scan_available_mibs(self) -> dict[str, dict[str, Any]]:
+        return await self._client.scan_available_mibs()
+    
     async def get_default_gateway(self) -> dict[str, str]:
         include_oids = ["default_gateway"]
         return await self._client.get_switch_info(include_oids)
     
-    async def get_dhcp_relay(self):
+    async def get_dhcp_relay(self) -> dict[str, Any]:
         return await self._client.get_dhcp_relay()
     
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
@@ -66,4 +69,8 @@ class L2SwitchHandler:
     
     async def get_port_security_on_port(self) -> dict[str, Any]:
         include_oids = ["port_security_max_learning_addresses", "port_security_lock_address_mode", "port_security_admin_state"]
+        return await self._client.get_port_diagnostics(include_oids)
+    
+    async def get_port_utilization(self) -> dict[str, int]:
+        include_oids = ["utilization_tx_frames", "utilization_rx_frames", "utilization_percentage"]
         return await self._client.get_port_diagnostics(include_oids)

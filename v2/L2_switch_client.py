@@ -32,11 +32,39 @@ class L2SwitchClient(SNMPClient):
 
         self._switch_oids_config = self._config["models"][self._model]["oids"]
     
+    async def scan_available_mibs(self) -> dict[str, dict[str, Any]]:
+        def parse_index(oid: str) -> int:
+            return int(oid.rpartition(".")[2])
+        
+        results = defaultdict(dict)
+        
+        for oid, desciption in await self._bulk_walk(self._switch_oids_config["mib_capability"]["description"]):
+            results[parse_index(oid)]["desciption"] = desciption
+
+        for oid, version in await self._bulk_walk(self._switch_oids_config["mib_capability"]["version"]):
+            results[parse_index(oid)]["version"] = version
+
+        for oid, type in await self._bulk_walk(self._switch_oids_config["mib_capability"]["type"]):
+            results[parse_index(oid)]["type"] = type
+        
+        return {value["desciption"]: {"version": value["version"], "type": value["type"]} for value in results.values()}
+
     async def get_switch_info(self, include_oids: list[str]) -> dict[str, Any]:
         return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], include_oids))
     
-    async def get_dhcp_relay(self):
-        pass
+    async def get_dhcp_relay(self) -> dict[str, Any]:
+        def parse_ip_address(oid: str) -> str:
+            return ".".join(oid.rsplit(".", 4)[-4:])
+
+        include_oids = ["state", "option82_state", "option82_check_state", "option82_policy", "option82_remote_id_type"]
+        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids))
+
+        results["interfaces_ip_addresses_vlan_ids"] = defaultdict(dict)
+
+        for oid, interface_name in await self._bulk_walk(self._switch_oids_config["dhcp_relay"]["interface_name_for_server"]):
+            results["interfaces_ip_addresses_vlan_ids"][interface_name][parse_ip_address(oid)] = set()
+        
+        return results
     
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
         def parse_vlan_id(oid: str) -> int:
@@ -71,16 +99,12 @@ class L2SwitchClient(SNMPClient):
         
         results = defaultdict(dict)
 
-        mac_port = await self._bulk_walk(self._switch_oids_config["fdb"]["port"])
-
-        for oid, port in mac_port:
+        for oid, port in await self._bulk_walk(self._switch_oids_config["fdb"]["port"]):
             vlan_id, mac = parse_vlan_id_mac(oid, self._switch_oids_config["fdb"]["port"]["oid"])
             # default status is dynamic, so if mac's status won't be found it means it's dynamic
             results[vlan_id][mac] = {"port": port, "status": "dynamic"}
-        
-        status_port = await self._bulk_walk(self._switch_oids_config["fdb"]["status"])
 
-        for oid, status in status_port:
+        for oid, status in await self._bulk_walk(self._switch_oids_config["fdb"]["status"]):
             vlan_id, mac = parse_vlan_id_mac(oid, self._switch_oids_config["fdb"]["status"]["oid"])
             if status not in {"invalid" , "self"}:
                 status = "dynamic" if status == "learned" else "static"
