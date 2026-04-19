@@ -7,9 +7,8 @@ from snmp_client import SNMPClient
 from const import SNMP
 
 class L2SwitchClient(SNMPClient):
-    _ports_count: int
-    _model: str
     _port: int
+    _ports_count: int
     _is_gigabit_ethernet_port: bool
     _is_combo_port: bool
     _check_combo_fiber_port_lock: asyncio.Lock
@@ -17,12 +16,14 @@ class L2SwitchClient(SNMPClient):
     _is_fiber_port: bool
     _switch_oids_config: dict[str, Any]
     
-    def __init__(self, ipaddress: str, port: int, model: str) -> None:
+    def __init__(self, ipaddress: str, port: int) -> None:
         super().__init__(ipaddress)
-
-        self._ports_count = self._config["models"][model]["ports_count"]
-        self._model = self._config["models"][model]["base_model"]
         self._port = port
+    
+    @override
+    def _post_init(self) -> None:
+        self._ports_count = self._config["models"][self._model]["ports_count"]
+        self._model = self._config["models"][self._model]["base_model"]
 
         self._is_gigabit_ethernet_port = self._port >= self._config["models"][self._model]["first_gigabit_port"]
         self._is_combo_port = self._port in self._config["models"][self._model]["combo_ports"]

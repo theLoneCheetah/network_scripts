@@ -9,22 +9,19 @@ from L2_switch_handler import L2SwitchHandler
 async def main():
     ipaddress = SNMP.TEST_3028
     port = 2
-    model = "DES-3028"
 
     start_time = perf_counter()
 
-    switch_handler = L2SwitchHandler(ipaddress, port, model)
+    switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
     task1 = asyncio.create_task(switch_handler.get_default_gateway())
     task2 = asyncio.create_task(switch_handler.get_port_info())
     task3 = asyncio.create_task(switch_handler.get_mac_addresses_on_port())
-    task4 = asyncio.create_task(switch_handler.get_port_security_on_port())
-    task5 = asyncio.create_task(switch_handler.get_vlan_on_port())
-    task6 = asyncio.create_task(switch_handler.get_cable_diagnostics_port())
-    task7 = asyncio.create_task(switch_handler.get_dhcp_relay())
-    task8 = asyncio.create_task(switch_handler.get_port_utilization())
+    task4 = asyncio.create_task(switch_handler.get_vlan_on_port())
+    task5 = asyncio.create_task(switch_handler.get_cable_diagnostics_port())
+    task6 = asyncio.create_task(switch_handler.get_dhcp_relay())
 
-    results = await asyncio.gather(task1, task2, task3, task4, task5, task6, task7, task8)
+    results = await asyncio.gather(task1, task2, task3, task4, task5, task6)
 
     print(results)
     print("Overall time:", perf_counter() - start_time)

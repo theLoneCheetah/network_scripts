@@ -1,13 +1,14 @@
 #!/usr/bin/python3
 import asyncio
 import yaml
-from typing import Any
-from abc import abstractmethod
+from typing import Any, Self
+from abc import ABC, abstractmethod
 from pysnmp.hlapi.v3arch.asyncio import *
 from const import SNMP
 
-class SNMPClient:
+class SNMPClient(ABC):
     _ipaddress: str
+    _model: str
     _init_lock: asyncio.Lock
     _engine: SnmpEngine
     _read_community: CommunityData
@@ -18,6 +19,7 @@ class SNMPClient:
 
     def __init__(self, ipaddress: str) -> None:
         self._ipaddress = ipaddress
+        self._model = None
 
         self._init_lock = asyncio.Lock()
         self._engine = None
@@ -29,17 +31,45 @@ class SNMPClient:
         with open("v2/oid.yaml", "r") as F:
             self._config = yaml.safe_load(F)
     
+    @classmethod
+    async def create(cls, ipaddress: str, *args) -> Self:
+        self = cls(ipaddress, *args)
+
+        await self._initialize()
+        self._post_init()
+
+        return self
+    
     async def _initialize(self) -> None:
         async with self._init_lock:
-            if self._engine is None:
-                self._engine = SnmpEngine()
-                self._read_community = CommunityData(SNMP.READ_ONLY)
-                self._write_community = CommunityData(SNMP.READ_WRITE)
-                self._transport = await UdpTransportTarget.create((self._ipaddress, 161))
-                self._context = ContextData()
+            if self._engine is not None:
+                return
+            
+            self._engine = SnmpEngine()
+            self._read_community = CommunityData(SNMP.READ_ONLY)
+            self._write_community = CommunityData(SNMP.READ_WRITE)
+            self._transport = await UdpTransportTarget.create((self._ipaddress, 161))
+            self._context = ContextData()
+
+            await self._identify()
     
-    async def _get(self, config_fragment: dict[str, Any]) -> dict[str, Any] | None:
-        await self._initialize()
+    async def _identify(self) -> None:
+        task_oid = asyncio.create_task(self._get(SNMPClient._filter_request_config(self._config["system"], ["private_oid"]), True))
+        task_description = asyncio.create_task(self._get(SNMPClient._filter_request_config(self._config["system"], ["description"]), True))
+        model, description = await asyncio.gather(task_oid, task_description)
+
+        model = next(iter(model.values()))
+        description = next(iter(description.values()))
+        assert model in description   # description must contain model name
+        self._model = model
+    
+    @abstractmethod
+    def _post_init(self) -> None:
+        pass
+    
+    async def _get(self, config_fragment: dict[str, Any], skip_init: bool = False) -> dict[str, Any] | None:
+        if not skip_init:
+            await self._initialize()
 
         request_data = [{"command": command, **data} for command, data in config_fragment.items()]
         oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"]))) for request in request_data]
@@ -66,6 +96,9 @@ class SNMPClient:
             value = varBind[1].prettyPrint()
 
             match data["type"]:
+                case "objectid":
+                    if "values" in data:
+                        value = data["values"][value]
                 case "integer":
                     value = int(value)
                     if "values" in data:

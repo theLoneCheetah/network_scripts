@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 import asyncio
-from typing import Any
+from typing import Any, Self
 from collections import defaultdict
 from pysnmp.hlapi.v3arch.asyncio import *
 from L2_switch_client import L2SwitchClient
@@ -10,10 +10,15 @@ class L2SwitchHandler:
     _port: int
     _client: L2SwitchClient
 
-    def __init__(self, ipaddress: str, port: int, model: str) -> None:
+    def __init__(self, port: int) -> None:
         self._port = port
-        self._client = L2SwitchClient(ipaddress, self._port, model)
     
+    @classmethod
+    async def create(cls, ipaddress: str, port: int) -> Self:
+        self = cls(port)
+        self._client = await L2SwitchClient.create(ipaddress, port)
+        return self
+
     async def scan_available_mibs(self) -> dict[str, dict[str, Any]]:
         return await self._client.scan_available_mibs()
     
@@ -71,6 +76,11 @@ class L2SwitchHandler:
         include_oids = ["port_security_max_learning_addresses", "port_security_lock_address_mode", "port_security_admin_state"]
         return await self._client.get_port_diagnostics(include_oids)
     
-    async def get_port_utilization(self) -> dict[str, int]:
+    async def get_utilization_on_port(self) -> dict[str, int]:
         include_oids = ["utilization_tx_frames", "utilization_rx_frames", "utilization_percentage"]
+        return await self._client.get_port_diagnostics(include_oids)
+    
+    async def get_traffic_control_on_port(self) -> dict[str, int]:
+        include_oids = ["traffic_control_threshold", "traffic_control_broadcast_status", "traffic_control_multicast_status", "traffic_control_unicast_status",
+                        "traffic_control_action_status", "traffic_control_count_down", "traffic_control_time_interval"]
         return await self._client.get_port_diagnostics(include_oids)
