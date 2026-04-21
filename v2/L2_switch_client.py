@@ -39,19 +39,22 @@ class L2SwitchClient(SNMPClient):
         
         results = defaultdict(dict)
         
-        for oid, desciption in await self._bulk_walk(self._switch_oids_config["mib_capability"]["description"]):
+        for oid, desciption in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["description"]):
             results[parse_index(oid)]["desciption"] = desciption
 
-        for oid, version in await self._bulk_walk(self._switch_oids_config["mib_capability"]["version"]):
+        for oid, version in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["version"]):
             results[parse_index(oid)]["version"] = version
 
-        for oid, type in await self._bulk_walk(self._switch_oids_config["mib_capability"]["type"]):
+        for oid, type in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["type"]):
             results[parse_index(oid)]["type"] = type
         
         return {value["desciption"]: {"version": value["version"], "type": value["type"]} for value in results.values()}
 
     async def get_switch_info(self, include_oids: list[str]) -> dict[str, Any]:
         return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], include_oids))
+    
+    async def get_current_time(self) -> dict[str, Any]:
+        return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["current_time"]))
     
     async def get_dhcp_relay(self) -> dict[str, Any]:
         def parse_ip_address(oid: str) -> str:

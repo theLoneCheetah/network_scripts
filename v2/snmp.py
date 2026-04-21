@@ -14,6 +14,8 @@ async def main():
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
+    print(await switch_handler.get_current_time())
+
     task1 = asyncio.create_task(switch_handler.get_default_gateway())
     task2 = asyncio.create_task(switch_handler.get_port_info())
     task3 = asyncio.create_task(switch_handler.get_mac_addresses_on_port())

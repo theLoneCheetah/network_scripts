@@ -30,6 +30,7 @@ SWITCHES = {# L2
             "DGS-3120-24SC": {},
             "DGS-3620-28TC": {},
             "DGS-3620-28SC": {},
+            "DGS-3612": {},
             "DGS-3627G": {},
             "DGS-3630-28SC": {}}   # cisco-like
 CISCO_SWITCH = "DGS-3630-28SC"

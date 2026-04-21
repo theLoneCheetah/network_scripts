@@ -26,6 +26,9 @@ class L2SwitchHandler:
         include_oids = ["default_gateway"]
         return await self._client.get_switch_info(include_oids)
     
+    async def get_current_time(self):
+        return await self._client.get_current_time()
+    
     async def get_dhcp_relay(self) -> dict[str, Any]:
         return await self._client.get_dhcp_relay()
     
