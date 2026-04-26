@@ -2,6 +2,7 @@
 import asyncio
 from typing import Any, Self
 from collections import defaultdict
+from datetime import datetime
 from pysnmp.hlapi.v3arch.asyncio import *
 from L2_switch_client import L2SwitchClient
 from const import SNMP
@@ -26,7 +27,7 @@ class L2SwitchHandler:
         include_oids = ["default_gateway"]
         return await self._client.get_switch_info(include_oids)
     
-    async def get_current_time(self):
+    async def get_current_time(self) -> dict[str, datetime]:
         return await self._client.get_current_time()
     
     async def get_dhcp_relay(self) -> dict[str, Any]:

@@ -2,6 +2,7 @@
 import asyncio
 from typing import override, Any
 from collections import defaultdict
+from datetime import datetime
 from pysnmp.hlapi.v3arch.asyncio import *
 from snmp_client import SNMPClient
 from const import SNMP
@@ -45,16 +46,18 @@ class L2SwitchClient(SNMPClient):
         for oid, version in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["version"]):
             results[parse_index(oid)]["version"] = version
 
-        for oid, type in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["type"]):
-            results[parse_index(oid)]["type"] = type
+        for oid, value_type in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["value_type"]):
+            results[parse_index(oid)]["value_type"] = value_type
         
-        return {value["desciption"]: {"version": value["version"], "type": value["type"]} for value in results.values()}
+        return {value["desciption"]: {"version": value["version"], "value_type": value["value_type"]} for value in results.values()}
 
     async def get_switch_info(self, include_oids: list[str]) -> dict[str, Any]:
         return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], include_oids))
     
-    async def get_current_time(self) -> dict[str, Any]:
-        return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["current_time"]))
+    async def get_current_time(self) -> dict[str, datetime]:
+        result = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["current_time"]))
+        command_name, current_time_tuple = next(iter(result.items()))
+        return {command_name: datetime(*current_time_tuple)}
     
     async def get_dhcp_relay(self) -> dict[str, Any]:
         def parse_ip_address(oid: str) -> str:

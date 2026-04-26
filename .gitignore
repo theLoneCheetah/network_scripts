@@ -2,7 +2,7 @@
 .env
 
 # test files and scripts
-*.txt
+db.txt
 test*
 
 # temporary python files

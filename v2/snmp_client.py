@@ -1,10 +1,15 @@
 #!/usr/bin/python3
 import asyncio
 import yaml
-from typing import Any, Self
+import struct
+from typing import Any, Self, Union
 from abc import ABC, abstractmethod
 from pysnmp.hlapi.v3arch.asyncio import *
+from pyasn1.type.univ import ObjectIdentifier
+from pysnmp.proto.rfc1902 import OctetString, Integer, IpAddress
 from const import SNMP
+
+SnmpValue = ObjectIdentifier | OctetString | Integer | IpAddress
 
 class SNMPClient(ABC):
     _ipaddress: str
@@ -71,7 +76,7 @@ class SNMPClient(ABC):
         if not skip_init:
             await self._initialize()
 
-        request_data = [{"command": command, **data} for command, data in config_fragment.items()]
+        request_data = [{"command_name": command_name, **data} for command_name, data in config_fragment.items()]
         oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"]))) for request in request_data]
 
         errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
@@ -93,20 +98,7 @@ class SNMPClient(ABC):
         results = {}
 
         for data, varBind in zip(request_data, varBinds):
-            value = varBind[1].prettyPrint()
-
-            match data["type"]:
-                case "objectid":
-                    if "values" in data:
-                        value = data["values"][value]
-                case "integer":
-                    value = int(value)
-                    if "values" in data:
-                        value = data["values"][value]
-                case "macaddress":
-                    value = SNMPClient._convert_octet_into_mac(value)
-            
-            results[data["command"]] = value
+            results[data["command_name"]] = SNMPClient._handle_result_value(varBind[1], data)
         
         return results
     
@@ -114,11 +106,11 @@ class SNMPClient(ABC):
         await self._initialize()
         
         request_data = [{
-                "command": command,
+                "command_name": command_name,
                 **data,
-                "set_value": SNMP.TYPE[data["type"]](next(key for key, value in data["values"].items() if value == values[command]) 
-                                                     if "values" in data else values[command])
-            } for command, data in config_fragment.items()]
+                "set_value": SNMP.TYPE[data["value_type"]](next(key for key, value in data["values"].items() if value == values[command_name]) 
+                                                     if "values" in data else values[command_name])
+            } for command_name, data in config_fragment.items()]
         oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"])), request["set_value"]) for request in request_data]
 
         errorIndication, errorStatus, errorIndex, varBinds = await set_cmd(
@@ -140,17 +132,7 @@ class SNMPClient(ABC):
         results = {}
 
         for data, varBind in zip(request_data, varBinds):
-            value = varBind[1].prettyPrint()
-
-            match data["type"]:
-                case "integer":
-                    value = int(value)
-                    if "values" in data:
-                        value = data["values"][value]
-                case "macaddress":
-                    value = SNMPClient._convert_octet_into_mac(value)
-            
-            results[data["command"]] = value
+            results[data["command_name"]] = SNMPClient._handle_result_value(varBind[1], data)
         
         return results
     
@@ -181,16 +163,7 @@ class SNMPClient(ABC):
             
             for varBind in varBinds:
                 oid = str(varBind[0])
-                value = varBind[1].prettyPrint()
-
-                match request_data["type"]:
-                    case "integer":
-                        value = int(value)
-                        if "values" in request_data:
-                            value = request_data["values"][value]
-                    case "macaddress":
-                        value = SNMPClient._convert_octet_into_mac(value)
-
+                value = SNMPClient._handle_result_value(varBind[1], request_data)
                 results.append((oid, value))
         
         return results
@@ -199,6 +172,35 @@ class SNMPClient(ABC):
     def _filter_request_config(config_fragment: dict[str, Any], include_oids: list[str]) -> dict[str, Any]:
         return {key: config_fragment[key] for key in include_oids if key in config_fragment}
     
+    @staticmethod
+    def _handle_result_value(value: SnmpValue, data: str) -> str | int:
+        value = value.prettyPrint()
+
+        match data["value_type"]:
+            case "objectid":
+                if "values" in data:
+                    value = data["values"][value]
+            case "integer":
+                value = int(value)
+                if "values" in data:
+                    value = data["values"][value]
+            case "macaddress":
+                value = SNMPClient._convert_octet_into_mac(value)
+            case "octetstring":
+                if "bytes_pattern" in data:
+                    value = SNMPClient._split_octet_by_pattern(value, data["bytes_pattern"])
+        
+        return value
+    
+    @staticmethod
+    def _split_octet_by_pattern(octet_string: str, pattern: str) -> tuple[int]:
+        bytes_string = bytes.fromhex(octet_string[2:])
+
+        mapping = {"1": "B", "2": "H", "4": "I", "8": "Q"}
+        fmt = ">" + "".join(mapping[bytes_count] for bytes_count in pattern)
+        
+        return struct.unpack(fmt, bytes_string)
+
     @staticmethod
     def _convert_octet_into_mac(octet_string: str) -> str:
         return "-".join([octet_string[2*i:2*i+2].upper() for i in range(1, 7)])
