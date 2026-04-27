@@ -68,20 +68,21 @@ models:
             4: experiment
 
       switch:
+        # L2-L3 characteristics
         ip:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.2.0
           value_type: ipaddress
         mask:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.3.0
           value_type: ipaddress
         default_gateway:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.4.0
           value_type: ipaddress
         management_vlan_id:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.5.0
           value_type: integer
         mac_address:
@@ -92,11 +93,15 @@ models:
           request_type: get
           oid: 1.3.6.1.2.1.17.1.2.0
           value_type: integer
+        
+        # time
         current_time:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.10.2.0
           value_type: octetstring
           bytes_pattern: "2111111"   # %Y%Y%M%D%h%m%s%ms
+        
+        # utilization
         cpu_utilization_5sec:
           request_type: get
           oid: 1.3.6.1.4.1.171.12.1.1.6.1.0
@@ -124,7 +129,7 @@ models:
       
       dhcp_relay:
         state:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.42.1.1.0
           value_type: integer
           values:
@@ -135,21 +140,21 @@ models:
           oid: 1.3.6.1.4.1.171.12.42.3.1.1.1
           value_type: octetstring
         option82_state:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.42.3.2.1.0
           value_type: integer
           values:
             1: enabled
             2: disabled
         option82_check_state:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.42.3.2.2.0
           value_type: integer
           values:
             1: enabled
             2: disabled
         option82_policy:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.42.3.2.3.0
           value_type: integer
           values:
@@ -157,7 +162,7 @@ models:
             2: drop
             3: keep
         option82_remote_id_type:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.42.3.2.4.0
           value_type: integer
           values:
@@ -165,17 +170,43 @@ models:
             2: user-defined
       
       vlan:
-        name:
+        # walk through all vlans
+        all_names:
           request_type: walk
           oid: 1.3.6.1.2.1.17.7.1.4.3.1.1
           value_type: octetstring
-        egress_ports:
+        all_egress_ports:
           request_type: walk
           oid: 1.3.6.1.2.1.17.7.1.4.3.1.2
           value_type: octetstring
-        untagged_ports:
+        all_untagged_ports:
           request_type: walk
           oid: 1.3.6.1.2.1.17.7.1.4.3.1.4
+          value_type: octetstring
+        
+        # manage exact vlans
+        entry_status:
+          request_type: set
+          oid: 1.3.6.1.2.1.17.7.1.4.3.1.5.{vlan_id}
+          value_type: integer
+          values:
+            1: active
+            2: not_in_service
+            3: not_ready
+            4: create_go
+            5: create_wait
+            6: destroy
+        name:
+          request_type: set
+          oid: 1.3.6.1.2.1.17.7.1.4.3.1.1.{vlan_id}
+          value_type: octetstring
+        egress_ports:
+          request_type: set
+          oid: 1.3.6.1.2.1.17.7.1.4.3.1.2.{vlan_id}
+          value_type: octetstring
+        untagged_ports:
+          request_type: set
+          oid: 1.3.6.1.2.1.17.7.1.4.3.1.4.{vlan_id}
           value_type: octetstring
 
       fdb:
@@ -195,7 +226,7 @@ models:
             5: management
       
       port:
-        # show ports
+        # basic port management
         combo_ports_oids: !!set   # technical information about oids separated for combo ports
           ? admin_state
           ? speed_duplex_settings
@@ -205,7 +236,7 @@ models:
           ? link_status
           ? speed_duplex_status
         admin_state: &admin_state
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.3.{port}.100
           value_type: integer
           values:
@@ -216,7 +247,7 @@ models:
           <<: *admin_state
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.3.{port}.101
         speed_duplex_settings: &speed_duplex_settings
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.4.{port}.100
           value_type: integer
           values:
@@ -232,7 +263,7 @@ models:
           <<: *speed_duplex_settings
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.4.{port}.101
         flow_control: &flow_control
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.5.{port}.100
           value_type: integer
           values:
@@ -243,7 +274,7 @@ models:
           <<: *flow_control
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.5.{port}.101
         address_learning: &address_learning
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.7.{port}.100
           value_type: integer
           values:
@@ -254,7 +285,7 @@ models:
           <<: *address_learning
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.7.{port}.101
         mdix_state: &mdix_state
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.2.1.10.{port}.100
           value_type: integer
           values:
@@ -291,13 +322,14 @@ models:
         speed_duplex_status_combo_fiber:
           <<: *speed_duplex_status
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.{port}.101
+        
         # port_security
         port_security_max_learning_addresses:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.15.1.1.2.{port}
           value_type: integer
         port_security_lock_address_mode:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.{port}
           value_type: integer
           values:
@@ -306,13 +338,14 @@ models:
             3: deleteOnTimeout
             4: deleteOnReset
         port_security_admin_state:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.15.1.1.4.{port}
           value_type: integer
           values:
             1: other
             2: enable
             3: disable
+        
         # cable diagnostics
         cable_diagnostics_action:
           request_type: set
@@ -363,6 +396,8 @@ models:
           request_type: get
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.11.{port}
           value_type: integer
+        
+        # port utilization
         utilization_tx_frames:
           request_type: get
           oid: 1.3.6.1.4.1.171.12.1.1.8.1.2.{port}
@@ -375,44 +410,46 @@ models:
           request_type: get
           oid: 1.3.6.1.4.1.171.12.1.1.8.1.4.{port}
           value_type: integer
+        
+        # traffic control
         traffic_control_threshold:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.25.3.1.1.2.{port}
           value_type: integer
         traffic_control_broadcast_status:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.25.3.1.1.3.{port}
           value_type: integer
           values:
             1: disabled
             2: enabled
         traffic_control_multicast_status:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.25.3.1.1.4.{port}
           value_type: integer
           values:
             1: disabled
             2: enabled
         traffic_control_unicast_status:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.25.3.1.1.5.{port}
           value_type: integer
           values:
             1: disabled
             2: enabled
         traffic_control_action_status:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.25.3.1.1.6.{port}
           value_type: integer
           values:
             1: shutdown
             2: drop
         traffic_control_count_down:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.25.3.1.1.7.{port}
           value_type: integer
         traffic_control_time_interval:
-          request_type: get
+          request_type: set
           oid: 1.3.6.1.4.1.171.12.25.3.1.1.8.{port}
           value_type: integer
   

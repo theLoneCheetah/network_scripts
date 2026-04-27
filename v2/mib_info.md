@@ -6,7 +6,7 @@
 - <a name="BRIDGE-MIB"></a>**BRIDGE-MIB** - STP, базовая информация по трафику портов и макам, мак и количество портов свитча
 - <a name="CHARACTER-MIB"></a>**CHARACTER-MIB** - мониторинг устройств с поддержкой символьного потока
 - <a name="CISCO-LWAPP-AP-MIB"></a>**CISCO-LWAPP-AP-MIB** - точки доступа Wi-Fi с протоколом LWAPP
-- <a name="CISCO-SMI-V1SMI.my"></a>**CISCO-SMI-V1SMI.my** - файл структур Cisco
+- <a name="CISCO-SMI-V1SMI"></a>**CISCO-SMI-V1SMI** - файл структур Cisco
 - <a name="CLNS-MIB"></a>**CLNS-MIB** - мониторинг стека протоколов OSI (CLNP)
 - <a name="DECNET-PHIV-MIB"></a>**DECNET-PHIV-MIB** - сети DECnet Phase IV
 - <a name="DSA-MIB"></a>**DSA-MIB** - сервера X.500
@@ -104,7 +104,7 @@
 
 ## Private D-Link MIBs:
 - <a name="AAC-MIB"></a>**AAC-MIB** - доступ, авторизация, права
-- <a name="ACL-MIB"></a>**ACL-MIB** -  
+- <a name="ACL-MIB"></a>**ACL-MIB** - 
 - <a name="AUTH-MIB"></a>**AUTH-MIB** - параметры RADIUS-сервера, аутентификация
 - <a name="BPDU-PROTECTION-MIB"></a>**BPDU-PROTECTION-MIB** - защита от лишних пакетов протокола STP
 - <a name="CABLEDIAG-MIB"></a>**CABLEDIAG-MIB** - кабель диагностика (запуск, состояние и результат)
@@ -114,9 +114,9 @@
 - <a name="DOT1XMGMT-MIB"></a>**DOT1XMGMT-MIB** - Guest VLAN для аутентификации по порту IEEE 802.1X
 - <a name="DULD-MIB"></a>**DULD-MIB** - обнаружение однонаправленных каналов
 - <a name="FILTER-MIB"></a>**FILTER-MIB** - фильтрация трафика: DHCP-ответы, защита CPU, исходящий трафик
-- <a name="GENMGMT-MIB"></a>**GENMGMT-MIB** - частные поддерживаемые модули
+- <a name="GENMGMT-MIB"></a>**GENMGMT-MIB** - 
 - <a name="IPMACBIND-MIB"></a>**IPMACBIND-MIB** - привязка IP-MAC-порт
-- <a name="L2MGMT-MIB"></a>**L2MGMT-MIB** -  
+- <a name="L2MGMT-MIB"></a>**L2MGMT-MIB** - 
 - <a name="LAG-MIB"></a>**LAG-MIB** - агрегированные каналы
 - <a name="MLDSNP-MIB"></a>**MLDSNP-MIB** - IGMP snooping для IPv6
 - <a name="MSTP-MIB"></a>**MSTP-MIB** - сетевые петли по MSTP с группировкой VLAN
@@ -139,9 +139,9 @@
   - [BRIDGE-MIB](#BRIDGE-MIB) - мак и количество портов свитча
   - [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
   - [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
-  - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули
-  - ? [L2MGMT-MIB](#L2MGMT-MIB)
-  - ? [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
+  - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация
+  - ? [L2MGMT-MIB](#L2MGMT-MIB) - базовые данные свитча, базовое управление портом, port_security
+  - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
   - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID)
   - [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули
   - ? [RFC2665-MIB](#RFC2665-MIB) - разделение физических ошибок CRC на ошибки выравнивания 1.3.6.1.2.1.10.7.2.1.2 и ошибки только контрольной суммы 1.3.6.1.2.1.10.7.2.1.3

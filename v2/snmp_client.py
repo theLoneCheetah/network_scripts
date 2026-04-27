@@ -2,14 +2,15 @@
 import asyncio
 import yaml
 import struct
-from typing import Any, Self, Union
+from typing import Any, Self, Union, TypeAlias
 from abc import ABC, abstractmethod
 from pysnmp.hlapi.v3arch.asyncio import *
 from pyasn1.type.univ import ObjectIdentifier
 from pysnmp.proto.rfc1902 import OctetString, Integer, IpAddress
 from const import SNMP
 
-SnmpValue = ObjectIdentifier | OctetString | Integer | IpAddress
+type SnmpValue = ObjectIdentifier | OctetString | Integer | IpAddress
+type RequestData = dict[str, dict[str, Any]]
 
 class SNMPClient(ABC):
     _ipaddress: str
@@ -72,12 +73,11 @@ class SNMPClient(ABC):
     def _post_init(self) -> None:
         pass
     
-    async def _get(self, config_fragment: dict[str, Any], skip_init: bool = False) -> dict[str, Any] | None:
+    async def _get(self, request_data: RequestData, skip_init: bool = False) -> dict[str, Any] | None:
         if not skip_init:
             await self._initialize()
 
-        request_data = [{"command_name": command_name, **data} for command_name, data in config_fragment.items()]
-        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"]))) for request in request_data]
+        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"]))) for request in request_data.values()]
 
         errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
             self._engine,
@@ -97,21 +97,19 @@ class SNMPClient(ABC):
         
         results = {}
 
-        for data, varBind in zip(request_data, varBinds):
-            results[data["command_name"]] = SNMPClient._handle_result_value(varBind[1], data)
+        for (command_name, data), varBind in zip(request_data.items(), varBinds):
+            results[command_name] = SNMPClient._handle_result_value(varBind[1], data)
         
         return results
     
-    async def _set(self, config_fragment: dict[str, Any], values: dict[str, Any]) -> dict[str, Any] | None:
+    async def _set(self, request_data: RequestData, values: dict[str, Any]) -> dict[str, Any] | None:
         await self._initialize()
         
-        request_data = [{
-                "command_name": command_name,
-                **data,
-                "set_value": SNMP.TYPE[data["value_type"]](next(key for key, value in data["values"].items() if value == values[command_name]) 
-                                                     if "values" in data else values[command_name])
-            } for command_name, data in config_fragment.items()]
-        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"])), request["set_value"]) for request in request_data]
+        for command_name, data in request_data.items():
+            data["set_value"] = SNMP.TYPE[data["value_type"]](next(key for key, value in data["values"].items() if value == values[command_name])
+                                                              if "values" in data else values[command_name])
+        
+        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"])), request["set_value"]) for request in request_data.values()]
 
         errorIndication, errorStatus, errorIndex, varBinds = await set_cmd(
             self._engine,
@@ -131,8 +129,8 @@ class SNMPClient(ABC):
         
         results = {}
 
-        for data, varBind in zip(request_data, varBinds):
-            results[data["command_name"]] = SNMPClient._handle_result_value(varBind[1], data)
+        for (command_name, data), varBind in zip(request_data.items(), varBinds):
+            results[command_name] = SNMPClient._handle_result_value(varBind[1], data)
         
         return results
     
@@ -169,8 +167,8 @@ class SNMPClient(ABC):
         return results
     
     @staticmethod
-    def _filter_request_config(config_fragment: dict[str, Any], include_oids: list[str]) -> dict[str, Any]:
-        return {key: config_fragment[key] for key in include_oids if key in config_fragment}
+    def _filter_request_config(config_fragment: dict[str, Any], include_oids: list[str]) -> RequestData:
+        return {key: {**config_fragment[key], "params": {}} for key in include_oids if key in config_fragment}
     
     @staticmethod
     def _handle_result_value(value: SnmpValue, data: str) -> str | int:
@@ -206,5 +204,5 @@ class SNMPClient(ABC):
         return "-".join([octet_string[2*i:2*i+2].upper() for i in range(1, 7)])
 
     @abstractmethod
-    def _render_oid(self, oid: str) -> str:
+    def _render_oid(self, oid: str, **params) -> str:
         pass

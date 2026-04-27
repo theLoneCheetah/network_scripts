@@ -83,18 +83,33 @@ class L2SwitchClient(SNMPClient):
         
         results = defaultdict(dict)
         
-        for oid, vlan_name in await self._bulk_walk(self._switch_oids_config["vlan"]["name"]):
-            results[parse_vlan_id(oid)]["vlan_name"] = vlan_name
+        for oid, vlan_name in await self._bulk_walk(self._switch_oids_config["vlan"]["all_names"]):
+            # consider default empty sets for tagged/untagged ports
+            results[parse_vlan_id(oid)] = {"vlan_name": vlan_name, "tagged_ports": set(), "untagged_ports": set()}
         
-        for oid, octet_string in await self._bulk_walk(self._switch_oids_config["vlan"]["egress_ports"]):
-            results[parse_vlan_id(oid)]["tagged_ports"] = parse_assignes_ports(octet_string)
+        vlan_config = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["egress_ports"])["egress_ports"]
+        filtered_request_config = {f"egress_ports.{vlan_id}": {**vlan_config, "params": {"vlan_id": vlan_id}} for vlan_id in results}
         
-        for oid, octet_string in await self._bulk_walk(self._switch_oids_config["vlan"]["untagged_ports"]):
-            vlan_id = parse_vlan_id(oid)
+        for request_name, octet_string in (await self._get(filtered_request_config)).items():
+            results[parse_vlan_id(request_name)]["tagged_ports"] = parse_assignes_ports(octet_string)
+        
+        vlan_config = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["untagged_ports"])["untagged_ports"]
+        filtered_request_config = {f"untagged_ports.{vlan_id}": {**vlan_config, "params": {"vlan_id": vlan_id}} for vlan_id in results}
+        
+        for request_name, octet_string in (await self._get(filtered_request_config)).items():
+            vlan_id = parse_vlan_id(request_name)
             results[vlan_id]["untagged_ports"] = parse_assignes_ports(octet_string)
             results[vlan_id]["tagged_ports"] -= results[vlan_id]["untagged_ports"]
 
         return results
+    
+    async def create_and_delete_vlan(self, vlan: dict[str, Any]):
+        filtered_request_config = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["cable_diagnostics_action"])
+
+        action_status = await self._set(filtered_request_config, {"cable_diagnostics_action": "action"})
+
+        result = self._set(SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["name", "entry_status"]),
+                           {"name": f"VLAN{vlan["vlan_name"]}", "entry_status": "create_go"})
     
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
         def parse_vlan_id_mac(oid: str, base_oid: str) -> tuple[str, str]:
@@ -125,7 +140,6 @@ class L2SwitchClient(SNMPClient):
             await self._check_fiber_combo_port()
         
         if self._is_combo_fiber_port or self._is_fiber_port:
-            print("hey")
             return {"unable_to_perform": True}
 
         filtered_request_config = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["cable_diagnostics_action"])
@@ -195,6 +209,6 @@ class L2SwitchClient(SNMPClient):
         return results
 
     @override
-    def _render_oid(self, oid: str) -> str:
-        return oid.format(port=self._port)
+    def _render_oid(self, oid: str, **params) -> str:
+        return oid.format(port=self._port, **params)
     
