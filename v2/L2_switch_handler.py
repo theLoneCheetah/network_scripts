@@ -33,6 +33,10 @@ class L2SwitchHandler:
     async def get_dhcp_relay(self) -> dict[str, Any]:
         return await self._client.get_dhcp_relay()
     
+    async def check_vlan_entry_status(self):
+        vlan = {"vlan_id": 2, "vlan_name": "vlan2"}
+        await self._client.create_and_delete_vlan(vlan)
+    
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
         return await self._client.get_vlan_static_table()
     

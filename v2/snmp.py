@@ -13,6 +13,8 @@ async def main():
     start_time = perf_counter()
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
+    
+    await switch_handler.check_vlan_entry_status()
 
     print(await switch_handler.get_vlan_static_table())
 

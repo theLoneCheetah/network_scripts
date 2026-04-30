@@ -87,14 +87,26 @@ class L2SwitchClient(SNMPClient):
             # consider default empty sets for tagged/untagged ports
             results[parse_vlan_id(oid)] = {"vlan_name": vlan_name, "tagged_ports": set(), "untagged_ports": set()}
         
+        # tagged vlans
         vlan_config = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["egress_ports"])["egress_ports"]
-        filtered_request_config = {f"egress_ports.{vlan_id}": {**vlan_config, "params": {"vlan_id": vlan_id}} for vlan_id in results}
+        filtered_request_config = {}
+
+        for vlan_id in results:
+            config_copy = vlan_config.copy()
+            config_copy["params"] = {"vlan_id": vlan_id}
+            filtered_request_config[f"egress_ports.{vlan_id}"] = config_copy
         
         for request_name, octet_string in (await self._get(filtered_request_config)).items():
             results[parse_vlan_id(request_name)]["tagged_ports"] = parse_assignes_ports(octet_string)
         
+        # untagged vlan
         vlan_config = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["untagged_ports"])["untagged_ports"]
-        filtered_request_config = {f"untagged_ports.{vlan_id}": {**vlan_config, "params": {"vlan_id": vlan_id}} for vlan_id in results}
+        filtered_request_config = {}
+
+        for vlan_id in results:
+            config_copy = vlan_config.copy()
+            config_copy["params"] = {"vlan_id": vlan_id}
+            filtered_request_config[f"untagged_ports.{vlan_id}"] = config_copy
         
         for request_name, octet_string in (await self._get(filtered_request_config)).items():
             vlan_id = parse_vlan_id(request_name)
@@ -102,14 +114,19 @@ class L2SwitchClient(SNMPClient):
             results[vlan_id]["tagged_ports"] -= results[vlan_id]["untagged_ports"]
 
         return results
-    
+
     async def create_and_delete_vlan(self, vlan: dict[str, Any]):
-        filtered_request_config = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["cable_diagnostics_action"])
-
-        action_status = await self._set(filtered_request_config, {"cable_diagnostics_action": "action"})
-
-        result = self._set(SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["name", "entry_status"]),
-                           {"name": f"VLAN{vlan["vlan_name"]}", "entry_status": "create_go"})
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["name", "entry_status"])
+        for command in payload.values():
+            command["params"] = {"vlan_id": vlan["vlan_id"]}
+        payload["name"]["set_value"] = vlan["vlan_name"]
+        payload["entry_status"]["set_value"] = "create_go"
+        print(await self._set(payload))
+        
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["entry_status"])
+        payload["entry_status"]["params"] = {"vlan_id": vlan["vlan_id"]}
+        payload["entry_status"]["set_value"] = "destroy"
+        print(await self._set(payload))
     
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
         def parse_vlan_id_mac(oid: str, base_oid: str) -> tuple[str, str]:
@@ -142,11 +159,12 @@ class L2SwitchClient(SNMPClient):
         if self._is_combo_fiber_port or self._is_fiber_port:
             return {"unable_to_perform": True}
 
-        filtered_request_config = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["cable_diagnostics_action"])
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["cable_diagnostics_action"])
+        payload["cable_diagnostics_action"]["set_value"] = "action"
 
-        action_status = await self._set(filtered_request_config, {"cable_diagnostics_action": "action"})
+        action_status = await self._set(payload)
         while action_status["cable_diagnostics_action"] in {"action", "processing"}:
-            action_status = await self._get(filtered_request_config)
+            action_status = await self._get(payload)
         
         include_oids = []
         pairs = 4 if self._is_gigabit_ethernet_port else 2

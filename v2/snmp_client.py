@@ -76,7 +76,7 @@ class SNMPClient(ABC):
     async def _get(self, request_data: RequestData, skip_init: bool = False) -> dict[str, Any] | None:
         if not skip_init:
             await self._initialize()
-
+        
         oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"]))) for request in request_data.values()]
 
         errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
@@ -102,12 +102,12 @@ class SNMPClient(ABC):
         
         return results
     
-    async def _set(self, request_data: RequestData, values: dict[str, Any]) -> dict[str, Any] | None:
+    async def _set(self, request_data: RequestData) -> dict[str, Any] | None:
         await self._initialize()
         
-        for command_name, data in request_data.items():
-            data["set_value"] = SNMP.TYPE[data["value_type"]](next(key for key, value in data["values"].items() if value == values[command_name])
-                                                              if "values" in data else values[command_name])
+        for data in request_data.values():
+            data["set_value"] = SNMP.TYPE[data["value_type"]](next(key for key, value in data["values"].items() if value == data["set_value"])
+                                                              if "values" in data else data["set_value"])
         
         oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"])), request["set_value"]) for request in request_data.values()]
 
