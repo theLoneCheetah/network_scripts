@@ -25,7 +25,9 @@ class CountryDiagHandler(DiagHandler):
     # class attributes annotations
     __ip_correct: bool
     __ip_out_of_country_subnets: bool
+    __olt_number: int
     __olt_ip: str
+    __channel: int
     __eltex_serial: str
 
     def __init__(self, usernum: int, db_manager: DatabaseManager, record_data: dict[str, Any], inactive_payment: bool, print_output: bool = False) -> None:
@@ -49,7 +51,9 @@ class CountryDiagHandler(DiagHandler):
         self.__ip_out_of_country_subnets = False
 
         # flags for variables and erros in country alarm
+        self.__olt_number = None
         self.__olt_ip = ""
+        self.__channel = None
         self.__eltex_serial = ""
 
 
@@ -296,18 +300,19 @@ class CountryDiagHandler(DiagHandler):
     def __get_olt_eltex(self) -> None:
         # catch list of matches
         try:
-            olt_eltex = CountryAlarmManager.get_user_data_from_alarm(self._usernum)
+            olt_channel_eltex = CountryAlarmManager.get_user_data_from_alarm(self._usernum)
         # alarm error if exception occured
         except:
             raise MyException(ExceptionType.COUNTRY_ALARM_NOT_AVAILABLE)
         
-        match len(olt_eltex):
+        match len(olt_channel_eltex):
             # error flag if not found
             case 0:
                 raise MyException(ExceptionType.ONT_CONFIG_NOT_FOUND)
             # save olt and eltex if exactly one found
             case 1:
-                self.__olt_ip, self.__eltex_serial = olt_eltex[0]
+                self.__olt_number, self.__channel, self.__eltex_serial = olt_channel_eltex[0]
+                self.__olt_ip = Country.BASE_SUBNET + self.__olt_number
             # error flag if more than one found
             case _:
                 raise MyException(ExceptionType.SEVERAL_ONT_CONFIGS)
@@ -430,6 +435,8 @@ class CountryDiagHandler(DiagHandler):
         if self._L2_exception:
             print(self._L2_exception)
             return
+        
+        print(f"OLT-CH: {self.__olt_number}-{self.__channel}")
         
         # specialized terminal model/mode: ntu1, bridge
         if self.__ntu1:

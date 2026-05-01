@@ -33,10 +33,6 @@ class L2SwitchHandler:
     async def get_dhcp_relay(self) -> dict[str, Any]:
         return await self._client.get_dhcp_relay()
     
-    async def check_vlan_entry_status(self):
-        vlan = {"vlan_id": 2, "vlan_name": "vlan2"}
-        await self._client.create_and_delete_vlan(vlan)
-    
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
         return await self._client.get_vlan_static_table()
     
@@ -52,6 +48,18 @@ class L2SwitchHandler:
                 result["untagged"][vlan_id] = vlan_name
 
         return result
+    
+    async def create_vlan(self, vlan: dict[str, Any]) -> None:
+        response = await self._client.create_vlan(vlan)
+        print(response.value[1])
+    
+    async def delete_vlan(self, vlan: dict[str, Any]) -> None:
+        response = await self._client.delete_vlan(vlan)
+        print(response.value[1])
+
+    async def add_vlan_on_port(self, portlist: list[int], vlan: dict[str, Any], status: str) -> None:
+        response = await self._client.add_vlan_on_ports(portlist, vlan, status)
+        print(response.value[1])
     
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
         return await self._client.get_fdb_table()

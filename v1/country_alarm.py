@@ -15,9 +15,7 @@ class CountryAlarmManager:
         response = requests.get(Country.ALARM_URL)
         configured_onts = response.json()
 
-        # print ltp-channel
-        print(" ".join(f"{ont["LTP"][-1:]}-{ont["CHANNEL"]}" for ont in configured_onts if ont["USERNUM"] == str(usernum)))
-
-        # find and return all pairs of olt and eltex for usernum
-        return [(Country.BASE_SUBNET + ont["LTP"][-1], ont["ELTX"]) for ont in configured_onts if ont["USERNUM"] == str(usernum)]
+        # find and return all olt-channel-eltex combinations for usernum
+        olt_channel_eltex = [(ont["LTP"][-1], ont["CHANNEL"], ont["ELTX"]) for ont in configured_onts if ont["USERNUM"] == str(usernum)]
+        return olt_channel_eltex
     

@@ -8,6 +8,7 @@ from pysnmp.hlapi.v3arch.asyncio import *
 from pyasn1.type.univ import ObjectIdentifier
 from pysnmp.proto.rfc1902 import OctetString, Integer, IpAddress
 from const import SNMP
+from snmp_exceptions import *
 
 type SnmpValue = ObjectIdentifier | OctetString | Integer | IpAddress
 type RequestData = dict[str, dict[str, Any]]
@@ -73,11 +74,11 @@ class SNMPClient(ABC):
     def _post_init(self) -> None:
         pass
     
-    async def _get(self, request_data: RequestData, skip_init: bool = False) -> dict[str, Any] | None:
+    async def _get(self, payload: RequestData, skip_init: bool = False) -> dict[str, Any] | None:
         if not skip_init:
             await self._initialize()
         
-        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"]))) for request in request_data.values()]
+        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"]))) for request in payload.values()]
 
         errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
             self._engine,
@@ -87,30 +88,29 @@ class SNMPClient(ABC):
             *oid_objects
         )
         
-        if errorIndication:
-            print("SNMP error:", errorIndication)
-            return None
-        
-        if errorStatus:
-            print("SNMP error:", errorStatus)
-            return None
+        try:
+            SNMPClient._check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload)
+        except SNMPTransportError:
+            raise
+        except SNMPProtocolError:
+            raise
         
         results = {}
 
-        for (command_name, data), varBind in zip(request_data.items(), varBinds):
+        for (command_name, data), varBind in zip(payload.items(), varBinds):
             results[command_name] = SNMPClient._handle_result_value(varBind[1], data)
         
         return results
     
-    async def _set(self, request_data: RequestData) -> dict[str, Any] | None:
+    async def _set(self, payload: RequestData) -> dict[str, Any] | None:
         await self._initialize()
         
-        for data in request_data.values():
+        for data in payload.values():
             data["set_value"] = SNMP.TYPE[data["value_type"]](next(key for key, value in data["values"].items() if value == data["set_value"])
                                                               if "values" in data else data["set_value"])
         
-        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"])), request["set_value"]) for request in request_data.values()]
-
+        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"])), request["set_value"]) for request in payload.values()]
+        
         errorIndication, errorStatus, errorIndex, varBinds = await set_cmd(
             self._engine,
             self._write_community,
@@ -119,25 +119,24 @@ class SNMPClient(ABC):
             *oid_objects
         )
         
-        if errorIndication:
-            print("SNMP error:", errorIndication)
-            return None
-        
-        if errorStatus:
-            print("SNMP error:", errorStatus)
-            return None
+        try:
+            SNMPClient._check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload)
+        except SNMPTransportError:
+            raise
+        except SNMPProtocolError:
+            raise
         
         results = {}
 
-        for (command_name, data), varBind in zip(request_data.items(), varBinds):
+        for (command_name, data), varBind in zip(payload.items(), varBinds):
             results[command_name] = SNMPClient._handle_result_value(varBind[1], data)
         
         return results
     
-    async def _bulk_walk(self, request_data: dict[str, Any]) -> list[tuple[str, Any]] | None:
+    async def _bulk_walk(self, payload: dict[str, Any]) -> list[tuple[str, Any]] | None:
         await self._initialize()
 
-        oid_object = ObjectType(ObjectIdentity(self._render_oid(request_data["oid"])))
+        oid_object = ObjectType(ObjectIdentity(self._render_oid(payload["oid"])))
         max_repetitions = 49   # can be changed
 
         results = []
@@ -151,17 +150,16 @@ class SNMPClient(ABC):
             oid_object,
             lexicographicMode=False
         ):
-            if errorIndication:
-                print("SNMP error:", errorIndication)
-                return None
-            
-            if errorStatus:
-                print("SNMP error:", errorStatus)
-                return None
+            try:
+                SNMPClient._check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload)
+            except SNMPTransportError:
+                raise
+            except SNMPProtocolError:
+                raise
             
             for varBind in varBinds:
                 oid = str(varBind[0])
-                value = SNMPClient._handle_result_value(varBind[1], request_data)
+                value = SNMPClient._handle_result_value(varBind[1], payload)
                 results.append((oid, value))
         
         return results
@@ -171,7 +169,18 @@ class SNMPClient(ABC):
         return {key: {**config_fragment[key], "params": {}} for key in include_oids if key in config_fragment}
     
     @staticmethod
+    def _check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload: RequestData) -> None:
+        if errorIndication:
+            raise SNMPTransportError(errorIndication)
+        
+        if errorStatus:
+            raise SNMPProtocolError(str(errorStatus), int(errorIndex), list(payload.keys()))
+
+    @staticmethod
     def _handle_result_value(value: SnmpValue, data: str) -> str | int:
+        if value.isSameTypeWith(NoSuchInstance()):
+            return None
+        
         value = value.prettyPrint()
 
         match data["value_type"]:
