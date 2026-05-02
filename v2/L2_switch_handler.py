@@ -57,8 +57,12 @@ class L2SwitchHandler:
         response = await self._client.delete_vlan(vlan)
         print(response.value[1])
 
-    async def add_vlan_on_port(self, portlist: list[int], vlan: dict[str, Any], status: str) -> None:
+    async def add_vlan_on_ports(self, portlist: set[int], vlan: dict[str, Any], status: str) -> None:
         response = await self._client.add_vlan_on_ports(portlist, vlan, status)
+        print(response.value[1])
+
+    async def delete_vlan_from_ports(self, portlist: set[int], vlan: dict[str, Any]) -> None:
+        response = await self._client.delete_vlan_from_ports(portlist, vlan)
         print(response.value[1])
     
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
