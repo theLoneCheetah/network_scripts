@@ -35,7 +35,7 @@ models:
     first_gigabit_port: 1
     combo_ports: !!set {}
     fiber_ports: !!set {}
-    is_cable_diagnostics_pairs_ordered: false
+    are_cable_diagnostics_pairs_ordered: false
   
   # L2
   DES-3028:
@@ -44,7 +44,7 @@ models:
     ports_count: 28
     first_gigabit_port: 25
     combo_ports: !!set { ? 25, ? 26 }
-    is_cable_diagnostics_pairs_ordered: true
+    are_cable_diagnostics_pairs_ordered: true
     firmware_release: 2.94
 
     oids:
@@ -450,7 +450,7 @@ models:
     base_model: DES-3028
     ports_count: 52
     first_gigabit_port: 49
-    is_cable_diagnostics_pairs_ordered: true
+    are_cable_diagnostics_pairs_ordered: true
     combo_ports: !!set { ? 49, ? 50 }
   
   DES-3200-28:
@@ -458,7 +458,7 @@ models:
     base_model: DES-3200-28
     ports_count: 28
     first_gigabit_port: 25
-    is_cable_diagnostics_pairs_ordered: true
+    are_cable_diagnostics_pairs_ordered: true
     combo_ports: !!set { ? 25, ? 26, ? 27, ? 28 }
   
   DES-3526: # may be unused
@@ -466,7 +466,7 @@ models:
     base_model: DES-3526
     ports_count: 26
     first_gigabit_port: 25
-    is_cable_diagnostics_pairs_ordered: true
+    are_cable_diagnostics_pairs_ordered: true
     combo_ports: !!set { ? 25, ? 26 }
   
   DGS-3000-24TC:

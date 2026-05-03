@@ -145,25 +145,49 @@
   - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID)
   - [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули
   - ? [RFC2665-MIB](#RFC2665-MIB) - разделение физических ошибок CRC на ошибки выравнивания 1.3.6.1.2.1.10.7.2.1.2 и ошибки только контрольной суммы 1.3.6.1.2.1.10.7.2.1.3
-  - ? [RFC2674Q-MIB](#RFC2674Q-MIB) - FDB, VLAN (создание, tag, при этом PVID выставляется автоматически)
+  - [RFC2674Q-MIB](#RFC2674Q-MIB) - FDB, VLAN (создание, tag, при этом PVID выставляется автоматически)
   - ? [RFC2863-MIB](#RFC2863-MIB) - базовая статистика сетевых интерфейсов, статус, скорость, байты, ошибки, unicast/multicast/broadcast пакеты I/O 1.3.6.1.2.1.31.1.1
   - [TIME-MIB](#TIME-MIB) - системное время
 
-3028 functions:
-+ default gateway
-+ ports
-+ combo and fiber ports
-+ fdb
-+ port_security
-+ cable_diag
-- crc
-- packet
-+ vlan
-- dchp_relay (частично, нужно найти для конкретной модели)
-- acl
-+ utilization (cpu, ports, ram)
-+ traffic control
-- log
+# Реализуемые функции
+- ## DES-3028:
+  - private mib modules
+    - description
+    - version
+    - value type
+  - switch:
+    - ip, mask, default gateway, management vlan id
+    - mac address, ports number
+    - current time
+    - cpu and dram utilization
+    - ? managing
+  - dhcp relay:
+    - state
+    - interfaces for servers
+    - option82
+    - ? vlan id for servers
+    - ? managing
+  - vlan:
+    - names, entry status
+    - create, delete
+    - egress and untagged ports, add and remove
+    - pvid adds/removes automatically with untagged vlan
+  - fdb:
+    - mac and port
+    - mac and status
+    - ? clear: port, vlan, all
+  - port:
+    - state, speed and duplex, flow control, address learning, mdix state
+    - link, speed and duplex status
+    - combo ports
+    - port secutiry state, max addresses, mode
+    - cable diagnostics action, pairs statuses and lengths
+    - port utilization
+    - traffic control threshold, broadcast/multicast/unicast, action, count and interval
+  - ? crc, packet, clear counters
+  - ? acl
+  - ? log
+  - ? ping (may be unavailable)
 
 # Справочник OID
 

@@ -272,7 +272,7 @@ class L2SwitchClient(SNMPClient):
 
         results["unable_to_perform"] = False
         results["no_cable"] = True
-        need_to_order_pairs = self._is_gigabit_ethernet_port and not self._config["models"][self._model]["is_cable_diagnostics_pairs_ordered"]
+        need_to_order_pairs = self._is_gigabit_ethernet_port and not self._config["models"][self._model]["are_cable_diagnostics_pairs_ordered"]
 
         def get_actual_pair_number(pair_number: int) -> int:
             if not need_to_order_pairs or pair_number == 4:
