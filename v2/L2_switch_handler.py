@@ -3,9 +3,12 @@ import asyncio
 from typing import Any, Self
 from collections import defaultdict
 from datetime import datetime
+from pydantic import ValidationError
 from pysnmp.hlapi.v3arch.asyncio import *
 from L2_switch_client import L2SwitchClient
 from const import SNMP
+from snmp_exceptions import *
+from schemas import PortSecurityConfig
 
 class L2SwitchHandler:
     _port: int
@@ -110,13 +113,6 @@ class L2SwitchHandler:
 
         return result
     
-    async def get_port_security_on_port(self) -> dict[str, Any]:
-        include_oids = ["port_security_max_learning_addresses", "port_security_lock_address_mode", "port_security_admin_state"]
-        return await self._client.get_port_diagnostics(include_oids)
-    
-    async def set_port_security_on_port(self):
-        pass
-    
     async def get_utilization_on_port(self) -> dict[str, int]:
         include_oids = ["utilization_tx_frames", "utilization_rx_frames", "utilization_percentage"]
         return await self._client.get_port_diagnostics(include_oids)
@@ -125,3 +121,19 @@ class L2SwitchHandler:
         include_oids = ["traffic_control_threshold", "traffic_control_broadcast_status", "traffic_control_multicast_status", "traffic_control_unicast_status",
                         "traffic_control_action_status", "traffic_control_count_down", "traffic_control_time_interval"]
         return await self._client.get_port_diagnostics(include_oids)
+    
+    ### PORT SECURITY ###
+
+    async def get_port_security_on_port(self) -> dict[str, Any]:
+        return await self._client.get_port_security_on_port()
+    
+    async def set_port_security_on_port(self, config: dict[str, Any]):
+        try:
+            request = PortSecurityConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_port_security_on_port(request)
+        print(response.value[1])
+    

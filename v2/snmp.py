@@ -4,11 +4,12 @@ import asyncio
 from pysnmp.hlapi.v3arch.asyncio import *
 from collections import defaultdict
 from const import SNMP
+from schemas import PortSecurityConfig
 from L2_switch_handler import L2SwitchHandler
 
 async def main():
     ipaddress = SNMP.TEST_3028
-    port = 2
+    port = 3
 
     start_time = perf_counter()
 
@@ -21,13 +22,13 @@ async def main():
     # await asyncio.sleep(5)
     # await switch_handler.add_vlan_on_ports({23,24}, vlan, "tagged")
     # await asyncio.sleep(5)
-    # await switch_handler.add_vlan_on_ports({22}, vlan, "tagged")
-    # await asyncio.sleep(5)
     # await switch_handler.delete_vlan_from_ports({22,24}, vlan)
     # await asyncio.sleep(5)
     # await switch_handler.delete_vlan(vlan)
 
-    print(await switch_handler.get_vlan_static_table())
+    # print(await switch_handler.get_port_security_on_port())
+    # await switch_handler.set_port_security_on_port({"max_learning_addresses": "1"})
+    # print(await switch_handler.get_port_security_on_port())
 
     # task1 = asyncio.create_task(switch_handler.get_default_gateway())
     # task2 = asyncio.create_task(switch_handler.get_port_info())

@@ -324,6 +324,30 @@ class L2SwitchClient(SNMPClient):
         
         return results
 
+    ### PORT SECURITY ###
+
+    async def get_port_security_on_port(self) -> dict[str, Any]:
+        include_oids = ["port_security_max_learning_addresses", "port_security_lock_address_mode", "port_security_admin_state"]
+        results = await self.get_port_diagnostics(include_oids)
+        return {key.removeprefix("port_security_"): value for key, value in results.items()}
+    
+    async def set_port_security_on_port(self, request: RequestData):
+        include_oids = [F"port_security_{param}" for param in request.keys()]
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+
+        for param, data in payload.items():
+            data["set_value"] = request[param.removeprefix("port_security_")]
+        
+        try:
+            result = await self._set(payload)
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+
     ### HELPER FUNCTIONS ###
 
     @override
