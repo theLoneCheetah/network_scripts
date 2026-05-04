@@ -184,6 +184,7 @@
     - cable diagnostics action, pairs statuses and lengths
     - port utilization
     - traffic control threshold, broadcast/multicast/unicast, action, count and interval
+    - ? managing
   - ? crc, packet, clear counters
   - ? acl
   - ? log

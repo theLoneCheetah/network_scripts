@@ -8,6 +8,8 @@ from snmp_client import SNMPClient
 from const import SNMP
 from snmp_exceptions import *
 
+type RequestData = dict[str, Any]
+
 class L2SwitchClient(SNMPClient):
     _port: int
     _ports_count: int
@@ -120,17 +122,17 @@ class L2SwitchClient(SNMPClient):
 
         return results
     
-    async def check_vlan_entry(self, vlan: dict[str, Any]) -> dict[str, Any]:
+    async def _check_vlan_entry(self, vlan: dict[str, Any]) -> dict[str, Any]:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["entry_status"])
         payload["entry_status"]["params"] = {"vlan_id": vlan["vlan_id"]}
         return await self._get(payload)
     
-    async def create_vlan(self, vlan: dict[str, Any]) -> SNMPResponseCode:
+    async def create_vlan(self, request: RequestData) -> SNMPResponseCode:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["name", "entry_status"])
         for command in payload.values():
-            command["params"] = {"vlan_id": vlan["vlan_id"]}
+            command["params"] = {"vlan_id": request["vlan"]["vlan_id"]}
         
-        payload["name"]["set_value"] = vlan["vlan_name"]
+        payload["name"]["set_value"] = request["vlan"]["vlan_name"]
         payload["entry_status"]["set_value"] = "create_go"
 
         try:
@@ -143,13 +145,13 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
 
-    async def delete_vlan(self, vlan: dict[str, Any]) -> SNMPResponseCode:
-        check_result = await self.check_vlan_entry(vlan)
+    async def delete_vlan(self, request: RequestData) -> SNMPResponseCode:
+        check_result = await self._check_vlan_entry(request["vlan"])
         if check_result["entry_status"] is None:
             return SNMPResponseCode.INVALID_DATA
         
         payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["entry_status"])
-        payload["entry_status"]["params"] = {"vlan_id": vlan["vlan_id"]}
+        payload["entry_status"]["params"] = {"vlan_id": request["vlan"]["vlan_id"]}
         payload["entry_status"]["set_value"] = "destroy"
         
         try:
@@ -174,16 +176,16 @@ class L2SwitchClient(SNMPClient):
         ports = self._parse_assigned_ports_from_hex(result[request_name])
         return ports
     
-    async def add_vlan_on_ports(self, portlist: set[int], vlan: dict[str, Any], status: str) -> SNMPResponseCode:
-        request_name = L2SwitchClient._get_request_name_for_vlan_status(status)
+    async def add_vlan_on_ports(self, request: RequestData) -> SNMPResponseCode:
+        request_name = L2SwitchClient._get_request_name_for_vlan_status(request["status"])
         if request_name is None:
             return SNMPResponseCode.INVALID_DATA
         
         # for ports that were untagged, untagged + egress -> untagged
-        portlist |= await self._get_ports_with_vlan_status(vlan, status)
+        portlist = request["portlist"] | await self._get_ports_with_vlan_status(request["vlan"], request["status"])
         
         payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], [request_name])
-        payload[request_name]["params"] = {"vlan_id": vlan["vlan_id"]}
+        payload[request_name]["params"] = {"vlan_id": request["vlan"]["vlan_id"]}
         payload[request_name]["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(portlist)
         
         try:
@@ -192,21 +194,21 @@ class L2SwitchClient(SNMPClient):
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
-            if err.status == "inconsistentValue":
+            if err.status == "commitFailed":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
     
-    async def delete_vlan_from_ports(self, portlist_to_remove: set[int], vlan: dict[str, Any]) -> SNMPResponseCode:
+    async def delete_vlan_from_ports(self, request: RequestData) -> SNMPResponseCode:
         status = "tagged"
-        portlist = await self._get_ports_with_vlan_status(vlan, status) - portlist_to_remove
+        result_portlist = await self._get_ports_with_vlan_status(request["vlan"], status) - request["portlist"]
         
         request_name = L2SwitchClient._get_request_name_for_vlan_status(status)
         if request_name is None:
             return SNMPResponseCode.INVALID_DATA
         
         payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], [request_name])
-        payload[request_name]["params"] = {"vlan_id": vlan["vlan_id"]}
-        payload[request_name]["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(portlist)
+        payload[request_name]["params"] = {"vlan_id": request["vlan"]["vlan_id"]}
+        payload[request_name]["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(result_portlist)
         
         try:
             result = await self._set(payload)
@@ -218,7 +220,7 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
 
-    ### MAC ADDRESS ##
+    ### MAC ADDRESS ###
 
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
         def parse_vlan_id_mac(oid: str, base_oid: str) -> tuple[str, str]:

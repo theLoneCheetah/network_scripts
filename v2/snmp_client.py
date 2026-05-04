@@ -11,7 +11,7 @@ from const import SNMP
 from snmp_exceptions import *
 
 type SnmpValue = ObjectIdentifier | OctetString | Integer | IpAddress
-type RequestData = dict[str, dict[str, Any]]
+type PayloadData = dict[str, dict[str, Any]]
 
 class SNMPClient(ABC):
     _ipaddress: str
@@ -74,7 +74,7 @@ class SNMPClient(ABC):
     def _post_init(self) -> None:
         pass
     
-    async def _get(self, payload: RequestData, skip_init: bool = False) -> dict[str, Any] | None:
+    async def _get(self, payload: PayloadData, skip_init: bool = False) -> dict[str, Any] | None:
         if not skip_init:
             await self._initialize()
         
@@ -102,7 +102,7 @@ class SNMPClient(ABC):
         
         return results
     
-    async def _set(self, payload: RequestData) -> dict[str, Any] | None:
+    async def _set(self, payload: PayloadData) -> dict[str, Any] | None:
         await self._initialize()
         
         for data in payload.values():
@@ -165,11 +165,11 @@ class SNMPClient(ABC):
         return results
     
     @staticmethod
-    def _filter_request_config(config_fragment: dict[str, Any], include_oids: list[str]) -> RequestData:
+    def _filter_request_config(config_fragment: dict[str, Any], include_oids: list[str]) -> PayloadData:
         return {key: {**config_fragment[key], "params": {}} for key in include_oids if key in config_fragment}
     
     @staticmethod
-    def _check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload: RequestData) -> None:
+    def _check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload: PayloadData) -> None:
         if errorIndication:
             raise SNMPTransportError(errorIndication)
         
