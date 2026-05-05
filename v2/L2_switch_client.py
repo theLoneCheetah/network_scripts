@@ -40,19 +40,16 @@ class L2SwitchClient(SNMPClient):
     ### MIB MODULES ###
 
     async def scan_available_mibs(self) -> dict[str, dict[str, Any]]:
-        def parse_index(oid: str) -> int:
-            return int(oid.rpartition(".")[2])
-        
         results = defaultdict(dict)
         
         for oid, desciption in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["description"]):
-            results[parse_index(oid)]["desciption"] = desciption
+            results[L2SwitchClient._parse_last_index(oid)[1]]["desciption"] = desciption
 
         for oid, version in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["version"]):
-            results[parse_index(oid)]["version"] = version
+            results[L2SwitchClient._parse_last_index(oid)[1]]["version"] = version
 
         for oid, value_type in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["value_type"]):
-            results[parse_index(oid)]["value_type"] = value_type
+            results[L2SwitchClient._parse_last_index(oid)[1]]["value_type"] = value_type
         
         return {value["desciption"]: {"version": value["version"], "value_type": value["value_type"]} for value in results.values()}
 
@@ -69,55 +66,45 @@ class L2SwitchClient(SNMPClient):
     #### DHCP RELAY ###
 
     async def get_dhcp_relay(self) -> dict[str, Any]:
-        def parse_ip_address(oid: str) -> str:
-            return ".".join(oid.rsplit(".", 4)[-4:])
-
         include_oids = ["state", "option82_state", "option82_check_state", "option82_policy", "option82_remote_id_type"]
         results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids))
 
         results["interfaces_ip_addresses_vlan_ids"] = defaultdict(dict)
 
         for oid, interface_name in await self._bulk_walk(self._switch_oids_config["dhcp_relay"]["interface_name_for_server"]):
-            results["interfaces_ip_addresses_vlan_ids"][interface_name][parse_ip_address(oid)] = set()
+            results["interfaces_ip_addresses_vlan_ids"][interface_name][L2SwitchClient._parse_ip_address_from_oid(oid)[1]] = set()
         
         return results
     
     ### VLAN ###
 
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
-        def parse_vlan_id(oid: str) -> int:
-            return int(oid.rpartition(".")[2])
-        
         results = defaultdict(dict)
         
         for oid, vlan_name in await self._bulk_walk(self._switch_oids_config["vlan"]["all_names"]):
+            vlan_id = L2SwitchClient._parse_last_index(oid)[1]
             # consider default empty sets for tagged/untagged ports
-            results[parse_vlan_id(oid)] = {"vlan_name": vlan_name, "tagged_ports": set(), "untagged_ports": set()}
+            results[vlan_id] = {"vlan_name": vlan_name, "tagged_ports": set(), "untagged_ports": set()}
         
-        # tagged vlans
-        vlan_config = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["egress_ports"])["egress_ports"]
-        payload = {}
-
-        for vlan_id in results:
-            config_copy = vlan_config.copy()
-            config_copy["params"] = {"vlan_id": vlan_id}
-            payload[f"egress_ports.{vlan_id}"] = config_copy
+        # tagged
+        for oid, octet_string in await self._bulk_walk(self._switch_oids_config["vlan"]["all_egress_ports"]):
+            vlan_id = L2SwitchClient._parse_last_index(oid)[1]
+            portlist = L2SwitchClient._parse_assigned_ports_from_hex(octet_string, self._ports_count)
+            # for first discovered vlan, consider vlan name is the same as vlan id
+            if vlan_id not in results:
+                print("hey", vlan_id)
+                results[vlan_id] = {"vlan_name": str(vlan_id), "untagged_ports": set()}
+            results[vlan_id]["tagged_ports"] = portlist
         
-        for request_name, octet_string in (await self._get(payload)).items():
-            results[parse_vlan_id(request_name)]["tagged_ports"] = self._parse_assigned_ports_from_hex(octet_string)
-        
-        # untagged vlan
-        vlan_config = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["untagged_ports"])["untagged_ports"]
-        payload = {}
-
-        for vlan_id in results:
-            config_copy = vlan_config.copy()
-            config_copy["params"] = {"vlan_id": vlan_id}
-            payload[f"untagged_ports.{vlan_id}"] = config_copy
-        
-        for request_name, octet_string in (await self._get(payload)).items():
-            vlan_id = parse_vlan_id(request_name)
-            results[vlan_id]["untagged_ports"] = self._parse_assigned_ports_from_hex(octet_string)
+        # untagged
+        for oid, octet_string in await self._bulk_walk(self._switch_oids_config["vlan"]["all_untagged_ports"]):
+            vlan_id = L2SwitchClient._parse_last_index(oid)[1]
+            portlist = L2SwitchClient._parse_assigned_ports_from_hex(octet_string, self._ports_count)
+            # for first discovered vlan, consider vlan name is the same as vlan id
+            if vlan_id not in results:
+                print("wow", vlan_id)
+                results[vlan_id] = {"vlan_name": str(vlan_id), "tagged_ports": set(), "untagged_ports": portlist}
+            results[vlan_id]["untagged_ports"] = portlist
             results[vlan_id]["tagged_ports"] -= results[vlan_id]["untagged_ports"]
 
         return results
@@ -173,7 +160,7 @@ class L2SwitchClient(SNMPClient):
         payload[request_name]["params"] = {"vlan_id": vlan["vlan_id"]}
 
         result = await self._get(payload)
-        ports = self._parse_assigned_ports_from_hex(result[request_name])
+        ports = L2SwitchClient._parse_assigned_ports_from_hex(result[request_name], self._ports_count)
         return ports
     
     async def add_vlan_on_ports(self, request: RequestData) -> SNMPResponseCode:
@@ -223,28 +210,27 @@ class L2SwitchClient(SNMPClient):
     ### MAC ADDRESS ###
 
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
-        def parse_vlan_id_mac(oid: str, base_oid: str) -> tuple[str, str]:
-            vlan_id_mac = oid.partition(base_oid + ".")[2]
-            vlan_id, mac = vlan_id_mac.split(".", 1)
-            vlan_id = int(vlan_id)
-            mac = "-".join([f"{int(octet):02X}" for octet in mac.split(".")])
-            return vlan_id, mac
-        
         results = defaultdict(dict)
 
         for oid, port in await self._bulk_walk(self._switch_oids_config["fdb"]["port"]):
-            vlan_id, mac = parse_vlan_id_mac(oid, self._switch_oids_config["fdb"]["port"]["oid"])
+            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid(oid)
             # default status is dynamic, so if mac's status won't be found it means it's dynamic
             results[vlan_id][mac] = {"port": port, "status": "dynamic"}
 
         for oid, status in await self._bulk_walk(self._switch_oids_config["fdb"]["status"]):
-            vlan_id, mac = parse_vlan_id_mac(oid, self._switch_oids_config["fdb"]["status"]["oid"])
+            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid(oid)
             if status not in {"invalid" , "self"}:
                 status = "dynamic" if status == "learned" else "static"
             if mac in results[vlan_id]:   # if mac's port is unknown, don't count it
                 results[vlan_id][mac]["status"] = status
 
         return results
+    
+    async def get_flood_fdb_table(self):
+        results = defaultdict(dict)
+        
+        for oid, port in await self._bulk_walk(self._switch_oids_config["flood_fdb"]["status"]):
+            pass
     
     ### CABLE DIAGNOSTICS ### 
 
@@ -331,7 +317,7 @@ class L2SwitchClient(SNMPClient):
         results = await self.get_port_diagnostics(include_oids)
         return {key.removeprefix("port_security_"): value for key, value in results.items()}
     
-    async def set_port_security_on_port(self, request: RequestData):
+    async def set_port_security_on_port(self, request: RequestData) -> SNMPResponseCode:
         include_oids = [F"port_security_{param}" for param in request.keys()]
         payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
 
@@ -353,7 +339,18 @@ class L2SwitchClient(SNMPClient):
     @override
     def _render_oid(self, oid: str, **params) -> str:
         return oid.format(port=self._port, **params)
-    
+
+    @staticmethod
+    def _parse_last_index(oid: str) -> tuple[str, int]:
+        parts = oid.rpartition(".")
+        return parts[0], int(parts[2])
+
+    @staticmethod
+    def _parse_ip_address_from_oid(oid: str) -> tuple[str, str]:
+        oid, *ip_address = oid.rsplit(".", 4)
+        ip_address = ".".join(ip_address[-4:])
+        return oid, ip_address
+
     @staticmethod
     def _get_request_name_for_vlan_status(status: str) -> str | None:
         match status:
@@ -363,10 +360,11 @@ class L2SwitchClient(SNMPClient):
                 return "egress_ports"
             case _:
                 return None
-        
-    def _parse_assigned_ports_from_hex(self, octet_string: str) -> set[str]:
+
+    @staticmethod
+    def _parse_assigned_ports_from_hex(octet_string: str, ports_count: int) -> set[str]:
         num_val = int(octet_string, 16)
-        return {i + 1 for i in range(self._ports_count) if (num_val >> (63 - i)) & 1}
+        return {i + 1 for i in range(ports_count) if (num_val >> (63 - i)) & 1}
 
     @staticmethod
     def _combine_assigned_ports_to_hex(portlist: set[int]) -> bytearray:
@@ -378,3 +376,10 @@ class L2SwitchClient(SNMPClient):
             result[byte_index] |= 1 << (7 - bit_index)
         
         return result
+    
+    @staticmethod
+    def _parse_vlan_id_mac_from_oid(oid: str) -> tuple[str, str, str]:
+        _, vlan_id, *mac = oid.rsplit(".", 7)
+        vlan_id = int(vlan_id)
+        mac = "-".join([f"{int(octet):02X}" for octet in mac])
+        return vlan_id, mac

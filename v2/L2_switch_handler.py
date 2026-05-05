@@ -127,7 +127,7 @@ class L2SwitchHandler:
     async def get_port_security_on_port(self) -> dict[str, Any]:
         return await self._client.get_port_security_on_port()
     
-    async def set_port_security_on_port(self, config: dict[str, Any]):
+    async def set_port_security_on_port(self, config: dict[str, Any]) -> None:
         try:
             request = PortSecurityConfig(**config).model_dump(exclude_none=True)
         except ValidationError:

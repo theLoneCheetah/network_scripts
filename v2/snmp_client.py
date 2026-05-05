@@ -22,6 +22,7 @@ class SNMPClient(ABC):
     _write_community: CommunityData
     _transport: UdpTransportTarget
     _context: ContextData
+    _max_repetitions: int
     _config: dict[str, Any]
 
     def __init__(self, ipaddress: str) -> None:
@@ -34,6 +35,7 @@ class SNMPClient(ABC):
         self._write_community = None
         self._transport = None
         self._context = None
+        self._max_repetitions = 49   # can be changed
 
         with open("v2/oid.yaml", "r") as F:
             self._config = yaml.safe_load(F)
@@ -137,7 +139,6 @@ class SNMPClient(ABC):
         await self._initialize()
 
         oid_object = ObjectType(ObjectIdentity(self._render_oid(payload["oid"])))
-        max_repetitions = 49   # can be changed
 
         results = []
 
@@ -146,7 +147,7 @@ class SNMPClient(ABC):
             self._read_community,
             self._transport,
             self._context,
-            0, max_repetitions,
+            0, self._max_repetitions,
             oid_object,
             lexicographicMode=False
         ):
@@ -192,7 +193,7 @@ class SNMPClient(ABC):
                 if "values" in data:
                     value = data["values"][value]
             case "macaddress":
-                value = SNMPClient._convert_octet_into_mac(value)
+                value = SNMPClient._convert_octet_string_into_mac(value)
             case "octetstring":
                 if "bytes_pattern" in data:
                     value = SNMPClient._split_octet_by_pattern(value, data["bytes_pattern"])
@@ -209,7 +210,7 @@ class SNMPClient(ABC):
         return struct.unpack(fmt, bytes_string)
 
     @staticmethod
-    def _convert_octet_into_mac(octet_string: str) -> str:
+    def _convert_octet_string_into_mac(octet_string: str) -> str:
         return "-".join([octet_string[2*i:2*i+2].upper() for i in range(1, 7)])
 
     @abstractmethod
