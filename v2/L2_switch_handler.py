@@ -96,6 +96,23 @@ class L2SwitchHandler:
         
         return result
     
+    ### FLOOD FDB ###
+    
+    async def get_flood_fdb_state(self) -> dict[str, str]:
+        return await self._client.get_flood_fdb_state()
+    
+    async def set_flood_fdb_state(self, state: str) -> None:
+        request = {"state": state}
+        response = await self._client.set_flood_fdb_state(request)
+        print(response.value[1])
+    
+    async def get_flood_fdb_table(self) -> dict[int, dict[str, dict[str, int]]]:
+        return await self._client.get_flood_fdb_table()
+    
+    async def clear_flood_fdb_table(self) -> None:
+        response = await self._client.clear_flood_fdb_table()
+        print(response.value[1])
+    
     ### CABLE DIAGNOSTICS ### 
 
     async def get_cable_diagnostics_port(self) -> dict[str, Any]:

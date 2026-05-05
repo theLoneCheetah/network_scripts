@@ -213,12 +213,14 @@ class L2SwitchClient(SNMPClient):
         results = defaultdict(dict)
 
         for oid, port in await self._bulk_walk(self._switch_oids_config["fdb"]["port"]):
-            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid(oid)
+            vlan_id_mac = L2SwitchClient._cut_base_oid_from_oid(oid, self._switch_oids_config["fdb"]["port"]["oid"])
+            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(vlan_id_mac)
             # default status is dynamic, so if mac's status won't be found it means it's dynamic
             results[vlan_id][mac] = {"port": port, "status": "dynamic"}
 
         for oid, status in await self._bulk_walk(self._switch_oids_config["fdb"]["status"]):
-            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid(oid)
+            vlan_id_mac = L2SwitchClient._cut_base_oid_from_oid(oid, self._switch_oids_config["fdb"]["status"]["oid"])
+            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(vlan_id_mac)
             if status not in {"invalid" , "self"}:
                 status = "dynamic" if status == "learned" else "static"
             if mac in results[vlan_id]:   # if mac's port is unknown, don't count it
@@ -226,11 +228,56 @@ class L2SwitchClient(SNMPClient):
 
         return results
     
-    async def get_flood_fdb_table(self):
+    ### FLOOD FDB ###
+
+    async def get_flood_fdb_state(self) -> dict[str, str]:
+        return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["state"]))
+    
+    async def set_flood_fdb_state(self, request: RequestData) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["state"])
+        payload["state"]["set_value"] = request["state"]
+
+        try:
+            result = await self._set(payload)
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+
+    async def get_flood_fdb_table(self) -> dict[int, dict[str, dict[str, int]]]:
         results = defaultdict(dict)
         
-        for oid, port in await self._bulk_walk(self._switch_oids_config["flood_fdb"]["status"]):
-            pass
+        for oid, status in await self._bulk_walk(self._switch_oids_config["flood_fdb"]["status"]):
+            index, vlan_id_mac = L2SwitchClient._cut_base_oid_from_oid(oid, self._switch_oids_config["flood_fdb"]["status"]["oid"]).split(".", 1)
+            index = int(index)
+            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(vlan_id_mac)
+            results[index][mac] = {"vlan_id": vlan_id, "status": status}
+        
+        for oid, timestamp in await self._bulk_walk(self._switch_oids_config["flood_fdb"]["timestamp"]):
+            index, vlan_id_mac = L2SwitchClient._cut_base_oid_from_oid(oid, self._switch_oids_config["flood_fdb"]["timestamp"]["oid"]).split(".", 1)
+            index = int(index)
+            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(vlan_id_mac)
+            if index in results and mac in results[index]:   # if index or mac is unknown, don't count them
+                results[index][mac]["timestamp"] = timestamp
+        
+        return results
+    
+    async def clear_flood_fdb_table(self) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["clear"])
+        payload["clear"]["set_value"] = "start"
+
+        try:
+            result = await self._set(payload)
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
     
     ### CABLE DIAGNOSTICS ### 
 
@@ -378,8 +425,12 @@ class L2SwitchClient(SNMPClient):
         return result
     
     @staticmethod
-    def _parse_vlan_id_mac_from_oid(oid: str) -> tuple[str, str, str]:
-        _, vlan_id, *mac = oid.rsplit(".", 7)
+    def _cut_base_oid_from_oid(oid: str, base_oid: str) -> str:
+        return oid.partition(base_oid + ".")[2]
+    
+    @staticmethod
+    def _parse_vlan_id_mac_from_oid_suffix(oid_suffix: str) -> tuple[str, str]:
+        vlan_id, *mac = oid_suffix.split(".")
         vlan_id = int(vlan_id)
         mac = "-".join([f"{int(octet):02X}" for octet in mac])
         return vlan_id, mac

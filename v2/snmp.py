@@ -32,7 +32,11 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    print(await switch_handler.get_vlan_static_table())
+    print(await switch_handler.get_flood_fdb_state())
+    print(await switch_handler.get_flood_fdb_table())
+    await switch_handler.set_flood_fdb_state("enabled")
+    print(await switch_handler.get_flood_fdb_state())
+    print(await switch_handler.get_flood_fdb_table())
 
     # task1 = asyncio.create_task(switch_handler.get_default_gateway())
     # task2 = asyncio.create_task(switch_handler.get_port_info())

@@ -176,6 +176,10 @@
     - mac and port
     - mac and status
     - ? clear: port, vlan, all
+  - flood fdb:
+    - state, enable, disable
+    - index, mac, timestamp
+    - clear
   - port:
     - state, speed and duplex, flow control, address learning, mdix state
     - link, speed and duplex status
