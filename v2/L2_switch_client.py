@@ -381,6 +381,27 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
 
+    ### LOOPBACK DETECTION ###
+
+    async def get_loopdetect_on_port(self) -> dict[str, str]:
+        include_oids = ["loopdetect_state", "loopdetect_status"]
+        result = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
+        return {key.removeprefix("loopdetect_"): value for key, value in result.items()}
+    
+    async def set_loopdetect_state_on_port(self, request: RequestData) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["loopdetect_state"])
+        payload["loopdetect_state"]["set_value"] = request["state"]
+
+        try:
+            result = await self._set(payload)
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+
     ### HELPER FUNCTIONS ###
 
     @override

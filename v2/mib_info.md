@@ -140,7 +140,7 @@
   - [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
   - [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
   - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация
-  - ? [L2MGMT-MIB](#L2MGMT-MIB) - базовые данные свитча, базовое управление портом, port_security
+  - ? [L2MGMT-MIB](#L2MGMT-MIB) - базовые данные свитча, базовое управление портом, port security, !cos приоритеты, loopback detection, !multicast filtering, !vlan advertisement, flood fdb
   - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
   - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID)
   - [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули
@@ -184,7 +184,8 @@
     - state, speed and duplex, flow control, address learning, mdix state
     - link, speed and duplex status
     - combo ports
-    - port secutiry state, max addresses, mode
+    - port secutiry: state, max addresses, mode, management
+    - loopback detection: status, enable, disable
     - cable diagnostics action, pairs statuses and lengths
     - port utilization
     - traffic control threshold, broadcast/multicast/unicast, action, count and interval

@@ -154,3 +154,12 @@ class L2SwitchHandler:
         response = await self._client.set_port_security_on_port(request)
         print(response.value[1])
     
+    ### LOOPBACK DETECTION ###
+
+    async def get_loopdetect_on_port(self) -> dict[str, str]:
+        return await self._client.get_loopdetect_on_port()
+    
+    async def set_loopdetect_state_on_port(self, state: str) -> None:
+        request = {"state": state}
+        response = await self._client.set_loopdetect_state_on_port(request)
+        print(response.value[1])
