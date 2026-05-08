@@ -48,17 +48,7 @@ class L2SwitchHandler:
         return await self._client.get_vlan_static_table()
     
     async def get_vlan_on_port(self) -> defaultdict[str, set[int]]:
-        vlan_static_table = await self.get_vlan_static_table()
-        result = defaultdict(dict)
-
-        for vlan_id, vlan_info in vlan_static_table.items():
-            vlan_name =  vlan_info["vlan_name"]
-            if self._port in vlan_info["tagged_ports"]:
-                result["tagged"][vlan_id] = vlan_name
-            elif self._port in vlan_info["untagged_ports"]:
-                result["untagged"][vlan_id] = vlan_name
-
-        return result
+        return await self._client.get_vlan_on_port()
     
     async def create_vlan(self, vlan: dict[str, Any]) -> None:
         request = {"vlan": vlan}
@@ -86,15 +76,7 @@ class L2SwitchHandler:
         return await self._client.get_fdb_table()
     
     async def get_mac_addresses_on_port(self) -> defaultdict[str, dict[int, dict[str, str]]]:
-        fdb_table = await self.get_fdb_table()
-        result = defaultdict(dict)
-
-        for vlan_id, mac_list in fdb_table.items():
-            for mac, mac_info in mac_list.items():
-                if mac_info["port"] == self._port and mac_info["status"] not in {"invalid" , "self"}:
-                    result[mac][vlan_id] = {"status": mac_info["status"]}
-        
-        return result
+        return await self._client.get_mac_addresses_on_port()
     
     ### FLOOD FDB ###
     
@@ -152,6 +134,10 @@ class L2SwitchHandler:
             return
         
         response = await self._client.set_port_security_on_port(request)
+        print(response.value[1])
+    
+    async def clear_port_security_on_port(self) -> None:
+        response = await self._client.clear_port_security_on_port()
         print(response.value[1])
     
     ### LOOPBACK DETECTION ###

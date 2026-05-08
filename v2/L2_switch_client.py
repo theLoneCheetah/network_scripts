@@ -2,6 +2,7 @@
 import asyncio
 from typing import override, Any
 from collections import defaultdict
+from copy import deepcopy
 from datetime import datetime
 from pysnmp.hlapi.v3arch.asyncio import *
 from snmp_client import SNMPClient
@@ -92,7 +93,6 @@ class L2SwitchClient(SNMPClient):
             portlist = L2SwitchClient._parse_assigned_ports_from_hex(octet_string, self._ports_count)
             # for first discovered vlan, consider vlan name is the same as vlan id
             if vlan_id not in results:
-                print("hey", vlan_id)
                 results[vlan_id] = {"vlan_name": str(vlan_id), "untagged_ports": set()}
             results[vlan_id]["tagged_ports"] = portlist
         
@@ -102,12 +102,24 @@ class L2SwitchClient(SNMPClient):
             portlist = L2SwitchClient._parse_assigned_ports_from_hex(octet_string, self._ports_count)
             # for first discovered vlan, consider vlan name is the same as vlan id
             if vlan_id not in results:
-                print("wow", vlan_id)
                 results[vlan_id] = {"vlan_name": str(vlan_id), "tagged_ports": set(), "untagged_ports": portlist}
             results[vlan_id]["untagged_ports"] = portlist
             results[vlan_id]["tagged_ports"] -= results[vlan_id]["untagged_ports"]
 
         return results
+    
+    async def get_vlan_on_port(self) -> defaultdict[str, set[int]]:
+        vlan_static_table = await self.get_vlan_static_table()
+        result = defaultdict(dict)
+
+        for vlan_id, vlan_info in vlan_static_table.items():
+            vlan_name =  vlan_info["vlan_name"]
+            if self._port in vlan_info["tagged_ports"]:
+                result["tagged"][vlan_id] = vlan_name
+            elif self._port in vlan_info["untagged_ports"]:
+                result["untagged"][vlan_id] = vlan_name
+
+        return result
     
     async def _check_vlan_entry(self, vlan: dict[str, Any]) -> dict[str, Any]:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["entry_status"])
@@ -227,6 +239,18 @@ class L2SwitchClient(SNMPClient):
                 results[vlan_id][mac]["status"] = status
 
         return results
+    
+    async def get_mac_addresses_on_port(self) -> defaultdict[str, dict[int, dict[str, str]]]:
+        fdb_table = await self.get_fdb_table()
+        result = defaultdict(dict)
+
+        for vlan_id, mac_list in fdb_table.items():
+            for mac, mac_info in mac_list.items():
+                if mac_info["port"] == self._port and mac_info["status"] not in {"invalid" , "self"}:
+                    result[mac][vlan_id] = {"status": mac_info["status"]}
+        
+        return result
+    
     
     ### FLOOD FDB ###
 
@@ -373,6 +397,35 @@ class L2SwitchClient(SNMPClient):
         
         try:
             result = await self._set(payload)
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+    
+    async def clear_port_security_on_port(self) -> SNMPResponseCode:
+        vlan_table = await self.get_vlan_static_table()
+        port_fdb_table = await self.get_mac_addresses_on_port()
+
+        clear_port_security_config = SNMPClient._filter_request_config(self._switch_oids_config["port"],
+                                                    ["clear_port_security_vlan_name", "clear_port_security_port",
+                                                     "clear_port_security_mac_address", "clear_port_security_action"])
+        all_payload_data = {
+            f"clear_port_security.{vlan_table[vlan_id]["vlan_name"]}.{mac}": {
+                "clear_port_security_vlan_name": {**clear_port_security_config["clear_port_security_vlan_name"], "set_value": vlan_table[vlan_id]["vlan_name"]},
+                "clear_port_security_port": {**clear_port_security_config["clear_port_security_port"], "set_value": self._port},
+                "clear_port_security_mac_address": {**clear_port_security_config["clear_port_security_mac_address"], "set_value": mac},
+                "clear_port_security_action": {**clear_port_security_config["clear_port_security_action"], "set_value": "start"}
+            }
+            for mac, mac_data in port_fdb_table.items()
+            for vlan_id in mac_data.keys()
+        }
+
+        try:
+            for request, payload in all_payload_data.items():
+                result = await self._set(payload)
             return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR

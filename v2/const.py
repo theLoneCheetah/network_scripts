@@ -17,7 +17,13 @@ class SNMP:
     TEST_3028 = os.getenv("SNMP_TEST_3028")
     TEST_1210 = os.getenv("SNMP_TEST_1210")
 
+    @staticmethod
+    def typify_mac_address(mac_address: str) -> OctetString:
+        print(repr(mac_address), type(mac_address))
+        return OctetString(bytes.fromhex(mac_address.replace("-", "")))
+
     TYPE = {
         "integer": Integer,
-        "octetstring": OctetString
+        "octetstring": OctetString,
+        "macaddress": typify_mac_address
     }
