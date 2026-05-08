@@ -197,7 +197,7 @@
 
 # Справочник OID
 
-## VLAN через SNMP на 3028 (vlanid=2):
+## VLAN через SNMP на DES-3028 (vlanid=2):
 ### Команды:
 - **create**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.2.1.17.7.1.4.3.1.1.2 s VLAN2 1.3.6.1.2.1.17.7.1.4.3.1.5.2 i 4`
 - **egress**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.2.1.17.7.1.4.3.1.2.2 x 00001000`
@@ -220,3 +220,7 @@
 | untagged | `none(untagged)` | tagged |
 | untagged | `egress` | untagged |
 | untagged | `untagged` | untagged |
+
+## Port security через SNMP на DES-3028 (port=21):
+- **clear**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] .1.3.6.1.4.1.171.11.63.6.2.15.3.1.0 s "[VLAN_NAME]" .1.3.6.1.4.1.171.11.63.6.2.15.3.2.0 i 21 .1.3.6.1.4.1.171.11.63.6.2.15.3.3.0 x "[MAC ADDRESS]" .1.3.6.1.4.1.171.11.63.6.2.15.3.4.0 i 2`
+- **дёрнуть lock address mode (deleteOnTimeout -> deleteOnReset -> deleteOnTimeout)**: `.1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 4 .1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 3`
