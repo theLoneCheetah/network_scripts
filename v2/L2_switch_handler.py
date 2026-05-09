@@ -140,6 +140,10 @@ class L2SwitchHandler:
         response = await self._client.clear_port_security_on_port()
         print(response.value[1])
     
+    async def clear_port_security_exact_mac_address(self, mac_list: list[dict[str, Any]]) -> None:
+        response = await self._client.clear_port_security_exact_mac_address(mac_list)
+        print(response.value[1])
+    
     ### LOOPBACK DETECTION ###
 
     async def get_loopdetect_on_port(self) -> dict[str, str]:

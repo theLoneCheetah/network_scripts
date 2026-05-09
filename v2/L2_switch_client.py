@@ -406,21 +406,28 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
     
     async def clear_port_security_on_port(self) -> SNMPResponseCode:
+        current_mode = (await self.get_port_diagnostics(["port_security_lock_address_mode"]))["port_security_lock_address_mode"]
+        temp_mode = "permanent" if current_mode == "delete_on_reset" else "delete_on_reset"
+
+        result = await self.set_port_security_on_port({"lock_address_mode": temp_mode})
+        if result != SNMPResponseCode.SUCCESS:
+            return result
+        return await self.set_port_security_on_port({"lock_address_mode": current_mode})
+    
+    async def clear_port_security_exact_mac_address(self, mac_list: list[dict[str, Any]]) -> SNMPResponseCode:
         vlan_table = await self.get_vlan_static_table()
-        port_fdb_table = await self.get_mac_addresses_on_port()
 
         clear_port_security_config = SNMPClient._filter_request_config(self._switch_oids_config["port"],
                                                     ["clear_port_security_vlan_name", "clear_port_security_port",
                                                      "clear_port_security_mac_address", "clear_port_security_action"])
         all_payload_data = {
-            f"clear_port_security.{vlan_table[vlan_id]["vlan_name"]}.{mac}": {
-                "clear_port_security_vlan_name": {**clear_port_security_config["clear_port_security_vlan_name"], "set_value": vlan_table[vlan_id]["vlan_name"]},
-                "clear_port_security_port": {**clear_port_security_config["clear_port_security_port"], "set_value": self._port},
-                "clear_port_security_mac_address": {**clear_port_security_config["clear_port_security_mac_address"], "set_value": mac},
+            f"clear_port_security.{vlan_table[mac_data["vlan_id"]]["vlan_name"]}.{mac_data["mac_address"]}": {
+                "clear_port_security_vlan_name": {**clear_port_security_config["clear_port_security_vlan_name"], "set_value": vlan_table[mac_data["vlan_id"]]["vlan_name"]},
+                "clear_port_security_port": {**clear_port_security_config["clear_port_security_port"], "set_value": mac_data["port"]},
+                "clear_port_security_mac_address": {**clear_port_security_config["clear_port_security_mac_address"], "set_value": mac_data["mac_address"]},
                 "clear_port_security_action": {**clear_port_security_config["clear_port_security_action"], "set_value": "start"}
             }
-            for mac, mac_data in port_fdb_table.items()
-            for vlan_id in mac_data.keys()
+            for mac_data in mac_list
         }
 
         try:
@@ -433,6 +440,8 @@ class L2SwitchClient(SNMPClient):
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+    
+
 
     ### LOOPBACK DETECTION ###
 

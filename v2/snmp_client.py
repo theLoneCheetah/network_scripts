@@ -106,14 +106,13 @@ class SNMPClient(ABC):
     
     async def _set(self, payload: PayloadData) -> dict[str, Any] | None:
         await self._initialize()
-        print(payload)
+        
         for data in payload.values():
             data["set_value"] = SNMP.TYPE[data["value_type"]](next(key for key, value in data["values"].items() if value == data["set_value"])
                                                               if "values" in data else data["set_value"])
         
         oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"])), request["set_value"]) for request in payload.values()]
-        print(oid_objects)
-        #return
+        
         errorIndication, errorStatus, errorIndex, varBinds = await set_cmd(
             self._engine,
             self._write_community,
