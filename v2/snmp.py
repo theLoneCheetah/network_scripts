@@ -24,18 +24,21 @@ async def port_security_config_example(switch_handler: L2SwitchHandler) -> None:
     await switch_handler.set_port_security_on_port({"max_learning_addresses": "1"})
     print(await switch_handler.get_port_security_on_port())
 
+    # await switch_handler.clear_port_security_on_port()
     # await switch_handler.clear_port_security_exact_mac_address([{"vlan_id": 3550, "port": 9, "mac_address": "12-4D-8D-B4-72-FC"},
     #                                                             {"vlan_id": 3550, "port": 9, "mac_address": "BE-F3-E8-73-71-B8"}])
-    # await switch_handler.clear_port_security_on_port()
 
 async def main() -> None:
     ipaddress = SNMP.TEST_3028
-    port = 12
+    port = 2
 
     start_time = perf_counter()
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
-    await port_security_config_example(switch_handler)
+
+    print(await switch_handler.get_traffic_segmentation_forward_ports_for_port())
+    await switch_handler.set_traffic_segmentation_forward_ports_for_port(set(i for i in range(1, 29)))
+    print(await switch_handler.get_traffic_segmentation_forward_ports_for_port())
 
     # task1 = asyncio.create_task(switch_handler.get_default_gateway())
     # task2 = asyncio.create_task(switch_handler.get_port_info())

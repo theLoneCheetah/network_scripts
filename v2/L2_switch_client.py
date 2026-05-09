@@ -251,7 +251,6 @@ class L2SwitchClient(SNMPClient):
         
         return result
     
-    
     ### FLOOD FDB ###
 
     async def get_flood_fdb_state(self) -> dict[str, str]:
@@ -440,8 +439,6 @@ class L2SwitchClient(SNMPClient):
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
-    
-
 
     ### LOOPBACK DETECTION ###
 
@@ -453,6 +450,27 @@ class L2SwitchClient(SNMPClient):
     async def set_loopdetect_state_on_port(self, request: RequestData) -> SNMPResponseCode:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["loopdetect_state"])
         payload["loopdetect_state"]["set_value"] = request["state"]
+
+        try:
+            result = await self._set(payload)
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+    
+    ### TRAFFIC SEGMENTATION ###
+
+    async def get_traffic_segmentation_forward_ports_for_port(self) -> dict[str, set[int]]:
+        result = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], ["traffic_segmentation_forward_ports"]))
+        portlist = L2SwitchClient._parse_assigned_ports_from_hex(result["traffic_segmentation_forward_ports"], self._ports_count)
+        return {"forward_ports": portlist}
+
+    async def set_traffic_segmentation_forward_ports_for_port(self, request: RequestData) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["traffic_segmentation_forward_ports"])
+        payload["traffic_segmentation_forward_ports"]["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(request["portlist"])
 
         try:
             result = await self._set(payload)
@@ -492,7 +510,7 @@ class L2SwitchClient(SNMPClient):
                 return None
 
     @staticmethod
-    def _parse_assigned_ports_from_hex(octet_string: str, ports_count: int) -> set[str]:
+    def _parse_assigned_ports_from_hex(octet_string: str, ports_count: int) -> set[int]:
         num_val = int(octet_string, 16)
         return {i + 1 for i in range(ports_count) if (num_val >> (63 - i)) & 1}
 

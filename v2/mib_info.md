@@ -140,7 +140,7 @@
   - [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
   - [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
   - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация
-  - ? [L2MGMT-MIB](#L2MGMT-MIB) - базовые данные свитча, базовое управление портом, port security, !cos приоритеты, loopback detection, !multicast filtering, !vlan advertisement, flood fdb
+  - ? [L2MGMT-MIB](#L2MGMT-MIB) - базовые данные свитча, базовое управление портом, traffic segmentation, port security, !cos приоритеты, loopback detection, !multicast filtering, !vlan advertisement, flood fdb
   - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
   - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID)
   - [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули
@@ -184,12 +184,13 @@
     - state, speed and duplex, flow control, address learning, mdix state
     - link, speed and duplex status
     - combo ports
-    - port secutiry: state, max addresses, mode, management
+    - port secutiry: state, max addresses, mode, management, clear by port/exact mac
     - loopback detection: status, enable, disable
     - cable diagnostics action, pairs statuses and lengths
     - port utilization
     - traffic control threshold, broadcast/multicast/unicast, action, count and interval
-    - ? managing
+    - traffic segmentation port's forward portlist, management
+    - ? management
   - ? crc, packet, clear counters
   - ? acl
   - ? log
@@ -222,5 +223,5 @@
 | untagged | `untagged` | untagged |
 
 ## Port security через SNMP на DES-3028 (port=21):
-- **clear**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] .1.3.6.1.4.1.171.11.63.6.2.15.3.1.0 s "[VLAN_NAME]" .1.3.6.1.4.1.171.11.63.6.2.15.3.2.0 i 21 .1.3.6.1.4.1.171.11.63.6.2.15.3.3.0 x "[MAC ADDRESS]" .1.3.6.1.4.1.171.11.63.6.2.15.3.4.0 i 2`
-- **дёрнуть lock address mode (deleteOnTimeout -> deleteOnReset -> deleteOnTimeout)**: `.1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 4 .1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 3`
+- **почистить определённый мак**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.11.63.6.2.15.3.1.0 s "[VLAN_NAME]" 1.3.6.1.4.1.171.11.63.6.2.15.3.2.0 i 21 1.3.6.1.4.1.171.11.63.6.2.15.3.3.0 x "[MAC ADDRESS]" 1.3.6.1.4.1.171.11.63.6.2.15.3.4.0 i 2`
+- **дёрнуть lock address mode (deleteOnTimeout -> deleteOnReset -> deleteOnTimeout) для очистки маков на порту**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 4 1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 3`

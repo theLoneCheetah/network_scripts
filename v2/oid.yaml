@@ -515,6 +515,12 @@ models:
           request_type: set
           oid: 1.3.6.1.4.1.171.12.25.3.1.1.8.{port}
           value_type: integer
+        
+        # traffic segmentation
+        traffic_segmentation_forward_ports:
+          request_type: set
+          oid: 1.3.6.1.4.1.171.11.63.6.2.12.1.1.2.{port}
+          value_type: octetstring
   
   DES-3052:
     <<: *L2_switch_defaults

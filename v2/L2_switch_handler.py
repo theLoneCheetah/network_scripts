@@ -153,3 +153,13 @@ class L2SwitchHandler:
         request = {"state": state}
         response = await self._client.set_loopdetect_state_on_port(request)
         print(response.value[1])
+    
+    ### TRAFFIC SEGMENTATION ###
+
+    async def get_traffic_segmentation_forward_ports_for_port(self) -> dict[str, set[int]]:
+        return await self._client.get_traffic_segmentation_forward_ports_for_port()
+
+    async def set_traffic_segmentation_forward_ports_for_port(self, portlist: set[int]) -> None:
+        request = {"portlist": portlist}
+        response = await self._client.set_traffic_segmentation_forward_ports_for_port(request)
+        print(response.value[1])
