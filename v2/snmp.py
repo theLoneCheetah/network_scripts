@@ -36,9 +36,9 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    print(await switch_handler.get_traffic_segmentation_forward_ports_for_port())
-    await switch_handler.set_traffic_segmentation_forward_ports_for_port(set(i for i in range(1, 29)))
-    print(await switch_handler.get_traffic_segmentation_forward_ports_for_port())
+    print(await switch_handler.get_bandwidth_control_on_port())
+    await switch_handler.set_bandwidth_control_on_port({"tx_rate": 1024000})
+    print(await switch_handler.get_bandwidth_control_on_port())
 
     # task1 = asyncio.create_task(switch_handler.get_default_gateway())
     # task2 = asyncio.create_task(switch_handler.get_port_info())

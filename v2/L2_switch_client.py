@@ -481,6 +481,31 @@ class L2SwitchClient(SNMPClient):
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+    
+    ### BANDWIDTH CONTROL ###
+
+    async def get_bandwidth_control_on_port(self) -> dict[str, Any]:
+        include_oids = ["bandwidth_control_rx_rate", "bandwidth_control_tx_rate"]
+        results = await self.get_port_diagnostics(include_oids)
+        return {key.removeprefix("bandwidth_control_"): value for key, value in results.items()}
+    
+    async def set_bandwidth_control_on_port(self, request: RequestData) -> SNMPResponseCode:
+        include_oids = [F"bandwidth_control_{param}" for param in request.keys()]
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+
+        for param, data in payload.items():
+            data["set_value"] = request[param.removeprefix("bandwidth_control_")]
+        
+        try:
+            result = await self._set(payload)
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            print(err)
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
 
     ### HELPER FUNCTIONS ###
 

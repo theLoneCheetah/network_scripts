@@ -8,7 +8,7 @@ from pysnmp.hlapi.v3arch.asyncio import *
 from L2_switch_client import L2SwitchClient
 from const import SNMP
 from snmp_exceptions import *
-from schemas import PortSecurityConfig
+from schemas import *
 
 class L2SwitchHandler:
     _port: int
@@ -162,4 +162,19 @@ class L2SwitchHandler:
     async def set_traffic_segmentation_forward_ports_for_port(self, portlist: set[int]) -> None:
         request = {"portlist": portlist}
         response = await self._client.set_traffic_segmentation_forward_ports_for_port(request)
+        print(response.value[1])
+    
+    ### BANDWIDTH CONTROL ###
+
+    async def get_bandwidth_control_on_port(self) -> dict[str, Any]:
+        return await self._client.get_bandwidth_control_on_port()
+    
+    async def set_bandwidth_control_on_port(self, config: dict[str, Any]) -> None:
+        try:
+            request = BandwidthControlConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_bandwidth_control_on_port(request)
         print(response.value[1])
