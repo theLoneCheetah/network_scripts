@@ -37,6 +37,9 @@ class L2SwitchHandler:
     async def get_current_time(self) -> dict[str, datetime]:
         return await self._client.get_current_time()
     
+    async def get_cpu_utilization(self) -> dict[str, int]:
+        return await self._client.get_cpu_utilization()
+    
     #### DHCP RELAY ###
 
     async def get_dhcp_relay(self) -> dict[str, Any]:
@@ -80,32 +83,27 @@ class L2SwitchHandler:
     
     ### FLOOD FDB ###
     
-    async def get_flood_fdb_state(self) -> dict[str, str]:
-        return await self._client.get_flood_fdb_state()
+    async def get_flood_fdb(self) -> dict[str, str]:
+        return await self._client.get_flood_fdb()
     
-    async def set_flood_fdb_state(self, state: str) -> None:
-        request = {"state": state}
-        response = await self._client.set_flood_fdb_state(request)
+    async def set_flood_fdb(self, config: dict[str, Any]) -> None:
+        try:
+            request = FloodFdbConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_flood_fdb(request)
         print(response.value[1])
     
-    async def get_flood_fdb_table(self) -> dict[int, dict[str, dict[str, int]]]:
-        return await self._client.get_flood_fdb_table()
-    
-    async def clear_flood_fdb_table(self) -> None:
-        response = await self._client.clear_flood_fdb_table()
+    async def clear_flood_fdb(self) -> None:
+        response = await self._client.clear_flood_fdb()
         print(response.value[1])
     
     ### PORT MANAGEMENT AND INFO ###
 
-    async def get_port_info(self) -> dict[str, str]:
-        include_oids = ["admin_state", "speed_duplex_settings", "link_status", "speed_duplex_status"]
-        result = await self._client.get_port_diagnostics(include_oids)
-
-        result["link_speed_duplex_status"] = "link_down" if result["link_status"] != "link_pass" else result["speed_duplex_status"]
-        del result["link_status"]
-        del result["speed_duplex_status"]
-
-        return result
+    async def get_port_status(self) -> dict[str, str]:
+        return await self._client.get_port_status()
     
     async def get_port_management(self) -> dict[str, Any]:
         return await self._client.get_port_management()
@@ -153,9 +151,14 @@ class L2SwitchHandler:
     async def get_loopdetect_on_port(self) -> dict[str, str]:
         return await self._client.get_loopdetect_on_port()
     
-    async def set_loopdetect_state_on_port(self, state: str) -> None:
-        request = {"state": state}
-        response = await self._client.set_loopdetect_state_on_port(request)
+    async def set_loopdetect_on_port(self, config: dict[str, Any]) -> None:
+        try:
+            request = LoopdetectConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_loopdetect_on_port(request)
         print(response.value[1])
 
     ### PORT UTILIZATION ###
@@ -195,10 +198,15 @@ class L2SwitchHandler:
     
     ### TRAFFIC SEGMENTATION ###
 
-    async def get_traffic_segmentation_forward_ports_for_port(self) -> dict[str, set[int]]:
-        return await self._client.get_traffic_segmentation_forward_ports_for_port()
+    async def get_traffic_segmentation_for_port(self) -> dict[str, set[int]]:
+        return await self._client.get_traffic_segmentation_for_port()
 
-    async def set_traffic_segmentation_forward_ports_for_port(self, portlist: set[int]) -> None:
-        request = {"portlist": portlist}
-        response = await self._client.set_traffic_segmentation_forward_ports_for_port(request)
+    async def set_traffic_segmentation_for_port(self, config: dict[str, Any]) -> None:
+        try:
+            request = TrafficSegmentationConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_traffic_segmentation_for_port(request)
         print(response.value[1])

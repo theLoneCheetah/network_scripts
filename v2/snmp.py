@@ -30,15 +30,13 @@ async def port_security_config_example(switch_handler: L2SwitchHandler) -> None:
 
 async def main() -> None:
     ipaddress = SNMP.TEST_3028
-    port = 3
+    port = 2
 
     start_time = perf_counter()
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    print(await switch_handler.get_traffic_control_on_port())
-    await switch_handler.set_traffic_control_on_port({"threshold": 64, "count_down": 0})
-    print(await switch_handler.get_traffic_control_on_port())
+    print(await switch_handler.get_current_time())
 
     # task1 = asyncio.create_task(switch_handler.get_default_gateway())
     # task2 = asyncio.create_task(switch_handler.get_port_info())

@@ -140,7 +140,7 @@
   - [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
   - [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
   - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация
-  - ? [L2MGMT-MIB](#L2MGMT-MIB) - базовые данные свитча, базовое управление портом, bandwidth control, !qos, !trunk ports, !port mirroring, !IGMP, traffic segmentation, port security, !cos приоритеты, loopback detection, !multicast filtering, !vlan advertisement, flood fdb
+  - ? [L2MGMT-MIB](#L2MGMT-MIB) - базовые управление свитчом, базовое управление портом, !qos, bandwidth control, !qos, !trunk ports, !port mirroring, !IGMP, traffic segmentation, port security, !cos приоритеты, loopback detection, !multicast filtering, !vlan advertisement, flood fdb
   - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
   - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID)
   - [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули

@@ -56,13 +56,15 @@ class L2SwitchClient(SNMPClient):
 
     ### SWITCH INFO ###
 
+    async def get_switch_data(self, include_oids: list[str]) -> dict[str, Any]:
+        return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], include_oids))
+
     async def get_switch_info(self, include_oids: list[str]) -> dict[str, Any]:
         return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], include_oids))
     
     async def get_current_time(self) -> dict[str, datetime]:
-        result = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["current_time"]))
-        command_name, current_time_tuple = next(iter(result.items()))
-        return {command_name: datetime(*current_time_tuple)}
+        result = await self.get_switch_data(["current_time"])
+        return {"current_time": datetime(*result["current_time"])}
     
     ### DHCP RELAY ###
 
@@ -253,10 +255,30 @@ class L2SwitchClient(SNMPClient):
     
     ### FLOOD FDB ###
 
-    async def get_flood_fdb_state(self) -> dict[str, str]:
-        return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["state"]))
+    async def get_flood_fdb(self) -> dict[str, str]:
+        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["state"]))
+        if results["state"] == "disabled":
+            return results
+        
+        table = defaultdict(dict)
+        
+        for oid, status in await self._bulk_walk(self._switch_oids_config["flood_fdb"]["status"]):
+            index, vlan_id_mac = L2SwitchClient._cut_base_oid_from_oid(oid, self._switch_oids_config["flood_fdb"]["status"]["oid"]).split(".", 1)
+            index = int(index)
+            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(vlan_id_mac)
+            table[index][mac] = {"vlan_id": vlan_id, "status": status}
+        
+        for oid, timestamp in await self._bulk_walk(self._switch_oids_config["flood_fdb"]["timestamp"]):
+            index, vlan_id_mac = L2SwitchClient._cut_base_oid_from_oid(oid, self._switch_oids_config["flood_fdb"]["timestamp"]["oid"]).split(".", 1)
+            index = int(index)
+            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(vlan_id_mac)
+            if index in table and mac in table[index]:   # if index or mac is unknown, don't count them
+                table[index][mac]["timestamp"] = timestamp
+        
+        results["table"] = table
+        return results
     
-    async def set_flood_fdb_state(self, request: RequestData) -> SNMPResponseCode:
+    async def set_flood_fdb(self, request: RequestData) -> SNMPResponseCode:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["state"])
         payload["state"]["set_value"] = request["state"]
 
@@ -269,26 +291,8 @@ class L2SwitchClient(SNMPClient):
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
-
-    async def get_flood_fdb_table(self) -> dict[int, dict[str, dict[str, int]]]:
-        results = defaultdict(dict)
-        
-        for oid, status in await self._bulk_walk(self._switch_oids_config["flood_fdb"]["status"]):
-            index, vlan_id_mac = L2SwitchClient._cut_base_oid_from_oid(oid, self._switch_oids_config["flood_fdb"]["status"]["oid"]).split(".", 1)
-            index = int(index)
-            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(vlan_id_mac)
-            results[index][mac] = {"vlan_id": vlan_id, "status": status}
-        
-        for oid, timestamp in await self._bulk_walk(self._switch_oids_config["flood_fdb"]["timestamp"]):
-            index, vlan_id_mac = L2SwitchClient._cut_base_oid_from_oid(oid, self._switch_oids_config["flood_fdb"]["timestamp"]["oid"]).split(".", 1)
-            index = int(index)
-            vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(vlan_id_mac)
-            if index in results and mac in results[index]:   # if index or mac is unknown, don't count them
-                results[index][mac]["timestamp"] = timestamp
-        
-        return results
     
-    async def clear_flood_fdb_table(self) -> SNMPResponseCode:
+    async def clear_flood_fdb(self) -> SNMPResponseCode:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["clear"])
         payload["clear"]["set_value"] = "start"
 
@@ -315,7 +319,7 @@ class L2SwitchClient(SNMPClient):
                 else:
                     self._is_combo_fiber_port = False
 
-    async def get_port_diagnostics(self, include_oids: list[str]) -> dict[str, Any]:
+    async def get_port_data(self, include_oids: list[str]) -> dict[str, Any]:
         combo_fiber_suffix = None
         
         if self._is_combo_port:
@@ -333,9 +337,19 @@ class L2SwitchClient(SNMPClient):
         
         return results
 
+    async def get_port_status(self) -> dict[str, str]:
+        include_oids = ["admin_state", "speed_duplex_settings", "link_status", "speed_duplex_status"]
+        result = await self.get_port_data(include_oids)
+
+        result["link_speed_duplex_status"] = "link_down" if result["link_status"] != "link_pass" else result["speed_duplex_status"]
+        del result["link_status"]
+        del result["speed_duplex_status"]
+
+        return result
+
     async def get_port_management(self) -> dict[str, Any]:
         include_oids = ["admin_state", "speed_duplex_settings", "flow_control", "address_learning", "mdix_state"]
-        return await self.get_port_diagnostics(include_oids)
+        return await self.get_port_data(include_oids)
     
     async def set_port_management(self, request: RequestData) -> SNMPResponseCode:
         mdix_state_change = True if "mdix_state" in request else False   # mdix state change needs special logic and check
@@ -356,7 +370,7 @@ class L2SwitchClient(SNMPClient):
                     mdix_result = await self._set(mdix_payload)
                 except SNMPTransportError:
                     # for DES-3028, mdix_state set request has timeout error, but it's ok if the value was set correctly
-                    mdix_state = (await self.get_port_diagnostics(["mdix_state"]))["mdix_state"]
+                    mdix_state = (await self.get_port_data(["mdix_state"]))["mdix_state"]
                     if request["mdix_state"] != mdix_state:
                         raise
 
@@ -419,7 +433,7 @@ class L2SwitchClient(SNMPClient):
 
     async def get_port_security_on_port(self) -> dict[str, Any]:
         include_oids = ["port_security_max_learning_addresses", "port_security_lock_address_mode", "port_security_admin_state"]
-        results = await self.get_port_diagnostics(include_oids)
+        results = await self.get_port_data(include_oids)
         return {key.removeprefix("port_security_"): value for key, value in results.items()}
     
     async def set_port_security_on_port(self, request: RequestData) -> SNMPResponseCode:
@@ -440,7 +454,7 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
     
     async def clear_port_security_on_port(self) -> SNMPResponseCode:
-        current_mode = (await self.get_port_diagnostics(["port_security_lock_address_mode"]))["port_security_lock_address_mode"]
+        current_mode = (await self.get_port_data(["port_security_lock_address_mode"]))["port_security_lock_address_mode"]
         temp_mode = "permanent" if current_mode == "delete_on_reset" else "delete_on_reset"
 
         result = await self.set_port_security_on_port({"lock_address_mode": temp_mode})
@@ -479,12 +493,15 @@ class L2SwitchClient(SNMPClient):
 
     async def get_loopdetect_on_port(self) -> dict[str, str]:
         include_oids = ["loopdetect_state", "loopdetect_status"]
-        result = await self.get_port_diagnostics(include_oids)
+        result = await self.get_port_data(include_oids)
         return {key.removeprefix("loopdetect_"): value for key, value in result.items()}
     
-    async def set_loopdetect_state_on_port(self, request: RequestData) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["loopdetect_state"])
-        payload["loopdetect_state"]["set_value"] = request["state"]
+    async def set_loopdetect_on_port(self, request: RequestData) -> SNMPResponseCode:
+        include_oids = [F"loopdetect_{param}" for param in request.keys()]
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+
+        for param, data in payload.items():
+            data["set_value"] = request[param.removeprefix("loopdetect_")]
 
         try:
             result = await self._set(payload)
@@ -500,13 +517,13 @@ class L2SwitchClient(SNMPClient):
 
     async def get_utilization_on_port(self) -> dict[str, int]:
         include_oids = ["utilization_tx_frames", "utilization_rx_frames", "utilization_percentage"]
-        return await self.get_port_diagnostics(include_oids)
+        return await self.get_port_data(include_oids)
     
     ### BANDWIDTH CONTROL ###
 
     async def get_bandwidth_control_on_port(self) -> dict[str, Any]:
         include_oids = ["bandwidth_control_rx_rate", "bandwidth_control_tx_rate"]
-        results = await self.get_port_diagnostics(include_oids)
+        results = await self.get_port_data(include_oids)
         return {key.removeprefix("bandwidth_control_"): value for key, value in results.items()}
     
     async def set_bandwidth_control_on_port(self, request: RequestData) -> SNMPResponseCode:
@@ -531,7 +548,7 @@ class L2SwitchClient(SNMPClient):
     async def get_traffic_control_on_port(self) -> dict[str, int]:
         include_oids = ["traffic_control_threshold", "traffic_control_broadcast_status", "traffic_control_multicast_status", "traffic_control_unicast_status",
                         "traffic_control_action_status", "traffic_control_count_down", "traffic_control_time_interval"]
-        results = await self.get_port_diagnostics(include_oids)
+        results = await self.get_port_data(include_oids)
         return {key.removeprefix("traffic_control_"): value for key, value in results.items()}
     
     async def set_traffic_control_on_port(self, request: RequestData) -> SNMPResponseCode:
@@ -553,14 +570,17 @@ class L2SwitchClient(SNMPClient):
     
     ### TRAFFIC SEGMENTATION ###
 
-    async def get_traffic_segmentation_forward_ports_for_port(self) -> dict[str, set[int]]:
+    async def get_traffic_segmentation_for_port(self) -> dict[str, set[int]]:
         result = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], ["traffic_segmentation_forward_ports"]))
         portlist = L2SwitchClient._parse_assigned_ports_from_hex(result["traffic_segmentation_forward_ports"], self._ports_count)
         return {"forward_ports": portlist}
 
-    async def set_traffic_segmentation_forward_ports_for_port(self, request: RequestData) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["traffic_segmentation_forward_ports"])
-        payload["traffic_segmentation_forward_ports"]["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(request["portlist"])
+    async def set_traffic_segmentation_for_port(self, request: RequestData) -> SNMPResponseCode:
+        include_oids = [F"traffic_segmentation_{param}" for param in request.keys()]
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+
+        for param, data in payload.items():
+            data["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(request[param.removeprefix("traffic_segmentation_")])
 
         try:
             result = await self._set(payload)
