@@ -1,5 +1,8 @@
 #!/usr/bin/python3
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
+from pydantic_extra_types.mac_address import MacAddress
+from ipaddress import IPv4Address
 from typing import Annotated, Literal
 
 ### BASE MODEL CONFIG ###
@@ -10,8 +13,32 @@ class RestrictedBaseModel(BaseModel):
 
 ### L2 SWITCH SCHEMAS ###
 
+class SwitchNetworkConfig(RestrictedBaseModel):
+    ip: str | None = None
+    mask: str | None = None
+    default_gateway: str | None = None
+    management_vlan_id: Annotated[int, Field(ge=1, le=4094)] | None = None
+
+    @field_validator("ip", "default_gateway")
+    @classmethod
+    def validate_ip(cls, value: str) -> str:
+        if value is None:
+            return None
+        IPv4Address(value)
+        return value
+
+    @field_validator("mask")
+    @classmethod
+    def validate_mask(cls, value: str) -> str:
+        mask_length = int(IPv4Address(value))
+        inverted = ~mask_length & 0xFFFFFFFF
+        check = (inverted + 1) & inverted
+        if mask_length == 0 or check != 0:
+            raise ValueError()
+        return value
+
 class FloodFdbConfig(RestrictedBaseModel):
-    state: str | None = None
+    state: str
 
 ### L2 PORT SCHEMAS ###
 
@@ -27,8 +54,25 @@ class PortSecurityConfig(RestrictedBaseModel):
     lock_address_mode: str | None = None
     admin_state: str | None = None
 
+# helper class for clear port security by mac addresses class
+class MacAddressConfig(RestrictedBaseModel):
+    vlan_id: Annotated[int, Field(ge=1, le=4094)]
+    port: Annotated[int, Field(ge=1, le=52)]
+    mac_address: str
+
+    @field_validator("mac_address")
+    @classmethod
+    def validate_mac(cls, value: str) -> str:
+        mac_regex = re.compile("([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})")
+        if not mac_regex.match(value):
+            raise ValueError()
+        return value
+
+class ClearPortSecurityExactMacAddressesConfig(RestrictedBaseModel):
+    mac_addresses_list: list[MacAddressConfig]
+
 class LoopdetectConfig(RestrictedBaseModel):
-    state: str | None = None
+    state: str 
 
 class BandwidthControlConfig(RestrictedBaseModel):
     rx_rate: Annotated[int, Field(ge=64, le=1024000)] | None = None

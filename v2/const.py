@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 from typing import Final
-from ipaddress import IPv4Address, IPv4Network
-from pysnmp.proto.rfc1902 import Integer, OctetString
+from pysnmp.proto.rfc1902 import Integer, OctetString, IpAddress
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())   # find .env file
 import os
@@ -25,5 +24,6 @@ class SNMP:
     TYPE = {
         "integer": Integer,
         "octetstring": OctetString,
+        "ipaddress": IpAddress,
         "macaddress": typify_mac_address
     }

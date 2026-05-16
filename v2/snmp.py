@@ -21,12 +21,12 @@ async def vlan_config_example(switch_handler: L2SwitchHandler) -> None:
 
 async def port_security_config_example(switch_handler: L2SwitchHandler) -> None:
     print(await switch_handler.get_port_security_on_port())
-    await switch_handler.set_port_security_on_port({"max_learning_addresses": "1"})
+    await switch_handler.set_port_security_on_port({"admin_state": "disable", "lock_address_mode": "delete_on_timeout"})
     print(await switch_handler.get_port_security_on_port())
 
     # await switch_handler.clear_port_security_on_port()
-    # await switch_handler.clear_port_security_exact_mac_address([{"vlan_id": 3550, "port": 9, "mac_address": "12-4D-8D-B4-72-FC"},
-    #                                                             {"vlan_id": 3550, "port": 9, "mac_address": "BE-F3-E8-73-71-B8"}])
+    # config = {"mac_addresses_list": [{"vlan_id": 11, "port": 2, "mac_address": "40-AE-30-0E-54-C5"}]}
+    # await switch_handler.clear_port_security_exact_mac_addresses(config)
 
 async def main() -> None:
     ipaddress = SNMP.TEST_3028
@@ -36,17 +36,14 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    print(await switch_handler.get_current_time())
+    await port_security_config_example(switch_handler)
 
-    # task1 = asyncio.create_task(switch_handler.get_default_gateway())
-    # task2 = asyncio.create_task(switch_handler.get_port_info())
-    # task3 = asyncio.create_task(switch_handler.get_mac_addresses_on_port())
-    # task4 = asyncio.create_task(switch_handler.get_vlan_on_port())
-    # task5 = asyncio.create_task(switch_handler.get_cable_diagnostics_port())
-    # task6 = asyncio.create_task(switch_handler.get_dhcp_relay())
-
-    # results = await asyncio.gather(task1, task2, task3, task4, task5, task6)
-    # print(results)
+    # network_parameters = await switch_handler.get_network_parameters()
+    # ip, mask, default_gateway, management_vlan_id = network_parameters.values()
+    # print(network_parameters)
+    # await switch_handler.set_network_parameters({"ip": ip, "mask": "255.255.255.0", "default_gateway": default_gateway})
+    # network_parameters = await switch_handler.get_network_parameters()
+    # print(network_parameters)
 
     print("Overall time:", perf_counter() - start_time)
 
