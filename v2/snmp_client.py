@@ -57,7 +57,7 @@ class SNMPClient(ABC):
             self._engine = SnmpEngine()
             self._read_community = CommunityData(SNMP.READ_ONLY)
             self._write_community = CommunityData(SNMP.READ_WRITE)
-            self._transport = await UdpTransportTarget.create((self._ipaddress, 161))
+            self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
             self._context = ContextData()
 
             await self._identify()

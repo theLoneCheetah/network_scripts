@@ -95,12 +95,7 @@ class L2SwitchHandler:
         response = await self._client.clear_flood_fdb_table()
         print(response.value[1])
     
-    ### CABLE DIAGNOSTICS ### 
-
-    async def get_cable_diagnostics_port(self) -> dict[str, Any]:
-        return await self._client.get_cable_diagnostics_port()
-    
-    ### PORT INFO AND MANAGEMENT ###
+    ### PORT MANAGEMENT AND INFO ###
 
     async def get_port_info(self) -> dict[str, str]:
         include_oids = ["admin_state", "speed_duplex_settings", "link_status", "speed_duplex_status"]
@@ -112,14 +107,23 @@ class L2SwitchHandler:
 
         return result
     
-    async def get_utilization_on_port(self) -> dict[str, int]:
-        include_oids = ["utilization_tx_frames", "utilization_rx_frames", "utilization_percentage"]
-        return await self._client.get_port_diagnostics(include_oids)
+    async def get_port_management(self) -> dict[str, Any]:
+        return await self._client.get_port_management()
     
-    async def get_traffic_control_on_port(self) -> dict[str, int]:
-        include_oids = ["traffic_control_threshold", "traffic_control_broadcast_status", "traffic_control_multicast_status", "traffic_control_unicast_status",
-                        "traffic_control_action_status", "traffic_control_count_down", "traffic_control_time_interval"]
-        return await self._client.get_port_diagnostics(include_oids)
+    async def set_port_management(self, config: dict[str, Any]) -> None:
+        try:
+            request = PortManagementConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_port_management(request)
+        print(response.value[1])
+    
+    ### CABLE DIAGNOSTICS ### 
+
+    async def get_cable_diagnostics_port(self) -> dict[str, Any]:
+        return await self._client.get_cable_diagnostics_port()
     
     ### PORT SECURITY ###
 
@@ -153,16 +157,11 @@ class L2SwitchHandler:
         request = {"state": state}
         response = await self._client.set_loopdetect_state_on_port(request)
         print(response.value[1])
-    
-    ### TRAFFIC SEGMENTATION ###
 
-    async def get_traffic_segmentation_forward_ports_for_port(self) -> dict[str, set[int]]:
-        return await self._client.get_traffic_segmentation_forward_ports_for_port()
+    ### PORT UTILIZATION ###
 
-    async def set_traffic_segmentation_forward_ports_for_port(self, portlist: set[int]) -> None:
-        request = {"portlist": portlist}
-        response = await self._client.set_traffic_segmentation_forward_ports_for_port(request)
-        print(response.value[1])
+    async def get_utilization_on_port(self) -> dict[str, int]:
+        return await self._client.get_utilization_on_port()
     
     ### BANDWIDTH CONTROL ###
 
@@ -177,4 +176,29 @@ class L2SwitchHandler:
             return
         
         response = await self._client.set_bandwidth_control_on_port(request)
+        print(response.value[1])
+    
+    ### TRAFFIC CONTROL ###
+    
+    async def get_traffic_control_on_port(self) -> dict[str, int]:
+        return await self._client.get_traffic_control_on_port()
+    
+    async def set_traffic_control_on_port(self, config: dict[str, Any]) -> None:
+        try:
+            request = TrafficControlConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_traffic_control_on_port(request)
+        print(response.value[1])
+    
+    ### TRAFFIC SEGMENTATION ###
+
+    async def get_traffic_segmentation_forward_ports_for_port(self) -> dict[str, set[int]]:
+        return await self._client.get_traffic_segmentation_forward_ports_for_port()
+
+    async def set_traffic_segmentation_forward_ports_for_port(self, portlist: set[int]) -> None:
+        request = {"portlist": portlist}
+        response = await self._client.set_traffic_segmentation_forward_ports_for_port(request)
         print(response.value[1])

@@ -181,16 +181,16 @@
     - index, mac, timestamp
     - clear
   - port:
-    - state, speed and duplex, flow control, address learning, mdix state
+    - basic management: state, speed and duplex, flow control, address learning, mdix state, management
     - link, speed and duplex status
     - combo ports
-    - port secutiry: state, max addresses, mode, management, clear by port/exact mac
+    - cable diagnostics: action, pairs statuses and lengths
+    - port security: state, max addresses, mode, management, clear by port/exact mac
     - loopback detection: status, enable, disable
-    - cable diagnostics action, pairs statuses and lengths
     - port utilization
-    - traffic control: threshold, broadcast/multicast/unicast, action, count and interval
+    - bandwidth control: rx, tx, management
+    - traffic control: threshold, broadcast/multicast/unicast, action, count, interval, management
     - traffic segmentation: forward portlist, management
-    - ? management
   - ? crc, packet, clear counters
   - ? acl
   - ? log

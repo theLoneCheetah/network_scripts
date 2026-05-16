@@ -64,7 +64,7 @@ class L2SwitchClient(SNMPClient):
         command_name, current_time_tuple = next(iter(result.items()))
         return {command_name: datetime(*current_time_tuple)}
     
-    #### DHCP RELAY ###
+    ### DHCP RELAY ###
 
     async def get_dhcp_relay(self) -> dict[str, Any]:
         include_oids = ["state", "option82_state", "option82_check_state", "option82_policy", "option82_remote_id_type"]
@@ -302,6 +302,72 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
     
+    ### PORT MANAGEMENT AND INFO ###
+
+    async def _check_fiber_combo_port(self) -> None:
+        async with self._check_combo_fiber_port_lock:
+            if self._is_combo_fiber_port is None:
+                include_oids = ["link_status", "link_status_combo_fiber"]
+                copper_fiber_statuses = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
+
+                if copper_fiber_statuses["link_status"] != "link_pass" and copper_fiber_statuses["link_status_combo_fiber"] == "link_pass":
+                    self._is_combo_fiber_port = True
+                else:
+                    self._is_combo_fiber_port = False
+
+    async def get_port_diagnostics(self, include_oids: list[str]) -> dict[str, Any]:
+        combo_fiber_suffix = None
+        
+        if self._is_combo_port:
+            if self._is_combo_fiber_port is None and any([oid in self._switch_oids_config["port"]["combo_ports_oids"] for oid in include_oids]):
+                await self._check_fiber_combo_port()
+            
+            if self._is_combo_fiber_port:
+                combo_fiber_suffix = "_combo_fiber"
+                include_oids = [oid + combo_fiber_suffix if oid in self._switch_oids_config["port"]["combo_ports_oids"] else oid for oid in include_oids]
+        
+        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
+        
+        if self._is_combo_fiber_port and combo_fiber_suffix is not None:
+            results = {key.removesuffix(combo_fiber_suffix) if key.endswith(combo_fiber_suffix) else key: value for key, value in results.items()}
+        
+        return results
+
+    async def get_port_management(self) -> dict[str, Any]:
+        include_oids = ["admin_state", "speed_duplex_settings", "flow_control", "address_learning", "mdix_state"]
+        return await self.get_port_diagnostics(include_oids)
+    
+    async def set_port_management(self, request: RequestData) -> SNMPResponseCode:
+        mdix_state_change = True if "mdix_state" in request else False   # mdix state change needs special logic and check
+        
+        include_oids = list(key for key in request.keys() if key != "mdix_state")   # other parameters by default
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+
+        for param, data in payload.items():
+            data["set_value"] = request[param]
+        
+        try:
+            result = await self._set(payload)
+
+            if mdix_state_change:
+                mdix_payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["mdix_state"])
+                mdix_payload["mdix_state"]["set_value"] = request["mdix_state"]
+                try:
+                    mdix_result = await self._set(mdix_payload)
+                except SNMPTransportError:
+                    # for DES-3028, mdix_state set request has timeout error, but it's ok if the value was set correctly
+                    mdix_state = (await self.get_port_diagnostics(["mdix_state"]))["mdix_state"]
+                    if request["mdix_state"] != mdix_state:
+                        raise
+
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+    
     ### CABLE DIAGNOSTICS ### 
 
     async def get_cable_diagnostics_port(self) -> dict[str, Any]:
@@ -347,37 +413,6 @@ class L2SwitchClient(SNMPClient):
             if pairs_tests[f"cable_diagnostics_pair{i}_status"] != "no_cable":
                 results["no_cable"] = False
 
-        return results
-    
-    ### PORT INFO ###
-
-    async def _check_fiber_combo_port(self) -> None:
-        async with self._check_combo_fiber_port_lock:
-            if self._is_combo_fiber_port is None:
-                include_oids = ["link_status", "link_status_combo_fiber"]
-                copper_fiber_statuses = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
-
-                if copper_fiber_statuses["link_status"] != "link_pass" and copper_fiber_statuses["link_status_combo_fiber"] == "link_pass":
-                    self._is_combo_fiber_port = True
-                else:
-                    self._is_combo_fiber_port = False
-
-    async def get_port_diagnostics(self, include_oids: list[str]) -> dict[str, Any]:
-        combo_fiber_suffix = None
-        
-        if self._is_combo_port:
-            if self._is_combo_fiber_port is None and any([oid in self._switch_oids_config["port"]["combo_ports_oids"] for oid in include_oids]):
-                await self._check_fiber_combo_port()
-            
-            if self._is_combo_fiber_port:
-                combo_fiber_suffix = "_combo_fiber"
-                include_oids = [oid + combo_fiber_suffix if oid in self._switch_oids_config["port"]["combo_ports_oids"] else oid for oid in include_oids]
-        
-        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
-        
-        if self._is_combo_fiber_port and combo_fiber_suffix is not None:
-            results = {key.removesuffix(combo_fiber_suffix) if key.endswith(combo_fiber_suffix) else key: value for key, value in results.items()}
-        
         return results
 
     ### PORT SECURITY ###
@@ -444,13 +479,68 @@ class L2SwitchClient(SNMPClient):
 
     async def get_loopdetect_on_port(self) -> dict[str, str]:
         include_oids = ["loopdetect_state", "loopdetect_status"]
-        result = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
+        result = await self.get_port_diagnostics(include_oids)
         return {key.removeprefix("loopdetect_"): value for key, value in result.items()}
     
     async def set_loopdetect_state_on_port(self, request: RequestData) -> SNMPResponseCode:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["loopdetect_state"])
         payload["loopdetect_state"]["set_value"] = request["state"]
 
+        try:
+            result = await self._set(payload)
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+
+    ### PORT UTILIZATION ###
+
+    async def get_utilization_on_port(self) -> dict[str, int]:
+        include_oids = ["utilization_tx_frames", "utilization_rx_frames", "utilization_percentage"]
+        return await self.get_port_diagnostics(include_oids)
+    
+    ### BANDWIDTH CONTROL ###
+
+    async def get_bandwidth_control_on_port(self) -> dict[str, Any]:
+        include_oids = ["bandwidth_control_rx_rate", "bandwidth_control_tx_rate"]
+        results = await self.get_port_diagnostics(include_oids)
+        return {key.removeprefix("bandwidth_control_"): value for key, value in results.items()}
+    
+    async def set_bandwidth_control_on_port(self, request: RequestData) -> SNMPResponseCode:
+        include_oids = [F"bandwidth_control_{param}" for param in request.keys()]
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+
+        for param, data in payload.items():
+            data["set_value"] = request[param.removeprefix("bandwidth_control_")]
+        
+        try:
+            result = await self._set(payload)
+            return SNMPResponseCode.SUCCESS
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+    
+    ### TRAFFIC CONTROL ###
+    
+    async def get_traffic_control_on_port(self) -> dict[str, int]:
+        include_oids = ["traffic_control_threshold", "traffic_control_broadcast_status", "traffic_control_multicast_status", "traffic_control_unicast_status",
+                        "traffic_control_action_status", "traffic_control_count_down", "traffic_control_time_interval"]
+        results = await self.get_port_diagnostics(include_oids)
+        return {key.removeprefix("traffic_control_"): value for key, value in results.items()}
+    
+    async def set_traffic_control_on_port(self, request: RequestData) -> SNMPResponseCode:
+        include_oids = [F"traffic_control_{param}" for param in request.keys()]
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+
+        for param, data in payload.items():
+            data["set_value"] = request[param.removeprefix("traffic_control_")]
+        
         try:
             result = await self._set(payload)
             return SNMPResponseCode.SUCCESS
@@ -478,31 +568,6 @@ class L2SwitchClient(SNMPClient):
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
-            if err.status == "inconsistentValue":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-    
-    ### BANDWIDTH CONTROL ###
-
-    async def get_bandwidth_control_on_port(self) -> dict[str, Any]:
-        include_oids = ["bandwidth_control_rx_rate", "bandwidth_control_tx_rate"]
-        results = await self.get_port_diagnostics(include_oids)
-        return {key.removeprefix("bandwidth_control_"): value for key, value in results.items()}
-    
-    async def set_bandwidth_control_on_port(self, request: RequestData) -> SNMPResponseCode:
-        include_oids = [F"bandwidth_control_{param}" for param in request.keys()]
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
-
-        for param, data in payload.items():
-            data["set_value"] = request[param.removeprefix("bandwidth_control_")]
-        
-        try:
-            result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            print(err)
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
