@@ -68,6 +68,17 @@ models:
             4: experiment
 
       switch:
+        # reboot and reset
+        system_reboot_mode:
+          request_type: set
+          oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.1.0
+          value_type: integer
+          values:
+            1: other
+            2: reboot
+            3: save_config_and_reboot
+            4: reset_config_and_reboot
+
         # network parameters
         ip:
           request_type: set

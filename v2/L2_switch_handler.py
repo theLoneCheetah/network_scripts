@@ -29,6 +29,16 @@ class L2SwitchHandler:
         return await self._client.scan_available_mibs()
     
     ### SWITCH MANAGEMENT AND INFO ###
+
+    async def perform_system_reboot(self, config: RequestData) -> None:
+        try:
+            request = SystemRebootConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.perform_system_reboot(request)
+        print(response.value[1])
     
     async def get_network_parameters(self) -> ResponseData:
         return await self._client.get_network_parameters()

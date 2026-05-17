@@ -61,6 +61,22 @@ class L2SwitchClient(SNMPClient):
     async def _get_switch_data(self, include_oids: list[str]) -> ResponseData:
         return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], include_oids))
     
+    async def perform_system_reboot(self, request: RequestData) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["system_reboot_mode"])
+        
+        for param, data in payload.items():
+            data["set_value"] = request[param]
+        
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            await self._action_after_system_reboot(request["system_reboot_mode"])
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+
     async def get_network_parameters(self) -> ResponseData:
         include_oids = ["ip", "mask", "default_gateway", "management_vlan_id"]
         return await self._get_switch_data(include_oids)
@@ -74,13 +90,18 @@ class L2SwitchClient(SNMPClient):
         
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
+            if "ip" in request:
+                await self._change_ip_address(request["ip"])
+            elif "default_gateway" in request or "management_vlan_id" in request:
+                pass
+            else:
+                return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
 
     async def get_mac_address(self) -> ResponseData:
         return await self._get_switch_data(["mac_address"])
@@ -103,7 +124,6 @@ class L2SwitchClient(SNMPClient):
         
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
@@ -113,6 +133,7 @@ class L2SwitchClient(SNMPClient):
                 # forbidden error is usually caused when sntp is enabled
                 return SNMPResponseCode.FORBIDDEN
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
 
     async def get_cpu_utilization(self) -> ResponseData:
         include_oids = ["cpu_utilization_5sec", "cpu_utilization_1min", "cpu_utilization_5min"]
@@ -197,13 +218,13 @@ class L2SwitchClient(SNMPClient):
 
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "commitFailed":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
 
     async def delete_vlan(self, request: RequestData) -> SNMPResponseCode:
         check_result = await self._check_vlan_entry(request["vlan_id"])
@@ -216,13 +237,13 @@ class L2SwitchClient(SNMPClient):
         
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
     async def _get_ports_with_vlan_status(self, vlan_id: int, status: str) -> set[int]:
         request_name = L2SwitchClient._get_request_name_for_vlan_status(status)
@@ -254,13 +275,13 @@ class L2SwitchClient(SNMPClient):
         
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "commitFailed":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
     async def delete_vlan_from_ports(self, request: RequestData) -> SNMPResponseCode:
         check_result = await self._check_vlan_entry(request["vlan_id"])
@@ -280,13 +301,13 @@ class L2SwitchClient(SNMPClient):
         
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
 
     ### MAC ADDRESS ###
 
@@ -351,13 +372,13 @@ class L2SwitchClient(SNMPClient):
 
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
     async def clear_flood_fdb(self) -> SNMPResponseCode:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["clear"])
@@ -365,13 +386,13 @@ class L2SwitchClient(SNMPClient):
 
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
     ### PORT MANAGEMENT AND INFO ###
 
@@ -440,14 +461,14 @@ class L2SwitchClient(SNMPClient):
                     mdix_state = (await self._get_port_data(["mdix_state"]))["mdix_state"]
                     if request["mdix_state"] != mdix_state:
                         raise
-
-            return SNMPResponseCode.SUCCESS
+            
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
     ### CABLE DIAGNOSTICS ### 
 
@@ -512,13 +533,13 @@ class L2SwitchClient(SNMPClient):
         
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
     async def clear_port_security_on_port(self) -> SNMPResponseCode:
         current_mode = (await self._get_port_data(["port_security_lock_address_mode"]))["port_security_lock_address_mode"]
@@ -548,13 +569,13 @@ class L2SwitchClient(SNMPClient):
         try:
             for request, payload in all_payload_data.items():
                 result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
 
     ### LOOPBACK DETECTION ###
 
@@ -572,13 +593,13 @@ class L2SwitchClient(SNMPClient):
 
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
 
     ### PORT UTILIZATION ###
 
@@ -602,13 +623,13 @@ class L2SwitchClient(SNMPClient):
         
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
     ### TRAFFIC CONTROL ###
     
@@ -627,13 +648,13 @@ class L2SwitchClient(SNMPClient):
         
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
     ### TRAFFIC SEGMENTATION ###
 
@@ -651,13 +672,13 @@ class L2SwitchClient(SNMPClient):
 
         try:
             result = await self._set(payload)
-            return SNMPResponseCode.SUCCESS
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
 
     ### HELPER FUNCTIONS ###
 

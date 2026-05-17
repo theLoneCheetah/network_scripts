@@ -16,6 +16,8 @@ class SNMP:
     TEST_3028 = os.getenv("SNMP_TEST_3028")
     TEST_1210 = os.getenv("SNMP_TEST_1210")
 
+    DEFAULT_IP = "10.90.90.90"
+
     @staticmethod
     def typify_mac_address(mac_address: str) -> OctetString:
         print(repr(mac_address), type(mac_address))

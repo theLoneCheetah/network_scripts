@@ -4,6 +4,7 @@ import yaml
 import struct
 from typing import Any, Self, Union, TypeAlias
 from abc import ABC, abstractmethod
+from icmplib import ping
 from pysnmp.hlapi.v3arch.asyncio import *
 from pyasn1.type.univ import ObjectIdentifier
 from pysnmp.proto.rfc1902 import OctetString, Integer, IpAddress
@@ -76,6 +77,12 @@ class SNMPClient(ABC):
     def _post_init(self) -> None:
         pass
     
+    def _wait_for_device_online(self) -> bool:
+        for _ in range(240):
+            if ping(self._ipaddress, count=1, timeout=1, privileged=False).is_alive:
+                return True
+        return False
+    
     async def _get(self, payload: PayloadData, skip_init: bool = False) -> dict[str, Any] | None:
         if not skip_init:
             await self._initialize()
@@ -137,6 +144,39 @@ class SNMPClient(ABC):
             results[command_name] = SNMPClient._handle_result_value(varBind[1], data)
         
         return results
+    
+    async def _action_after_system_reboot(self, system_reboot_mode: str) -> None:
+        if system_reboot_mode == "reset_config_and_reboot":
+            self._ipaddress = SNMP.DEFAULT_IP
+            if self._wait_for_device_online():
+                self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
+            else:
+                raise RuntimeError("Failed to establish connection with device with ip:", self._ipaddress)
+
+        elif not self._wait_for_device_online():
+            raise RuntimeError("Failed to reestablish connection with device with ip:", self._ipaddress)
+        
+        # profilactic tries to reestablish connection with snmp agent
+        for i in range(10):
+            try:
+                await self._identify()
+                break
+            except SNMPTransportError:
+                continue
+        else:
+            raise RuntimeError("Failed to reestablish connection with device's SNMP agent with ip:", self._ipaddress)
+    
+    async def _change_ip_address(self, ip: str) -> None:
+        old_ip = self._ipaddress
+        self._ipaddress = ip
+        self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
+
+        try:
+            await self._identify()
+        except SNMPTransportError:
+            self._ipaddress = old_ip
+            self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
+            raise RuntimeError("Failed to identify device with ip:", ip)
     
     async def _bulk_walk(self, payload: dict[str, Any]) -> list[tuple[str, Any]] | None:
         await self._initialize()

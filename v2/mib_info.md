@@ -156,11 +156,11 @@
     - version
     - value type
   - switch:
-    - ip, mask, default gateway, management vlan id
+    - ip, mask, default gateway, management vlan id, management
     - mac address, ports number
-    - current time
+    - current time, management
     - cpu and dram utilization
-    - ? managing
+    - ? reboot
   - dhcp relay:
     - state
     - interfaces for servers

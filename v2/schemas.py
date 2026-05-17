@@ -14,6 +14,9 @@ class RestrictedBaseModel(BaseModel):
 
 ### L2 SWITCH SCHEMAS ###
 
+class SystemRebootConfig(RestrictedBaseModel):
+    system_reboot_mode: str
+
 class SwitchNetworkConfig(RestrictedBaseModel):
     ip: str | None = None
     mask: str | None = None
