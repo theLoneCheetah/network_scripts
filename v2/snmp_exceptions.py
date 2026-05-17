@@ -5,7 +5,8 @@ class SNMPResponseCode(Enum):
     SUCCESS = (0, "Успешно")
     TRANSPORT_ERROR = (1, "Ошибка связи")
     INVALID_DATA = (2, "Ошибка в параметрах запроса")
-    UNKNOWN_ERROR = (3, "Неизвестная ошибка")
+    FORBIDDEN = (3, "Доступ запрещён")
+    UNKNOWN_ERROR = (4, "Неизвестная ошибка")
 
 class SNMPTransportError(Exception):
     def __init__(self, error_message) -> None:

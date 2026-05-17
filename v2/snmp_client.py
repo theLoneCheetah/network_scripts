@@ -108,8 +108,11 @@ class SNMPClient(ABC):
         await self._initialize()
         
         for data in payload.values():
-            data["set_value"] = SNMP.TYPE[data["value_type"]](next(key for key, value in data["values"].items() if value == data["set_value"])
-                                                              if "values" in data else data["set_value"])
+            if "values" in data:
+                set_value = next(key for key, value in data["values"].items() if value == data["set_value"])
+            else:
+                set_value = data["set_value"]
+            data["set_value"] = SNMP.TYPE[data["value_type"]](set_value)
         
         oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"])), request["set_value"]) for request in payload.values()]
         
@@ -208,7 +211,7 @@ class SNMPClient(ABC):
         fmt = ">" + "".join(mapping[bytes_count] for bytes_count in pattern)
         
         return struct.unpack(fmt, bytes_string)
-
+    
     @staticmethod
     def _convert_octet_string_into_mac(octet_string: str) -> str:
         return "-".join([octet_string[2*i:2*i+2].upper() for i in range(1, 7)])

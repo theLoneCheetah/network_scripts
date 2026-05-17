@@ -52,6 +52,16 @@ class L2SwitchHandler:
     async def get_current_time(self) -> ResponseData:
         return await self._client.get_current_time()
     
+    async def set_current_time(self, config: RequestData) -> None:
+        try:
+            request = CurrentTimeConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_current_time(request)
+        print(response.value[1])
+    
     async def get_cpu_utilization(self) -> ResponseData:
         return await self._client.get_cpu_utilization()
     
@@ -71,23 +81,43 @@ class L2SwitchHandler:
     async def get_vlan_on_port(self) -> ResponseData:
         return await self._client.get_vlan_on_port()
     
-    async def create_vlan(self, vlan: dict[str, Any]) -> None:
-        request = {"vlan": vlan}
+    async def create_vlan(self, config: RequestData) -> None:
+        try:
+            request = CreateVlanConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
         response = await self._client.create_vlan(request)
         print(response.value[1])
     
-    async def delete_vlan(self, vlan: dict[str, Any]) -> None:
-        request = {"vlan": vlan}
+    async def delete_vlan(self, config: RequestData) -> None:
+        try:
+            request = DeleteVlanConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
         response = await self._client.delete_vlan(request)
         print(response.value[1])
 
-    async def add_vlan_on_ports(self, portlist: set[int], vlan: dict[str, Any], status: str) -> None:
-        request = {"portlist": portlist, "vlan": vlan, "status": status}
+    async def add_vlan_on_ports(self, config: RequestData) -> None:
+        try:
+            request = AddVlanOnPortsConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
         response = await self._client.add_vlan_on_ports(request)
         print(response.value[1])
 
-    async def delete_vlan_from_ports(self, portlist: set[int], vlan: dict[str, Any]) -> None:
-        request = {"portlist": portlist, "vlan": vlan}
+    async def delete_vlan_from_ports(self, config: RequestData) -> None:
+        try:
+            request = DeleteVlanFromPortsConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
         response = await self._client.delete_vlan_from_ports(request)
         print(response.value[1])
     

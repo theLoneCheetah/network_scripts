@@ -3,6 +3,7 @@ import re
 from pydantic import BaseModel, Field, field_validator
 from pydantic_extra_types.mac_address import MacAddress
 from ipaddress import IPv4Address
+from datetime import datetime
 from typing import Annotated, Literal
 
 ### BASE MODEL CONFIG ###
@@ -36,6 +37,29 @@ class SwitchNetworkConfig(RestrictedBaseModel):
         if mask_length == 0 or check != 0:
             raise ValueError()
         return value
+
+class CurrentTimeConfig(RestrictedBaseModel):
+    current_time: datetime
+
+# helper class for other vlan configs
+class VlanInfo(RestrictedBaseModel):
+    vlan_id: int
+    vlan_name: str
+
+class CreateVlanConfig(RestrictedBaseModel):
+    vlan: VlanInfo
+
+class DeleteVlanConfig(RestrictedBaseModel):
+    vlan_id: int
+
+class AddVlanOnPortsConfig(RestrictedBaseModel):
+    vlan_id: int
+    portlist: set[int]
+    status: str
+
+class DeleteVlanFromPortsConfig(RestrictedBaseModel):
+    vlan_id: int
+    portlist: set[int]
 
 class FloodFdbConfig(RestrictedBaseModel):
     state: str
