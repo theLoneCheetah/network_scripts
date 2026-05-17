@@ -116,7 +116,7 @@
 - <a name="FILTER-MIB"></a>**FILTER-MIB** - фильтрация трафика: DHCP-ответы, защита CPU, исходящий трафик
 - <a name="GENMGMT-MIB"></a>**GENMGMT-MIB** - 
 - <a name="IPMACBIND-MIB"></a>**IPMACBIND-MIB** - привязка IP-MAC-порт
-- <a name="L2MGMT-MIB"></a>**L2MGMT-MIB** - 
+- <a name="L2MGMT-MIB"></a>**L2MGMT-MIB** - базовые управление свитчом, базовое управление портом, qos, bandwidth control, trunk ports, port mirroring, IGMP, traffic segmentation, port security, cos приоритеты, loopback detection, multicast filtering, vlan advertisement, flood fdb
 - <a name="LAG-MIB"></a>**LAG-MIB** - агрегированные каналы
 - <a name="MLDSNP-MIB"></a>**MLDSNP-MIB** - IGMP snooping для IPv6
 - <a name="MSTP-MIB"></a>**MSTP-MIB** - сетевые петли по MSTP с группировкой VLAN
@@ -139,8 +139,8 @@
   - [BRIDGE-MIB](#BRIDGE-MIB) - мак и количество портов свитча
   - [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
   - [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
-  - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация
-  - ? [L2MGMT-MIB](#L2MGMT-MIB) - базовые управление свитчом, базовое управление портом, !qos, bandwidth control, !qos, !trunk ports, !port mirroring, !IGMP, traffic segmentation, port security, !cos приоритеты, loopback detection, !multicast filtering, !vlan advertisement, flood fdb
+  - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация, agentStatusSaveCfg, agentStatusFileTransfer
+  - [L2MGMT-MIB](#L2MGMT-MIB) - базовые управление свитчом и портом, bandwidth control, traffic segmentation, port security, loopback detection, flood fdb
   - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
   - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID)
   - [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули
@@ -160,7 +160,7 @@
     - mac address, ports number
     - current time, management
     - cpu and dram utilization
-    - ? reboot
+    - reboot, reset
   - dhcp relay:
     - state
     - interfaces for servers
@@ -194,7 +194,7 @@
   - ? crc, packet, clear counters
   - ? acl
   - ? log
-  - ? ping (may be unavailable)
+  - ? ping 8.8.8.8/another IP (may be unavailable)
 
 # Справочник OID
 

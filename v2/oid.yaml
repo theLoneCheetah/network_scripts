@@ -369,6 +369,57 @@ models:
           <<: *speed_duplex_status
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.{port}.101
         
+        # cable diagnostics
+        cable_diagnostics_action:
+          request_type: set
+          oid: 1.3.6.1.4.1.171.12.58.1.1.1.12.{port}
+          value_type: integer
+          values:
+            1: action
+            2: processing
+            3: other
+        cable_diagnostics_pair_status_defaults: &cable_diagnostics_pair_status_defaults
+          request_type: get
+          value_type: integer
+          values:
+            0: ok
+            1: open
+            2: short
+            3: open_short
+            4: crosstalk
+            5: unknown
+            6: count
+            7: no_cable
+            8: other
+        cable_diagnostics_pair1_status:
+          <<: *cable_diagnostics_pair_status_defaults
+          oid: 1.3.6.1.4.1.171.12.58.1.1.1.4.{port}
+        cable_diagnostics_pair2_status:
+          <<: *cable_diagnostics_pair_status_defaults
+          oid: 1.3.6.1.4.1.171.12.58.1.1.1.5.{port}
+        cable_diagnostics_pair3_status:
+          <<: *cable_diagnostics_pair_status_defaults
+          oid: 1.3.6.1.4.1.171.12.58.1.1.1.6.{port}
+        cable_diagnostics_pair4_status:
+          <<: *cable_diagnostics_pair_status_defaults
+          oid: 1.3.6.1.4.1.171.12.58.1.1.1.7.{port}
+        cable_diagnostics_pair1_length:
+          request_type: get
+          oid: 1.3.6.1.4.1.171.12.58.1.1.1.8.{port}
+          value_type: integer
+        cable_diagnostics_pair2_length:
+          request_type: get
+          oid: 1.3.6.1.4.1.171.12.58.1.1.1.9.{port}
+          value_type: integer
+        cable_diagnostics_pair3_length:
+          request_type: get
+          oid: 1.3.6.1.4.1.171.12.58.1.1.1.10.{port}
+          value_type: integer
+        cable_diagnostics_pair4_length:
+          request_type: get
+          oid: 1.3.6.1.4.1.171.12.58.1.1.1.11.{port}
+          value_type: integer
+        
         # port_security
         port_security_max_learning_addresses:
           request_type: set
@@ -427,57 +478,6 @@ models:
             1: normal
             2: loop
             3: other
-        
-        # cable diagnostics
-        cable_diagnostics_action:
-          request_type: set
-          oid: 1.3.6.1.4.1.171.12.58.1.1.1.12.{port}
-          value_type: integer
-          values:
-            1: action
-            2: processing
-            3: other
-        cable_diagnostics_pair_status_defaults: &cable_diagnostics_pair_status_defaults
-          request_type: get
-          value_type: integer
-          values:
-            0: ok
-            1: open
-            2: short
-            3: open_short
-            4: crosstalk
-            5: unknown
-            6: count
-            7: no_cable
-            8: other
-        cable_diagnostics_pair1_status:
-          <<: *cable_diagnostics_pair_status_defaults
-          oid: 1.3.6.1.4.1.171.12.58.1.1.1.4.{port}
-        cable_diagnostics_pair2_status:
-          <<: *cable_diagnostics_pair_status_defaults
-          oid: 1.3.6.1.4.1.171.12.58.1.1.1.5.{port}
-        cable_diagnostics_pair3_status:
-          <<: *cable_diagnostics_pair_status_defaults
-          oid: 1.3.6.1.4.1.171.12.58.1.1.1.6.{port}
-        cable_diagnostics_pair4_status:
-          <<: *cable_diagnostics_pair_status_defaults
-          oid: 1.3.6.1.4.1.171.12.58.1.1.1.7.{port}
-        cable_diagnostics_pair1_length:
-          request_type: get
-          oid: 1.3.6.1.4.1.171.12.58.1.1.1.8.{port}
-          value_type: integer
-        cable_diagnostics_pair2_length:
-          request_type: get
-          oid: 1.3.6.1.4.1.171.12.58.1.1.1.9.{port}
-          value_type: integer
-        cable_diagnostics_pair3_length:
-          request_type: get
-          oid: 1.3.6.1.4.1.171.12.58.1.1.1.10.{port}
-          value_type: integer
-        cable_diagnostics_pair4_length:
-          request_type: get
-          oid: 1.3.6.1.4.1.171.12.58.1.1.1.11.{port}
-          value_type: integer
         
         # port utilization
         utilization_tx_frames:
