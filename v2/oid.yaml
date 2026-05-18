@@ -78,6 +78,17 @@ models:
             2: reboot
             3: save_config_and_reboot
             4: reset_config_and_reboot
+        
+        save_mode:
+          request_type: set
+          oid: 1.3.6.1.4.1.171.12.1.2.6.0
+          value_type: integer
+          values:
+            1: other
+            2: config_id1
+            3: config_id2
+            4: log
+            5: all
 
         # network parameters
         ip:
@@ -241,6 +252,13 @@ models:
             3: learned
             4: self
             5: management
+        clear_all:
+          request_type: set
+          oid: 1.3.6.1.4.1.171.12.1.2.11.1.0
+          value_type: integer
+          values:
+            1: other
+            2: start
 
       flood_fdb:
         state:
@@ -269,6 +287,16 @@ models:
           oid: 1.3.6.1.4.1.171.11.63.6.2.25.2.1.1.5
           value_type: integer
       
+      # arpentry
+      arp:
+        clear_all:
+          request_type: set
+          oid: 1.3.6.1.4.1.171.12.1.2.12.1.0
+          value_type: integer
+          values:
+            1: other
+            2: start
+
       port:
         # basic port management
         combo_ports_oids: !!set   # technical information about oids separated for combo ports

@@ -114,7 +114,7 @@
 - <a name="DOT1XMGMT-MIB"></a>**DOT1XMGMT-MIB** - Guest VLAN для аутентификации по порту IEEE 802.1X
 - <a name="DULD-MIB"></a>**DULD-MIB** - обнаружение однонаправленных каналов
 - <a name="FILTER-MIB"></a>**FILTER-MIB** - фильтрация трафика: DHCP-ответы, защита CPU, исходящий трафик
-- <a name="GENMGMT-MIB"></a>**GENMGMT-MIB** - 
+- <a name="GENMGMT-MIB"></a>**GENMGMT-MIB** - частные поддерживаемые модули, утилизация, образы прошивок и системных файлов, save, warm start, trusted hosts, очистка FDB и ARP, gratuitous ARP, настройка COM порта
 - <a name="IPMACBIND-MIB"></a>**IPMACBIND-MIB** - привязка IP-MAC-порт
 - <a name="L2MGMT-MIB"></a>**L2MGMT-MIB** - базовые управление свитчом, базовое управление портом, qos, bandwidth control, trunk ports, port mirroring, IGMP, traffic segmentation, port security, cos приоритеты, loopback detection, multicast filtering, vlan advertisement, flood fdb
 - <a name="LAG-MIB"></a>**LAG-MIB** - агрегированные каналы
@@ -139,7 +139,7 @@
   - [BRIDGE-MIB](#BRIDGE-MIB) - мак и количество портов свитча
   - [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
   - [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
-  - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация, agentStatusSaveCfg, agentStatusFileTransfer
+  - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация, save, очистка FDB и ARP
   - [L2MGMT-MIB](#L2MGMT-MIB) - базовые управление свитчом и портом, bandwidth control, traffic segmentation, port security, loopback detection, flood fdb
   - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
   - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID)
@@ -161,6 +161,7 @@
     - current time, management
     - cpu and dram utilization
     - reboot, reset
+    - ? save
   - dhcp relay:
     - state
     - interfaces for servers
@@ -175,10 +176,13 @@
   - fdb:
     - mac and port
     - mac and status
-    - ? clear: port, vlan, all
+    - ? clear: port, all
   - flood fdb:
     - state, enable, disable
     - index, mac, timestamp
+    - clear
+  - ? arp:
+    - arp table
     - clear
   - port:
     - basic management: state, speed and duplex, flow control, address learning, mdix state, management
