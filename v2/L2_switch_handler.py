@@ -39,6 +39,16 @@ class L2SwitchHandler:
         
         response = await self._client.perform_system_reboot(request)
         print(response.value[1])
+
+    async def perform_save(self, config: RequestData) -> None:
+        try:
+            request = SaveConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.perform_save(request)
+        print(response.value[1])
     
     async def get_network_parameters(self) -> ResponseData:
         return await self._client.get_network_parameters()
@@ -136,8 +146,16 @@ class L2SwitchHandler:
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
         return await self._client.get_fdb_table()
     
-    async def get_mac_addresses_on_port(self) -> ResponseData:
-        return await self._client.get_mac_addresses_on_port()
+    async def get_fdb_on_port(self) -> ResponseData:
+        return await self._client.get_fdb_on_port()
+    
+    async def clear_fdb_on_port(self) -> None:
+        response = await self._client.clear_fdb_on_port()
+        print(response.value[1])
+
+    async def clear_fdb_all(self) -> None:
+        response = await self._client.clear_fdb_all()
+        print(response.value[1])
     
     ### FLOOD FDB ###
     
@@ -157,6 +175,11 @@ class L2SwitchHandler:
     async def clear_flood_fdb(self) -> None:
         response = await self._client.clear_flood_fdb()
         print(response.value[1])
+    
+    ### ARPENTRY ###
+
+    async def get_arp_table(self) -> ResponseData:
+        return await self._client.get_arp_table()
     
     ### PORT MANAGEMENT AND INFO ###
 

@@ -77,7 +77,7 @@
 - <a name="RFC2674Q-MIB"></a>**RFC2674Q-MIB** - FDB, VLAN (включая static и GVRP)
 - <a name="RFC2737-MIB"></a>**RFC2737-MIB** - физическая структура устройства, модули, порты, модель и прошивка
 - <a name="RFC2819-MIB"></a>**RFC2819-MIB** - удалённый мониторинг RMON на L2
-- <a name="RFC2863-MIB"></a>**RFC2863-MIB** - базовая статистика сетевых интерфейсов, статус, скорость, байты, ошибки, unicast/multicast/broadcast пакеты
+- <a name="RFC2863-MIB"></a>**RFC2863-MIB** - базовая статистика сетевых интерфейсов, статус, скорость, байты, ошибки, unicast/multicast/broadcast пакеты, соответствие if_index имени ipif
 - <a name="RFC2925P-MIB"></a>**RFC2925P-MIB** - запуск пинга
 - <a name="RFC2925T-MIB"></a>**RFC2925T-MIB** - запуск трассировки
 - <a name="RMON-MIB"></a>**RMON-MIB** - псевдоним [RFC2819-MIB](#RFC2819-MIB)
@@ -139,14 +139,14 @@
   - [BRIDGE-MIB](#BRIDGE-MIB) - мак и количество портов свитча
   - [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
   - [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
-  - ? [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация, save, очистка FDB и ARP
+  - [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация, save, очистка FDB
   - [L2MGMT-MIB](#L2MGMT-MIB) - базовые управление свитчом и портом, bandwidth control, traffic segmentation, port security, loopback detection, flood fdb
   - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
-  - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID)
+  - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID), ARP-таблица
   - [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули
   - ? [RFC2665-MIB](#RFC2665-MIB) - разделение физических ошибок CRC на ошибки выравнивания 1.3.6.1.2.1.10.7.2.1.2 и ошибки только контрольной суммы 1.3.6.1.2.1.10.7.2.1.3
   - [RFC2674Q-MIB](#RFC2674Q-MIB) - FDB, VLAN (создание, tag, при этом PVID выставляется автоматически)
-  - ? [RFC2863-MIB](#RFC2863-MIB) - базовая статистика сетевых интерфейсов, статус, скорость, байты, ошибки, unicast/multicast/broadcast пакеты I/O 1.3.6.1.2.1.31.1.1
+  - ? [RFC2863-MIB](#RFC2863-MIB) - соответствие if_index имени ipif, базовая статистика сетевых интерфейсов, статус, скорость, байты, ошибки, unicast/multicast/broadcast пакеты I/O 1.3.6.1.2.1.31.1.1
   - [TIME-MIB](#TIME-MIB) - системное время
 
 # Реализуемые функции
@@ -161,7 +161,7 @@
     - current time, management
     - cpu and dram utilization
     - reboot, reset
-    - ? save
+    - save
   - dhcp relay:
     - state
     - interfaces for servers
@@ -176,14 +176,15 @@
   - fdb:
     - mac and port
     - mac and status
-    - ? clear: port, all
+    - clear: port, all
   - flood fdb:
     - state, enable, disable
     - index, mac, timestamp
     - clear
-  - ? arp:
+  - ipif:
+    - name
+  - arp:
     - arp table
-    - clear
   - port:
     - basic management: state, speed and duplex, flow control, address learning, mdix state, management
     - link, speed and duplex status

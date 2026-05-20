@@ -68,7 +68,7 @@ models:
             4: experiment
 
       switch:
-        # reboot and reset
+        # reboot, reset
         system_reboot_mode:
           request_type: set
           oid: 1.3.6.1.4.1.171.11.63.6.2.1.2.1.0
@@ -79,7 +79,8 @@ models:
             3: save_config_and_reboot
             4: reset_config_and_reboot
         
-        save_mode:
+        # save
+        save_action:
           request_type: set
           oid: 1.3.6.1.4.1.171.12.1.2.6.0
           value_type: integer
@@ -89,6 +90,15 @@ models:
             3: config_id2
             4: log
             5: all
+        save_status:
+          request_type: get
+          oid: 1.3.6.1.4.1.171.12.1.1.4.0
+          value_type: integer
+          values:
+            1: other
+            2: proceeding
+            3: completed
+            4: failed
 
         # network parameters
         ip:
@@ -154,7 +164,7 @@ models:
           request_type: get
           oid: 1.3.6.1.4.1.171.12.1.1.9.1.4.1
           value_type: integer
-      
+
       dhcp_relay:
         state:
           request_type: set
@@ -287,15 +297,28 @@ models:
           oid: 1.3.6.1.4.1.171.11.63.6.2.25.2.1.1.5
           value_type: integer
       
+      ipif:
+        # now is used to match if_index with ipif name System
+        name:
+          request_type: get
+          oid: 1.3.6.1.2.1.31.1.1.1.1.{if_index}
+          value_type: octetstring
+      
       # arpentry
       arp:
-        clear_all:
-          request_type: set
-          oid: 1.3.6.1.4.1.171.12.1.2.12.1.0
+        mac_address:
+          request_type: walk
+          oid: 1.3.6.1.2.1.4.22.1.2
+          value_type: macaddress
+        status:
+          request_type: walk
+          oid: 1.3.6.1.2.1.4.22.1.4
           value_type: integer
           values:
             1: other
-            2: start
+            2: invalid
+            3: dynamic
+            4: static
 
       port:
         # basic port management

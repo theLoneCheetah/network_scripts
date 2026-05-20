@@ -17,6 +17,9 @@ class RestrictedBaseModel(BaseModel):
 class SystemRebootConfig(RestrictedBaseModel):
     system_reboot_mode: str
 
+class SaveConfig(RestrictedBaseModel):
+    save_action: str
+
 class SwitchNetworkConfig(RestrictedBaseModel):
     ip: str | None = None
     mask: str | None = None

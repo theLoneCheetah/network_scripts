@@ -76,6 +76,30 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
+    
+    async def perform_save(self, request: RequestData) -> SNMPResponseCode:
+        action_payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["save_action"])
+        action_payload["save_action"]["set_value"] = request["save_action"]
+        
+        try:
+            result = await self._set(action_payload)
+            await self._check_save_status()
+        except SNMPTransportError as err:
+            if request["save_action"] in {"config_id1", "config_id2", "all"}:
+                await self._check_save_status()
+            else:
+                return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    async def _check_save_status(self) -> None:
+        status_payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["save_status"])
+        status = await self._get(status_payload)
+        while status["save_status"] not in {"other", "completed"}:
+            status = await self._get(status_payload)
 
     async def get_network_parameters(self) -> ResponseData:
         include_oids = ["ip", "mask", "default_gateway", "management_vlan_id"]
@@ -92,7 +116,7 @@ class L2SwitchClient(SNMPClient):
             result = await self._set(payload)
         except SNMPTransportError:
             if "ip" in request:
-                await self._change_ip_address(request["ip"])
+                await self._action_after_ip_address_change(request["ip"])
             elif "default_gateway" in request or "management_vlan_id" in request:
                 pass
             else:
@@ -330,7 +354,7 @@ class L2SwitchClient(SNMPClient):
 
         return results
     
-    async def get_mac_addresses_on_port(self) -> ResponseData:
+    async def get_fdb_on_port(self) -> ResponseData:
         fdb_table = await self.get_fdb_table()
         result = defaultdict(dict)
 
@@ -340,6 +364,27 @@ class L2SwitchClient(SNMPClient):
                     result[mac][vlan_id] = {"status": mac_info["status"]}
         
         return result
+    
+    # clear fdb on port by turning on/off port security on port
+    async def clear_fdb_on_port(self) -> SNMPResponseCode:
+        result = await self.set_port_security_on_port({"admin_state": "enable"})
+        if result != SNMPResponseCode.SUCCESS:
+            return result
+        return await self.set_port_security_on_port({"admin_state": "disable"})
+    
+    async def clear_fdb_all(self) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["fdb"], ["clear_all"])
+        payload["clear_all"]["set_value"] = "start"
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
     ### FLOOD FDB ###
 
@@ -393,6 +438,35 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
+
+    ### IP INTERFACE ###
+
+    async def _get_ipif_name(self, if_index: int) -> ResponseData:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["ipif"], ["name"])
+        payload["name"]["params"] = {"if_index": if_index}
+        result = await self._get(payload)
+        return result["name"]
+
+    ### ARPENTRY ###
+
+    async def get_arp_table(self) -> ResponseData:
+        results = defaultdict(dict)
+        ipif_names = {}
+
+        for oid, mac in await self._bulk_walk(self._switch_oids_config["arp"]["mac_address"]):
+            cut_oid, ip = L2SwitchClient._parse_ip_address_from_oid(oid)
+            if_index = L2SwitchClient._parse_last_index(cut_oid)[1]
+            if if_index not in ipif_names:
+                ipif_names[if_index] = await self._get_ipif_name(if_index)
+            results[ipif_names[if_index]][ip] = {"mac_address": mac, "status": "dynamic"}
+
+        for oid, status in await self._bulk_walk(self._switch_oids_config["arp"]["status"]):
+            cut_oid, ip = L2SwitchClient._parse_ip_address_from_oid(oid)
+            if_index = L2SwitchClient._parse_last_index(cut_oid)[1]
+            if ip in results[if_index] and status in {"other", "static"}:   # if ip is unknown, don't count it
+                results[ipif_names[if_index]][ip]["status"] = "static"
+
+        return results
     
     ### PORT MANAGEMENT AND INFO ###
 
@@ -541,6 +615,7 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
     
+    # clear static fdb on port by switching port security mode on port
     async def clear_port_security_on_port(self) -> SNMPResponseCode:
         current_mode = (await self._get_port_data(["port_security_lock_address_mode"]))["port_security_lock_address_mode"]
         temp_mode = "permanent" if current_mode == "delete_on_reset" else "delete_on_reset"

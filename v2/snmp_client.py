@@ -88,7 +88,7 @@ class SNMPClient(ABC):
             await self._initialize()
         
         oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"]))) for request in payload.values()]
-
+        
         errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
             self._engine,
             self._read_community,
@@ -145,39 +145,6 @@ class SNMPClient(ABC):
         
         return results
     
-    async def _action_after_system_reboot(self, system_reboot_mode: str) -> None:
-        if system_reboot_mode == "reset_config_and_reboot":
-            self._ipaddress = SNMP.DEFAULT_IP
-            if self._wait_for_device_online():
-                self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
-            else:
-                raise RuntimeError("Failed to establish connection with device with ip:", self._ipaddress)
-
-        elif not self._wait_for_device_online():
-            raise RuntimeError("Failed to reestablish connection with device with ip:", self._ipaddress)
-        
-        # profilactic tries to reestablish connection with snmp agent
-        for i in range(10):
-            try:
-                await self._identify()
-                break
-            except SNMPTransportError:
-                continue
-        else:
-            raise RuntimeError("Failed to reestablish connection with device's SNMP agent with ip:", self._ipaddress)
-    
-    async def _change_ip_address(self, ip: str) -> None:
-        old_ip = self._ipaddress
-        self._ipaddress = ip
-        self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
-
-        try:
-            await self._identify()
-        except SNMPTransportError:
-            self._ipaddress = old_ip
-            self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
-            raise RuntimeError("Failed to identify device with ip:", ip)
-    
     async def _bulk_walk(self, payload: dict[str, Any]) -> list[tuple[str, Any]] | None:
         await self._initialize()
 
@@ -207,6 +174,39 @@ class SNMPClient(ABC):
                 results.append((oid, value))
         
         return results
+    
+    async def _action_after_system_reboot(self, system_reboot_mode: str) -> None:
+        if system_reboot_mode == "reset_config_and_reboot":
+            self._ipaddress = SNMP.DEFAULT_IP
+            if self._wait_for_device_online():
+                self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
+            else:
+                raise RuntimeError("Failed to establish connection with device with ip:", self._ipaddress)
+
+        elif not self._wait_for_device_online():
+            raise RuntimeError("Failed to reestablish connection with device with ip:", self._ipaddress)
+        
+        # profilactic tries to reestablish connection with snmp agent
+        for i in range(10):
+            try:
+                await self._identify()
+                break
+            except SNMPTransportError:
+                continue
+        else:
+            raise RuntimeError("Failed to reestablish connection with device's SNMP agent with ip:", self._ipaddress)
+    
+    async def _action_after_ip_address_change(self, ip: str) -> None:
+        old_ip = self._ipaddress
+        self._ipaddress = ip
+        self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
+
+        try:
+            await self._identify()
+        except SNMPTransportError:
+            self._ipaddress = old_ip
+            self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
+            raise RuntimeError("Failed to identify device with ip:", ip)
     
     @staticmethod
     def _filter_request_config(config_fragment: dict[str, Any], include_oids: list[str]) -> PayloadData:
