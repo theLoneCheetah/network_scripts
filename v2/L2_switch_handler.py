@@ -297,3 +297,12 @@ class L2SwitchHandler:
         
         response = await self._client.set_traffic_segmentation_for_port(request)
         print(response.value[1])
+    
+    ### PORT STATISCTICS ###
+
+    async def get_rx_tx_speed(self) -> ResponseData:
+        return await self._client.get_rx_tx_speed()
+
+    async def clear_all_counters(self) -> None:
+        response = await self._client.clear_all_counters()
+        print(response.value[1])

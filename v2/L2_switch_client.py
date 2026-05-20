@@ -5,6 +5,7 @@ from typing import override, Any
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
+from time import perf_counter
 from pysnmp.hlapi.v3arch.asyncio import *
 from snmp_client import SNMPClient
 from const import SNMP
@@ -754,6 +755,40 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
+    
+    ### PORT STATISCTICS ###
+
+    async def _get_bytes_speed(self, bytes_type: str) -> ResponseData:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], [bytes_type])
+
+        start_bytes = (await self._get(payload))[bytes_type]
+        start_time = perf_counter()
+        await asyncio.sleep(0.5)
+        
+        end_bytes = (await self._get(payload))[bytes_type]
+        end_time = perf_counter()
+        speed = L2SwitchClient._byte_to_megabit(int((end_bytes - start_bytes) / (end_time - start_time)))
+        return {bytes_type: speed}
+    
+    async def get_rx_tx_speed(self) -> ResponseData:
+        task_rx = asyncio.create_task(self._get_bytes_speed("rx_bytes"))
+        task_tx = asyncio.create_task(self._get_bytes_speed("tx_bytes"))
+        results = await asyncio.gather(task_rx, task_tx)
+        return results[0] | results[1]
+
+    async def clear_all_counters(self) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["clear_all_counters"])
+        payload["clear_all_counters"]["set_value"] = "active"
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
 
     ### HELPER FUNCTIONS ###
 
@@ -814,3 +849,7 @@ class L2SwitchClient(SNMPClient):
         vlan_id = int(vlan_id)
         mac = "-".join([f"{int(octet):02X}" for octet in mac])
         return vlan_id, mac
+    
+    @staticmethod
+    def _byte_to_megabit(bytes_count: int) -> int:
+        return round(bytes_count * 8 / 1024 / 1024)
