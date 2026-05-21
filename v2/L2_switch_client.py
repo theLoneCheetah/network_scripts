@@ -314,7 +314,7 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.INVALID_DATA
 
         status = "tagged"
-        result_portlist = await self._get_ports_with_vlan_status(request["vlan_id"], status) - request["portlist"]
+        portlist = await self._get_ports_with_vlan_status(request["vlan_id"], status) - request["portlist"]
         
         request_name = L2SwitchClient._get_request_name_for_vlan_status(status)
         if request_name is None:
@@ -322,7 +322,7 @@ class L2SwitchClient(SNMPClient):
         
         payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], [request_name])
         payload[request_name]["params"] = {"vlan_id": request["vlan_id"]}
-        payload[request_name]["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(result_portlist)
+        payload[request_name]["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(portlist)
         
         try:
             result = await self._set(payload)
@@ -334,7 +334,7 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
 
-    ### MAC ADDRESS ###
+    ### FDB ###
 
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
         results = defaultdict(dict)
@@ -547,7 +547,7 @@ class L2SwitchClient(SNMPClient):
     
     ### CABLE DIAGNOSTICS ### 
 
-    async def get_cable_diagnostics_port(self) -> ResponseData:
+    async def get_cable_diagnostics_for_port(self) -> ResponseData:
         if self._is_combo_port and self._is_combo_fiber_port is None:
             await self._check_fiber_combo_port()
         
@@ -758,23 +758,43 @@ class L2SwitchClient(SNMPClient):
     
     ### PORT STATISCTICS ###
 
-    async def _get_bytes_speed(self, bytes_type: str) -> ResponseData:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], [bytes_type])
+    async def _get_packets_speed(self, packet_type: str) -> ResponseData:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], [packet_type])
 
-        start_bytes = (await self._get(payload))[bytes_type]
+        start_packets = (await self._get(payload))[packet_type]
         start_time = perf_counter()
         await asyncio.sleep(0.5)
         
-        end_bytes = (await self._get(payload))[bytes_type]
+        end_packets = (await self._get(payload))[packet_type]
         end_time = perf_counter()
-        speed = L2SwitchClient._byte_to_megabit(int((end_bytes - start_bytes) / (end_time - start_time)))
-        return {bytes_type: speed}
+        speed = int((end_packets - start_packets) / (end_time - start_time))
+        return {packet_type: speed}
     
-    async def get_rx_tx_speed(self) -> ResponseData:
-        task_rx = asyncio.create_task(self._get_bytes_speed("rx_bytes"))
-        task_tx = asyncio.create_task(self._get_bytes_speed("tx_bytes"))
-        results = await asyncio.gather(task_rx, task_tx)
+    async def get_rx_tx_megabit_speed_on_port(self) -> ResponseData:
+        task_rx_bytes = asyncio.create_task(self._get_packets_speed("rx_bytes"))
+        task_tx_bytes = asyncio.create_task(self._get_packets_speed("tx_bytes"))
+        
+        results = await asyncio.gather(task_rx_bytes, task_tx_bytes)
+        return {f"{key.removesuffix('bytes')}megabit": L2SwitchClient._byte_to_megabit(value) for res in results for key, value in res.items()}
+    
+    async def get_rx_tx_packets_all_types_on_port(self) -> ResponseData:
+        include_oids = ["rx_unicast_packets", "rx_multicast_packets", "rx_broadcast_packets",
+                        "tx_unicast_packets", "tx_multicast_packets", "tx_broadcast_packets"]
+        tasks = [asyncio.create_task(self._get_packets_speed(key)) for key in include_oids]
+
+        results = await asyncio.gather(*tasks)
+        return {key: value for res in results for key, value in res.items()}
+    
+    async def get_all_packet_statistics_on_port(self) -> ResponseData:
+        task_megabit = asyncio.create_task(self.get_rx_tx_megabit_speed_on_port())
+        task_packets = asyncio.create_task(self.get_rx_tx_packets_all_types_on_port())
+
+        results = await asyncio.gather(task_megabit, task_packets)
         return results[0] | results[1]
+    
+    async def get_crc_errors_on_port(self) -> ResponseData:
+        include_oids = ["alignment_errors", "fcs_errors"]
+        return await self._get_port_data(include_oids)
 
     async def clear_all_counters(self) -> SNMPResponseCode:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["clear_all_counters"])

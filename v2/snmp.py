@@ -31,13 +31,16 @@ async def port_security_config_example(switch_handler: L2SwitchHandler) -> None:
 
 async def main() -> None:
     ipaddress = SNMP.TEST_3028
-    port = 25
+    port = 2
 
     start_time = perf_counter()
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
     
-    print(await switch_handler.get_rx_tx_speed())
+    print(await switch_handler.get_all_packet_statistics_on_port())
+    print(await switch_handler.get_crc_errors_on_port())
+    #await switch_handler.clear_all_counters()
+    print(await switch_handler.get_crc_errors_on_port())
 
     print("Overall time:", perf_counter() - start_time)
 

@@ -611,7 +611,7 @@ models:
           oid: 1.3.6.1.4.1.171.11.63.6.2.12.1.1.2.{port}
           value_type: octetstring
         
-        # packet in (rxstatistics
+        # packet statistics
         rx_bytes:
           request_type: get
           oid: 1.3.6.1.2.1.31.1.1.1.6.{port}
@@ -643,6 +643,16 @@ models:
         tx_broadcast_packets:
           request_type: get
           oid: 1.3.6.1.2.1.31.1.1.1.13.{port}
+          value_type: integer
+        
+        # error statistics
+        alignment_errors:
+          request_type: get
+          oid: 1.3.6.1.2.1.10.7.2.1.2.{port}
+          value_type: integer
+        fcs_errors:
+          request_type: get
+          oid: 1.3.6.1.2.1.10.7.2.1.3.{port}
           value_type: integer
   
   DES-3052:

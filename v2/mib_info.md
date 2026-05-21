@@ -72,12 +72,12 @@
 - <a name="RFC2575-MIB"></a>**RFC2575-MIB** - управление доступом SNMPv3
 - <a name="RFC2576-MIB"></a>**RFC2576-MIB** - совместимость SNMPv3 со старыми версиями протокола
 - <a name="RFC2620-MIB"></a>**RFC2620-MIB** - мониторинг авторизации с использованием RADIUS-сервера
-- <a name="RFC2665-MIB"></a>**RFC2665-MIB** - спецификация дуплекса, физических ошибок и коллизий для Ethernet-интерфейсов, частично расширение [IF-MIB](#IF-MIB)
+- <a name="RFC2665-MIB"></a>**RFC2665-MIB** - спецификация дуплекса, физических ошибок (CRC: ошибки выравнивания и контрольной суммы) и коллизий для Ethernet-интерфейсов, частично расширение [IF-MIB](#IF-MIB)
 - <a name="RFC2674P-MIB"></a>**RFC2674P-MIB** - приоритеты трафика, классы, очереди
 - <a name="RFC2674Q-MIB"></a>**RFC2674Q-MIB** - FDB, VLAN (включая static и GVRP)
 - <a name="RFC2737-MIB"></a>**RFC2737-MIB** - физическая структура устройства, модули, порты, модель и прошивка
 - <a name="RFC2819-MIB"></a>**RFC2819-MIB** - удалённый мониторинг RMON на L2
-- <a name="RFC2863-MIB"></a>**RFC2863-MIB** - базовая статистика сетевых интерфейсов, статус, скорость, байты, ошибки, unicast/multicast/broadcast пакеты, соответствие if_index имени ipif
+- <a name="RFC2863-MIB"></a>**RFC2863-MIB** - базовая статистика сетевых интерфейсов, статус, скорость, байты, ошибки (общий счётчик различных физических ошибок), unicast/multicast/broadcast пакеты, соответствие if_index имени ipif
 - <a name="RFC2925P-MIB"></a>**RFC2925P-MIB** - запуск пинга
 - <a name="RFC2925T-MIB"></a>**RFC2925T-MIB** - запуск трассировки
 - <a name="RMON-MIB"></a>**RMON-MIB** - псевдоним [RFC2819-MIB](#RFC2819-MIB)
@@ -144,9 +144,9 @@
   - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
   - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID), ARP-таблица
   - [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули
-  - ? [RFC2665-MIB](#RFC2665-MIB) - разделение физических ошибок CRC на ошибки выравнивания 1.3.6.1.2.1.10.7.2.1.2 и ошибки только контрольной суммы 1.3.6.1.2.1.10.7.2.1.3
+  - [RFC2665-MIB](#RFC2665-MIB) - ошибки CRC (ошибки выравнивания и контрольной суммы)
   - [RFC2674Q-MIB](#RFC2674Q-MIB) - FDB, VLAN (создание, tag, при этом PVID выставляется автоматически)
-  - ? [RFC2863-MIB](#RFC2863-MIB) - соответствие if_index имени ipif, базовая статистика сетевых интерфейсов, статус, скорость, байты, ошибки, unicast/multicast/broadcast пакеты I/O 1.3.6.1.2.1.31.1.1
+  - [RFC2863-MIB](#RFC2863-MIB) - соответствие if_index имени ipif, unicast/multicast/broadcast пакеты
   - [TIME-MIB](#TIME-MIB) - системное время
 
 # Реализуемые функции
@@ -167,7 +167,6 @@
     - state
     - interfaces for servers
     - option82
-    - ? vlan id for servers
     - ? managing
   - vlan:
     - names, entry status
@@ -197,7 +196,8 @@
     - bandwidth control: rx, tx, management
     - traffic control: threshold, broadcast/multicast/unicast, action, count, interval, management
     - traffic segmentation: forward portlist, management
-  - ? crc, packet
+    - crc: alingment and fcs errors
+    - packet: rx/tx bytes and unicast/multicast/broadcast packets
   - ? acl
   - ? log
   - ? ping 8.8.8.8/another IP (may be unavailable)

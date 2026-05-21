@@ -141,7 +141,7 @@ class L2SwitchHandler:
         response = await self._client.delete_vlan_from_ports(request)
         print(response.value[1])
     
-    ### MAC ADDRESS ###
+    ### FDB ###
 
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
         return await self._client.get_fdb_table()
@@ -201,8 +201,8 @@ class L2SwitchHandler:
     
     ### CABLE DIAGNOSTICS ### 
 
-    async def get_cable_diagnostics_port(self) -> ResponseData:
-        return await self._client.get_cable_diagnostics_port()
+    async def get_cable_diagnostics_for_port(self) -> ResponseData:
+        return await self._client.get_cable_diagnostics_for_port()
     
     ### PORT SECURITY ###
 
@@ -300,8 +300,17 @@ class L2SwitchHandler:
     
     ### PORT STATISCTICS ###
 
-    async def get_rx_tx_speed(self) -> ResponseData:
-        return await self._client.get_rx_tx_speed()
+    async def get_rx_tx_megabit_speed_on_port(self) -> ResponseData:
+        return await self._client.get_rx_tx_megabit_speed_on_port()
+
+    async def get_rx_tx_packets_all_types_on_port(self) -> ResponseData:
+        return await self._client.get_rx_tx_packets_all_types_on_port()
+
+    async def get_all_packet_statistics_on_port(self) -> ResponseData:
+        return await self._client.get_all_packet_statistics_on_port()
+
+    async def get_crc_errors_on_port(self) -> ResponseData:
+        return await self._client.get_crc_errors_on_port()
 
     async def clear_all_counters(self) -> None:
         response = await self._client.clear_all_counters()
