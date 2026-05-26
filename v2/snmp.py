@@ -37,10 +37,7 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
     
-    print(await switch_handler.get_all_packet_statistics_on_port())
-    print(await switch_handler.get_crc_errors_on_port())
-    #await switch_handler.clear_all_counters()
-    print(await switch_handler.get_crc_errors_on_port())
+    print(await switch_handler.get_dhcp_relay())
 
     print("Overall time:", perf_counter() - start_time)
 
