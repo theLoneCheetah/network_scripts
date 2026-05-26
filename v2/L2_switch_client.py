@@ -176,13 +176,12 @@ class L2SwitchClient(SNMPClient):
         include_oids = ["state", "option82_state", "option82_check_state", "option82_policy", "option82_remote_id_type"]
         results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids))
 
-        results["ipif_servers"] = defaultdict(dict)
-        results["vlan_id_servers"] = defaultdict(dict)
+        results["ipif_servers"] = defaultdict(set)
+        results["vlan_id_servers"] = defaultdict(set)
 
-        for ind, oid_interface_name in enumerate(await self._bulk_walk(self._switch_oids_config["dhcp_relay"]["ipif_for_server"])):
-            oid, interface_name = oid_interface_name
+        for oid, interface_name in await self._bulk_walk(self._switch_oids_config["dhcp_relay"]["ipif_for_server"]):
             server_ip = L2SwitchClient._parse_ip_address_from_oid(oid)[1]
-            results["ipif_servers"][interface_name][f"server{ind + 1}"] = server_ip
+            results["ipif_servers"][interface_name].add(server_ip)
         
         # vlan id - servers logic will be implemented for other switch models
 
