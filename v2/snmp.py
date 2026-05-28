@@ -8,6 +8,17 @@ from schemas import PortSecurityConfig
 from snmp_exceptions import SNMPTransportError
 from L2_switch_handler import L2SwitchHandler
 
+async def dhcp_relay_config_example(switch_handler: L2SwitchHandler) -> None:
+    settings = await switch_handler.get_dhcp_relay()
+    server = list(settings["ipif_servers"]["System"])[0]
+    print(settings)
+    # await switch_handler.set_dhcp_relay({"option82_remote_id_type": "default"})
+    # print(await switch_handler.get_dhcp_relay())
+    await switch_handler.delete_dhcp_servers_for_ipif({"ipif_servers": {"System": {server}}})
+    print(await switch_handler.get_dhcp_relay())
+    await switch_handler.add_dhcp_servers_for_ipif({"ipif_servers": {"System": {server}}})
+    print(await switch_handler.get_dhcp_relay())
+
 async def vlan_config_example(switch_handler: L2SwitchHandler) -> None:
     vlan = {"vlan_id": 2, "vlan_name": "vlan2"}
     await switch_handler.create_vlan({"vlan": vlan})
@@ -37,7 +48,7 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
     
-    print(await switch_handler.get_dhcp_relay())
+    await dhcp_relay_config_example(switch_handler)
 
     print("Overall time:", perf_counter() - start_time)
 

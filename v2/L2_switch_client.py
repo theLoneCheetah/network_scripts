@@ -173,7 +173,8 @@ class L2SwitchClient(SNMPClient):
     ### DHCP RELAY ###
 
     async def get_dhcp_relay(self) -> ResponseData:
-        include_oids = ["state", "option82_state", "option82_check_state", "option82_policy", "option82_remote_id_type"]
+        include_oids = ["state", "hop_count", "time_threshold",
+                        "option82_state", "option82_check_state", "option82_policy", "option82_remote_id_type", "option82_remote_id"]
         results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids))
 
         results["ipif_servers"] = defaultdict(set)
@@ -186,6 +187,52 @@ class L2SwitchClient(SNMPClient):
         # vlan id - servers logic will be implemented for other switch models
 
         return results
+    
+    async def set_dhcp_relay(self, request: RequestData) -> ResponseData:
+        include_oids = list(request.keys())
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids)
+
+        for param, data in payload.items():
+            data["set_value"] = request[param]
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    async def _manage_dhcp_servers_for_ipif(self, request: RequestData, mode: str) -> ResponseData:
+        ipif_server_config = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], ["ipif_server_status"])["ipif_server_status"]
+        
+        payload = {
+            f"ipif_server_status.{ipif_name}.{server}": {
+                **ipif_server_config,
+                "params": {"ipif_name_in_oid": L2SwitchClient._convert_name_into_oid(ipif_name),
+                           "dhcp_server": server},
+                "set_value": mode
+            }
+            for ipif_name, servers in request["ipif_servers"].items() for server in servers
+        }
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    async def add_dhcp_servers_for_ipif(self, request: RequestData) -> ResponseData:
+        return await self._manage_dhcp_servers_for_ipif(request, "create_and_go")
+    
+    async def delete_dhcp_servers_for_ipif(self, request: RequestData) -> ResponseData:
+        return await self._manage_dhcp_servers_for_ipif(request, "destroy")
     
     ### VLAN ###
 
@@ -243,7 +290,7 @@ class L2SwitchClient(SNMPClient):
             command["params"] = {"vlan_id": request["vlan"]["vlan_id"]}
         
         payload["name"]["set_value"] = request["vlan"]["vlan_name"]
-        payload["entry_status"]["set_value"] = "create_go"
+        payload["entry_status"]["set_value"] = "create_and_go"
 
         try:
             result = await self._set(payload)
@@ -819,6 +866,10 @@ class L2SwitchClient(SNMPClient):
     @override
     def _render_oid(self, oid: str, **params) -> str:
         return oid.format(port=self._port, **params)
+    
+    @staticmethod
+    def _convert_name_into_oid(name: str) -> str:
+        return f"{len(name)}.{'.'.join(str(ord(sym)) for sym in name)}"
 
     @staticmethod
     def _build_octet_by_pattern(data_tuple: tuple[int], pattern: str) -> bytes:

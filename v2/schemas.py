@@ -47,6 +47,19 @@ class SwitchNetworkConfig(RestrictedBaseModel):
 class CurrentTimeConfig(RestrictedBaseModel):
     current_time: datetime
 
+class DhcpRelayConfig(RestrictedBaseModel):
+    state: str | None = None
+    hop_count: Annotated[int, Field(ge=1, le=16)] | None = None
+    time_threshold: Annotated[int, Field(ge=0, le=65535)] | None = None
+    option82_state: str | None = None
+    option82_check_state: str | None = None
+    option82_policy: str | None = None
+    option82_remote_id_type: str | None = None
+    option82_remote_id: str | None = None
+
+class ManageDhcpServersForIpifConfig(RestrictedBaseModel):
+    ipif_servers: dict[str, set[str]] | None = None
+
 # helper class for other vlan configs
 class VlanInfo(RestrictedBaseModel):
     vlan_id: int

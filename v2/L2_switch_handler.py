@@ -93,6 +93,36 @@ class L2SwitchHandler:
     async def get_dhcp_relay(self) -> ResponseData:
         return await self._client.get_dhcp_relay()
     
+    async def set_dhcp_relay(self, config: RequestData) -> None:
+        try:
+            request = DhcpRelayConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_dhcp_relay(request)
+        print(response.value[1])
+    
+    async def add_dhcp_servers_for_ipif(self, config: RequestData) -> None:
+        try:
+            request = ManageDhcpServersForIpifConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.add_dhcp_servers_for_ipif(request)
+        print(response.value[1])
+    
+    async def delete_dhcp_servers_for_ipif(self, config: RequestData) -> None:
+        try:
+            request = ManageDhcpServersForIpifConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.delete_dhcp_servers_for_ipif(request)
+        print(response.value[1])
+    
     ### VLAN ###
 
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:

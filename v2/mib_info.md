@@ -1,3 +1,18 @@
+- [Известные MIBs](#известные-mibs)
+  - [Standard MIBs](#standard-mibs)
+  - [Private D-Link MIBs](#private-d-link-mibs)
+- [Используемые MIBs](#используемые-mibs)
+  - [DES-3028](#des-3028)
+- [Реализуемые функции](#реализуемые-функции)
+  - [DES-3028](#des-3028-1)
+- [Справочник](#справочник)
+  - [DHCP RELAY](#dhcp-relay)
+    - [Механизм работы](#механизм-работы)
+    - [Команды](#команды)
+  - [VLAN через SNMP на DES-3028 (vlanid=2)](#vlan-через-snmp-на-des-3028-vlanid2)
+    - [Команды](#команды-1)
+    - [Комбинации запросов](#комбинации-запросов)
+  - [Port security через SNMP на DES-3028 (port=21)](#port-security-через-snmp-на-des-3028-port21)
 # Известные MIBs
 
 ## Standard MIBs
@@ -102,7 +117,7 @@
 - <a name="UCD-SNMP-MIB"></a>**UCD-SNMP-MIB** - старая версия [NET-SNMP-MIB](#NET-SNMP-MIB)
 - <a name="USM-MIB"></a>**USM-MIB** - псевдоним [RFC2574-MIB](#RFC2574-MIB)
 
-## Private D-Link MIBs:
+## Private D-Link MIBs
 - <a name="AAC-MIB"></a>**AAC-MIB** - доступ, авторизация, права
 - <a name="ACL-MIB"></a>**ACL-MIB** - 
 - <a name="AUTH-MIB"></a>**AUTH-MIB** - параметры RADIUS-сервера, аутентификация
@@ -134,78 +149,104 @@
 - <a name="TIMERANGE-MIB"></a>**TIMERANGE-MIB** - настройка временных диапазонов для активации правил ACL (в том числ для CPU)
 
 # Используемые MIBs
-- ## DES-3028:
-  - ? [ACL-MIB](#ACL-MIB)
-  - [BRIDGE-MIB](#BRIDGE-MIB) - мак и количество портов свитча
-  - [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
-  - [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
-  - [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация, save, очистка FDB
-  - [L2MGMT-MIB](#L2MGMT-MIB) - базовые управление свитчом и портом, clear all counters, bandwidth control, traffic segmentation, port security, loopback detection, flood fdb
-  - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
-  - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID), ARP-таблица
-  - [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули
-  - [RFC2665-MIB](#RFC2665-MIB) - ошибки CRC (ошибки выравнивания и контрольной суммы)
-  - [RFC2674Q-MIB](#RFC2674Q-MIB) - FDB, VLAN (создание, tag, при этом PVID выставляется автоматически)
-  - [RFC2863-MIB](#RFC2863-MIB) - соответствие if_index имени ipif, unicast/multicast/broadcast пакеты
-  - [TIME-MIB](#TIME-MIB) - системное время
+## DES-3028
+- ? [ACL-MIB](#ACL-MIB)
+- [BRIDGE-MIB](#BRIDGE-MIB) - мак и количество портов свитча
+- [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
+- [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
+- [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация, save, очистка FDB
+- [L2MGMT-MIB](#L2MGMT-MIB) - базовые управление свитчом и портом, clear all counters, bandwidth control, traffic segmentation, port security, loopback detection, flood fdb
+- [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
+- [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID), ARP-таблица
+- [RFC1907-MIB](#RFC1907-MIB) - стандартные поддерживаемые модули
+- [RFC2665-MIB](#RFC2665-MIB) - ошибки CRC (ошибки выравнивания и контрольной суммы)
+- [RFC2674Q-MIB](#RFC2674Q-MIB) - FDB, VLAN (создание, tag, при этом PVID выставляется автоматически)
+- [RFC2863-MIB](#RFC2863-MIB) - соответствие if_index имени ipif, unicast/multicast/broadcast пакеты
+- [TIME-MIB](#TIME-MIB) - системное время
 
 # Реализуемые функции
-- ## DES-3028:
-  - private mib modules
-    - description
-    - version
-    - value type
-  - switch:
-    - ip, mask, default gateway, management vlan id, management
-    - mac address, ports number
-    - current time, management
-    - cpu and dram utilization
-    - reboot, reset
-    - save
-    - clear all counters
-  - dhcp relay:
-    - state
-    - interfaces for servers
-    - option82
-    - ? managing
-  - vlan:
-    - names, entry status
-    - create, delete
-    - egress and untagged ports, add and remove
-    - pvid adds/removes automatically with untagged vlan
-  - fdb:
-    - mac and port
-    - mac and status
-    - clear: port, all
-  - flood fdb:
-    - state, enable, disable
-    - index, mac, timestamp
-    - clear
-  - ipif:
-    - name
-  - arp:
-    - arp table
-  - port:
-    - basic management: state, speed and duplex, flow control, address learning, mdix state, management
-    - link, speed and duplex status
-    - combo ports
-    - cable diagnostics: action, pairs statuses and lengths
-    - port security: state, max addresses, mode, management, clear by port/exact mac
-    - loopback detection: status, enable, disable
-    - port utilization
-    - bandwidth control: rx, tx, management
-    - traffic control: threshold, broadcast/multicast/unicast, action, count, interval, management
-    - traffic segmentation: forward portlist, management
-    - crc: alingment and fcs errors
-    - packet: rx/tx bytes and unicast/multicast/broadcast packets
-  - ? acl
-  - ? log
-  - ? ping 8.8.8.8/another IP (may be unavailable)
+## DES-3028
+- private mib modules
+  - description
+  - version
+  - value type
+- switch:
+  - ip, mask, default gateway, management vlan id, management
+  - mac address, ports number
+  - current time, management
+  - cpu and dram utilization
+  - reboot, reset
+  - save
+  - clear all counters
+- dhcp relay:
+  - state, option82
+  - ipif & servers
+  - managing
+- vlan:
+  - names, entry status
+  - create, delete
+  - egress and untagged ports, add and remove
+  - pvid adds/removes automatically with untagged vlan
+- fdb:
+  - mac and port
+  - mac and status
+  - clear: port, all
+- flood fdb:
+  - state, enable, disable
+  - index, mac, timestamp
+  - clear
+- ipif:
+  - name
+- arp:
+  - arp table
+- port:
+  - basic management: state, speed and duplex, flow control, address learning, mdix state, management
+  - link, speed and duplex status
+  - combo ports
+  - cable diagnostics: action, pairs statuses and lengths
+  - port security: state, max addresses, mode, management, clear by port/exact mac
+  - loopback detection: status, enable, disable
+  - port utilization
+  - bandwidth control: rx, tx, management
+  - traffic control: threshold, broadcast/multicast/unicast, action, count, interval, management
+  - traffic segmentation: forward portlist, management
+  - crc: alingment and fcs errors
+  - packet: rx/tx bytes and unicast/multicast/broadcast packets
+- ? acl
+- ? log
+- ? ping 8.8.8.8/another IP (may be unavailable)
 
-# Справочник OID
+# Справочник
 
-## VLAN через SNMP на DES-3028 (vlanid=2):
-### Команды:
+## DHCP RELAY
+
+### Механизм работы
+1. Клиентское устройство на порту коммутатора (ему назначен определённый VLAN ID) отправляет broadcast-запрос DHCP DISCOVER.
+2. Первый коммутатор в сети, на котором включён DHCP RELAY, перехватывает пакет.
+3. Если настройки ipif и VLAN на коммутаторе соответствуют клиентскому порту, то пакет будет успешно обработан и в поле ipif отправителя (giaddr) будет указан IP-адрес нужного интерфейса. Иначе будет отброшен.
+4. Если на коммутаторе включено Option82 State, то в пакете будут указаны два дополнительных поля:
+   - Remote ID - идентификатор удалённого relay-устройства, по умолчанию MAC-адрес коммутатора.
+   - Circuit ID - идентификатор цепи, по умолчанию включающий VLAN ID и номер порта, с которого получен запрос.
+5. Если на коммутаторе включена Option82 Check, то при наличии в клиентском запросе собственного поля Option82 он будет отброшен. Также неверные ответы от DHCP-сервера будут отброшены.
+6. Если на коммутаторе выключена Option82 Check, в силу вступает настройка Option82 Policy:
+   - replace - выставить свою Option82 в пакете (заменить при наличии клиентской);
+   - drop - отбросить пакет при наличии клиентской Option82;
+   - keep - сохранить пакет при наличии клиентской Option82.
+7. На основании запроса и применённых настроек формируется unicast-пакет на каждый из назначенных DHCP-серверов. Hop count задаёт максимальное число хопов через relay-агенты до уничтожения пакета. Time threshold определяет задержку перед отправкой unicast-пакета DHCP-серверу (может быть полезно при работе DHCP LOCAL RELAY).
+8. Relay-агент коммутатора обрабатывает ответ сервера и направляет клиенту.
+9. Особенности обработки пакетов на разных моделях:
+   - DES-3028 (функции настройки через VLAN ID имеют баги, не используются), DES-3200-28, DGS-3200-24 - на единственный ipif System должно быть назначено от 1 до 4 DHCP-серверов. Все клиентские запросы во всех VLAN будут обработаны при наличии такой записи, в качестве giaddr будет указан адрес ipif System (IP коммутатора). Circuit ID здесь всегда работает по умолчанию, изменить невозможно.
+   - DGS-1210-28/ME - giaddr всегда будет соответствовать адресу системного ipif System, но пересылка сработает только для тех пользователей, чьи порты и VLAN явно прописаны в DHCP RELAY. Настройка трёх опций Option82 Policy индивидуальна для каждого порта.
+   - DGS-3120-24TC, DGS-3000-24TC - возможна одновременная настройка DHCP RELAY через ipif и VLAN. В первую очередь проверяется настройка сегмента ipif: если VLAN пользователя относится к ipif коммутатора, для которого прописаны DHCP-сервера, то запросы адресуются им, в качестве giaddr используется адрес этого ipif. В противном случае используется настройка сегмента VLAN ID: если VLAN ID пользователя указан для каких-то DHCP-серверов, то запросы пересылаются им, в качестве ipif указывается адрес основного (Primary) ipif, соответствующего этому VLAN ID. Настройка Option82 аналогична модели DES-3028, но Circuit ID модифицируем.
+
+### Команды
+- **create (ipif System)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.6.83.121.115.116.101.109.[dhcp_server] i 4`
+- **create (user ipif)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.[ipif_name_in_oid].[dhcp_server] i 4`
+- **delete (ipif System)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.6.83.121.115.116.101.109.[dhcp_server] i 6`
+- **delete (user ipif)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.[ipif_name_in_oid].[dhcp_server] i 6`
+
+## VLAN через SNMP на DES-3028 (vlanid=2)
+### Команды
 - **create**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.2.1.17.7.1.4.3.1.1.2 s VLAN2 1.3.6.1.2.1.17.7.1.4.3.1.5.2 i 4`
 - **egress**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.2.1.17.7.1.4.3.1.2.2 x 00001000`
 - **untagged**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.2.1.17.7.1.4.3.1.4.2 x 00001000`
@@ -228,6 +269,6 @@
 | untagged | `egress` | untagged |
 | untagged | `untagged` | untagged |
 
-## Port security через SNMP на DES-3028 (port=21):
+## Port security через SNMP на DES-3028 (port=21)
 - **почистить определённый мак**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.11.63.6.2.15.3.1.0 s "[VLAN_NAME]" 1.3.6.1.4.1.171.11.63.6.2.15.3.2.0 i 21 1.3.6.1.4.1.171.11.63.6.2.15.3.3.0 x "[MAC ADDRESS]" 1.3.6.1.4.1.171.11.63.6.2.15.3.4.0 i 2`
 - **дёрнуть lock address mode (deleteOnTimeout -> deleteOnReset -> deleteOnTimeout) для очистки маков на порту**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 4 1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 3`
