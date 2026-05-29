@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import traceback
 import time
+import sys
 # user's modules
 from diag_handler import DiagHandler
 from city_diag_handler import CityDiagHandler
@@ -10,13 +11,10 @@ from country_diag_handler import CountryDiagHandler
 
 ##### START DIAGNOSTICS #####
 
-def main(usernum: int = None) -> None:
+def main(usernum: int = None, print_output : bool = False) -> None:
     # get usernum
     if usernum is None:
         usernum = int(input("Usernum: "))
-
-    # variable for testing, if True, write L2 and L3 managers output in stdout buffer
-    print_output = False
     
     # try to perform database connection and country check
     try:
@@ -44,8 +42,9 @@ def main(usernum: int = None) -> None:
         traceback.print_exc()
     
 if __name__ == "__main__":
+    print_output = "-v" in sys.argv    # if True, write L2 and L3 managers output in stdout buffer
     start_time = time.perf_counter()
-    main()
+    main(print_output=print_output)
     print(time.perf_counter() - start_time)
 
     # test_db_manager = TestDatabaseManager()
