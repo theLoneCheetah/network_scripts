@@ -88,6 +88,35 @@ class L2SwitchHandler:
     async def get_dram_utilization(self) -> ResponseData:
         return await self._client.get_dram_utilization()
     
+    ### TRUSTED HOST ###
+
+    async def get_trusted_hosts(self) -> ResponseData:
+        return await self._client.get_trusted_hosts()
+    
+    async def add_trusted_host(self, config: RequestData) -> None:
+        try:
+            request = AddTrustedHostConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.add_trusted_host(request)
+        print(response.value[1])
+    
+    async def delete_trusted_host(self, config: RequestData) -> None:
+        try:
+            request = DeleteTrustedHostConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.delete_trusted_host(request)
+        print(response.value[1])
+
+    async def delete_all_trusted_host(self) -> None:
+        response = await self._client.delete_all_trusted_host()
+        print(response.value[1])
+    
     #### DHCP RELAY ###
 
     async def get_dhcp_relay(self) -> ResponseData:

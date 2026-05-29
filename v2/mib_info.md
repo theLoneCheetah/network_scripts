@@ -6,13 +6,16 @@
 - [Реализуемые функции](#реализуемые-функции)
   - [DES-3028](#des-3028-1)
 - [Справочник](#справочник)
+  - [Trusted host](#trusted-host)
+    - [Команды](#команды)
   - [DHCP RELAY](#dhcp-relay)
     - [Механизм работы](#механизм-работы)
-    - [Команды](#команды)
-  - [VLAN через SNMP на DES-3028 (vlanid=2)](#vlan-через-snmp-на-des-3028-vlanid2)
-    - [Команды](#команды-1)
+    - [Команды на DES-3028](#команды-на-des-3028)
+  - [VLAN](#vlan)
+    - [Команды на DES-3028 (vlanid=2)](#команды-на-des-3028-vlanid2)
     - [Комбинации запросов](#комбинации-запросов)
-  - [Port security через SNMP на DES-3028 (port=21)](#port-security-через-snmp-на-des-3028-port21)
+  - [Port security](#port-security)
+    - [Команды на DES-3028 (port=21)](#команды-на-des-3028-port21)
 # Известные MIBs
 
 ## Standard MIBs
@@ -154,7 +157,7 @@
 - [BRIDGE-MIB](#BRIDGE-MIB) - мак и количество портов свитча
 - [CABLEDIAG-MIB](#CABLEDIAG-MIB) - кабель диагностика (запуск, состояние и результат)
 - [DHCPRELAY-MIB](#DHCPRELAY-MIB) - dhcp relay без распределения серверов по вланам
-- [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация, save, очистка FDB
+- [GENMGMT-MIB](#GENMGMT-MIB) - частные поддерживаемые модули, утилизация, save, trusted hosts, очистка FDB
 - [L2MGMT-MIB](#L2MGMT-MIB) - базовые управление свитчом и портом, clear all counters, bandwidth control, traffic segmentation, port security, loopback detection, flood fdb
 - [PKTSTORMCTRL-MIB](#PKTSTORMCTRL-MIB) - контроль трафика
 - [RFC1213-MIB](#RFC1213-MIB) - базовые данные системы (модель, private OID), ARP-таблица
@@ -178,6 +181,10 @@
   - reboot, reset
   - save
   - clear all counters
+- trusted host:
+  - ip, mask
+  - add, delete host
+  - delete all hosts
 - dhcp relay:
   - state, option82
   - ipif & servers
@@ -218,6 +225,13 @@
 
 # Справочник
 
+## Trusted host
+
+### Команды
+- **create**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.1.2.10.1.1.2.4 a [IP] 1.3.6.1.4.1.171.12.1.2.10.1.1.4.4 a [MASK] 1.3.6.1.4.1.171.12.1.2.10.1.1.3.4 i 4`
+- **delete**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.1.2.10.1.1.3.4 i 6`
+- **delete all**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.1.2.10.2.0 i 2`
+
 ## DHCP RELAY
 
 ### Механизм работы
@@ -239,14 +253,14 @@
    - DGS-1210-28/ME - giaddr всегда будет соответствовать адресу системного ipif System, но пересылка сработает только для тех пользователей, чьи порты и VLAN явно прописаны в DHCP RELAY. Настройка трёх опций Option82 Policy индивидуальна для каждого порта.
    - DGS-3120-24TC, DGS-3000-24TC - возможна одновременная настройка DHCP RELAY через ipif и VLAN. В первую очередь проверяется настройка сегмента ipif: если VLAN пользователя относится к ipif коммутатора, для которого прописаны DHCP-сервера, то запросы адресуются им, в качестве giaddr используется адрес этого ipif. В противном случае используется настройка сегмента VLAN ID: если VLAN ID пользователя указан для каких-то DHCP-серверов, то запросы пересылаются им, в качестве ipif указывается адрес основного (Primary) ipif, соответствующего этому VLAN ID. Настройка Option82 аналогична модели DES-3028, но Circuit ID модифицируем.
 
-### Команды
+### Команды на DES-3028
 - **create (ipif System)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.6.83.121.115.116.101.109.[dhcp_server] i 4`
 - **create (user ipif)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.[ipif_name_in_oid].[dhcp_server] i 4`
 - **delete (ipif System)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.6.83.121.115.116.101.109.[dhcp_server] i 6`
 - **delete (user ipif)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.[ipif_name_in_oid].[dhcp_server] i 6`
 
-## VLAN через SNMP на DES-3028 (vlanid=2)
-### Команды
+## VLAN
+### Команды на DES-3028 (vlanid=2)
 - **create**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.2.1.17.7.1.4.3.1.1.2 s VLAN2 1.3.6.1.2.1.17.7.1.4.3.1.5.2 i 4`
 - **egress**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.2.1.17.7.1.4.3.1.2.2 x 00001000`
 - **untagged**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.2.1.17.7.1.4.3.1.4.2 x 00001000`
@@ -269,6 +283,7 @@
 | untagged | `egress` | untagged |
 | untagged | `untagged` | untagged |
 
-## Port security через SNMP на DES-3028 (port=21)
+## Port security
+### Команды на DES-3028 (port=21)
 - **почистить определённый мак**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.11.63.6.2.15.3.1.0 s "[VLAN_NAME]" 1.3.6.1.4.1.171.11.63.6.2.15.3.2.0 i 21 1.3.6.1.4.1.171.11.63.6.2.15.3.3.0 x "[MAC ADDRESS]" 1.3.6.1.4.1.171.11.63.6.2.15.3.4.0 i 2`
 - **дёрнуть lock address mode (deleteOnTimeout -> deleteOnReset -> deleteOnTimeout) для очистки маков на порту**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 4 1.3.6.1.4.1.171.11.63.6.2.15.1.1.3.21 i 3`

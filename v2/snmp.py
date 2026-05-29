@@ -48,7 +48,7 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
     
-    await dhcp_relay_config_example(switch_handler)
+    print(await switch_handler.get_trusted_hosts())
 
     print("Overall time:", perf_counter() - start_time)
 

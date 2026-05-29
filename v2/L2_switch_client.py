@@ -170,6 +170,85 @@ class L2SwitchClient(SNMPClient):
         results = await self._get_switch_data(include_oids)
         return {key.removeprefix("dram_"): value for key, value in results.items()}
     
+    ### TRUSTED HOST ###
+
+    async def get_trusted_hosts(self) -> ResponseData:
+        results = defaultdict(dict)
+        
+        for oid, ip in await self._bulk_walk(self._switch_oids_config["trusted_host"]["ip"]):
+            host_index = L2SwitchClient._parse_last_index(oid)[1]
+            # consider 24-bit mask by default
+            results[host_index] = {"ip": ip, "mask": "255.255.255.0"}
+        
+        for oid, mask in await self._bulk_walk(self._switch_oids_config["trusted_host"]["mask"]):
+            host_index = L2SwitchClient._parse_last_index(oid)[1]
+            # consider 24-bit mask by default
+            results[host_index]["mask"] = mask
+        
+        return results
+    
+    async def _find_first_free_host_index(self) -> int:
+        occupied_indices = set()
+
+        for oid, _ in await self._bulk_walk(self._switch_oids_config["trusted_host"]["ip"]):
+            host_index = L2SwitchClient._parse_last_index(oid)[1]
+            occupied_indices.add(host_index)
+        
+        current = 1
+        while current in occupied_indices:
+            current += 1
+        
+        return current
+
+    async def add_trusted_host(self, request: RequestData) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["trusted_host"], ["ip", "mask", "entry_status"])
+        
+        payload["ip"]["set_value"] = request["ip"]
+        payload["mask"]["set_value"] = request["mask"]
+        # it's important to find free index to avoid errors
+        payload["entry_status"]["params"] = {"host_index": await self._find_first_free_host_index()}
+        payload["entry_status"]["set_value"] = "create_and_go"
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    async def delete_trusted_host(self, request: RequestData) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["trusted_host"], ["entry_status"])
+        
+        payload["entry_status"]["params"] = {"host_index": request["host_index"]}
+        payload["entry_status"]["set_value"] = "destroy"
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    async def delete_all_trusted_host(self) -> SNMPResponseCode:
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["trusted_host"], ["delete_all"])
+        payload["delete_all"]["set_value"] = "start"
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+
     ### DHCP RELAY ###
 
     async def get_dhcp_relay(self) -> ResponseData:
@@ -180,7 +259,7 @@ class L2SwitchClient(SNMPClient):
         results["ipif_servers"] = defaultdict(set)
         results["vlan_id_servers"] = defaultdict(set)
 
-        for oid, interface_name in await self._bulk_walk(self._switch_oids_config["dhcp_relay"]["ipif_for_server"]):
+        for oid, interface_name in await self._bulk_walk(self._switch_oids_config["dhcp_relay"]["ipif_server"]):
             server_ip = L2SwitchClient._parse_ip_address_from_oid(oid)[1]
             results["ipif_servers"][interface_name].add(server_ip)
         
@@ -206,10 +285,10 @@ class L2SwitchClient(SNMPClient):
         return SNMPResponseCode.SUCCESS
     
     async def _manage_dhcp_servers_for_ipif(self, request: RequestData, mode: str) -> ResponseData:
-        ipif_server_config = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], ["ipif_server_status"])["ipif_server_status"]
+        ipif_server_config = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], ["ipif_server_entry_status"])["ipif_server_entry_status"]
         
         payload = {
-            f"ipif_server_status.{ipif_name}.{server}": {
+            f"ipif_server_entry_status.{ipif_name}.{server}": {
                 **ipif_server_config,
                 "params": {"ipif_name_in_oid": L2SwitchClient._convert_name_into_oid(ipif_name),
                            "dhcp_server": server},
