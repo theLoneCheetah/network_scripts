@@ -67,13 +67,13 @@ class DhcpRelayConfig(RestrictedBaseModel):
 class ManageDhcpServersForIpifConfig(RestrictedBaseModel):
     ipif_servers: dict[str, set[str]]
 
-# helper class for other vlan configs
-class VlanInfo(RestrictedBaseModel):
+class CreateVlanConfig(RestrictedBaseModel):
     vlan_id: int
     vlan_name: str
 
-class CreateVlanConfig(RestrictedBaseModel):
-    vlan: VlanInfo
+class RenameVlanConfig(RestrictedBaseModel):
+    vlan_id: int
+    vlan_name: str
 
 class DeleteVlanConfig(RestrictedBaseModel):
     vlan_id: int

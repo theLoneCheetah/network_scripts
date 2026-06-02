@@ -21,7 +21,7 @@ async def dhcp_relay_config_example(switch_handler: L2SwitchHandler) -> None:
 
 async def vlan_config_example(switch_handler: L2SwitchHandler) -> None:
     vlan = {"vlan_id": 2, "vlan_name": "vlan2"}
-    await switch_handler.create_vlan({"vlan": vlan})
+    await switch_handler.create_vlan({**vlan})
     await asyncio.sleep(5)
     await switch_handler.add_vlan_on_ports({"vlan_id": vlan["vlan_id"], "portlist": {21,22}, "status": "untagged"})
     await asyncio.sleep(5)
@@ -48,7 +48,9 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
     
-    print(await switch_handler.get_trusted_hosts())
+    print(await switch_handler.get_vlan_static_table())
+    await switch_handler.rename_vlan({"vlan_id": 11, "vlan_name": "44011"})
+    print(await switch_handler.get_vlan_static_table())
 
     print("Overall time:", perf_counter() - start_time)
 

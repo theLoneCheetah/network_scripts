@@ -341,8 +341,15 @@ class L2SwitchClient(SNMPClient):
                 results[vlan_id] = {"vlan_name": str(vlan_id), "tagged_ports": set(), "untagged_ports": portlist}
             results[vlan_id]["untagged_ports"] = portlist
             results[vlan_id]["tagged_ports"] -= results[vlan_id]["untagged_ports"]
-
+        
         return results
+    
+    # get vlan static table for specified vlan
+    async def _get_exact_vlan_table(self, vlan_id: int) -> ResponseData:
+        vlan_static_table = await self.get_vlan_static_table()
+        if vlan_id not in vlan_static_table:
+            return {}
+        return {vlan_id: vlan_static_table[vlan_id]}
     
     async def get_vlan_on_port(self) -> ResponseData:
         vlan_static_table = await self.get_vlan_static_table()
@@ -366,9 +373,9 @@ class L2SwitchClient(SNMPClient):
     async def create_vlan(self, request: RequestData) -> SNMPResponseCode:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["name", "entry_status"])
         for command in payload.values():
-            command["params"] = {"vlan_id": request["vlan"]["vlan_id"]}
+            command["params"] = {"vlan_id": request["vlan_id"]}
         
-        payload["name"]["set_value"] = request["vlan"]["vlan_name"]
+        payload["name"]["set_value"] = request["vlan_name"]
         payload["entry_status"]["set_value"] = "create_and_go"
 
         try:
@@ -380,6 +387,29 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
+    
+    async def rename_vlan(self, request: RequestData) -> SNMPResponseCode:
+        """
+        WARNING: this way of changing VLAN's name is not stable and disrupts users' connections.
+        """
+        old_vlan_data = await self._get_exact_vlan_table(request["vlan_id"])
+
+        response = await self.delete_vlan({"vlan_id": request["vlan_id"]})
+        if response != SNMPResponseCode.SUCCESS:
+            return response
+        
+        response = await self.create_vlan(request)
+        if response != SNMPResponseCode.SUCCESS:
+            return response
+        
+        for status in ["tagged", "untagged"]:
+            response = await self.add_vlan_on_ports({"vlan_id": request["vlan_id"],
+                                                     "portlist": old_vlan_data[request["vlan_id"]][f"{status}_ports"],
+                                                     "status": status})
+            if response != SNMPResponseCode.SUCCESS:
+                return response
+        
+        return response
 
     async def delete_vlan(self, request: RequestData) -> SNMPResponseCode:
         check_result = await self._check_vlan_entry(request["vlan_id"])
