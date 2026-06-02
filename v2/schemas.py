@@ -71,9 +71,9 @@ class CreateVlanConfig(RestrictedBaseModel):
     vlan_id: int
     vlan_name: str
 
-class RenameVlanConfig(RestrictedBaseModel):
-    vlan_id: int
-    vlan_name: str
+# class RenameVlanConfig(RestrictedBaseModel):
+#     vlan_id: int
+#     vlan_name: str
 
 class DeleteVlanConfig(RestrictedBaseModel):
     vlan_id: int

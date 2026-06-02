@@ -49,8 +49,6 @@ async def main() -> None:
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
     
     print(await switch_handler.get_vlan_static_table())
-    await switch_handler.rename_vlan({"vlan_id": 11, "vlan_name": "44011"})
-    print(await switch_handler.get_vlan_static_table())
 
     print("Overall time:", perf_counter() - start_time)
 

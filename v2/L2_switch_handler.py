@@ -170,15 +170,15 @@ class L2SwitchHandler:
         response = await self._client.create_vlan(request)
         print(response.value[1])
     
-    async def rename_vlan(self, config: RequestData) -> SNMPResponseCode:
-        try:
-            request = RenameVlanConfig(**config).model_dump(exclude_none=True)
-        except ValidationError:
-            print(SNMPResponseCode.INVALID_DATA.value[1])
-            return
+    # async def rename_vlan(self, config: RequestData) -> SNMPResponseCode:
+    #     try:
+    #         request = RenameVlanConfig(**config).model_dump(exclude_none=True)
+    #     except ValidationError:
+    #         print(SNMPResponseCode.INVALID_DATA.value[1])
+    #         return
         
-        response = await self._client.rename_vlan(request)
-        print(response.value[1])
+    #     response = await self._client.rename_vlan(request)
+    #     print(response.value[1])
     
     async def delete_vlan(self, config: RequestData) -> None:
         try:
