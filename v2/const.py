@@ -18,6 +18,8 @@ class SNMP:
 
     DEFAULT_IP = "10.90.90.90"
 
+    ZERO_32_BYTE_HEX = "0x" + "0" * 64
+
     @staticmethod
     def typify_mac_address(mac_address: str) -> OctetString:
         print(repr(mac_address), type(mac_address))

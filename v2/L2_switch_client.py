@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 import asyncio
 import struct
-from typing import override, Any
+from typing import override, Any, Callable
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
@@ -248,71 +248,144 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
+    
+    ### ACL ###
 
-    ### DHCP RELAY ###
-
-    async def get_dhcp_relay(self) -> ResponseData:
-        include_oids = ["state", "hop_count", "time_threshold",
-                        "option82_state", "option82_check_state", "option82_policy", "option82_remote_id_type", "option82_remote_id"]
-        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids))
-
-        results["ipif_servers"] = defaultdict(set)
-        results["vlan_id_servers"] = defaultdict(set)
-
-        for oid, interface_name in await self._bulk_walk(self._switch_oids_config["dhcp_relay"]["ipif_server"]):
-            server_ip = L2SwitchClient._parse_ip_address_from_oid(oid)[1]
-            results["ipif_servers"][interface_name].add(server_ip)
+    # masks
+    async def _get_acl_mask(self, acl_type: str, attributes_to_check: list[str]) -> ResponseData:
+        attributes_to_check = [f"{acl_type}_{attribute}" for attribute in attributes_to_check]
+        pre_results = defaultdict(dict)
         
-        # vlan id - servers logic will be implemented for other switch models
+        for attribute in attributes_to_check:
+            for oid, value in await self._bulk_walk(self._switch_oids_config["acl_mask"][attribute]):
+                profile_id = L2SwitchClient._parse_last_index(oid)[1]
+                pre_results[profile_id][attribute] = value
+        
+        results = {}
+
+        for profile_id, profile_id_config in pre_results.items():
+            temp_profile_id_config = {}
+
+            for attribute in attributes_to_check:
+                # if any attribute was not found, skip profile
+                if attribute not in profile_id_config:
+                    break
+
+                temp_profile_id_config[attribute.removeprefix(f"{acl_type}_")] = profile_id_config[attribute]
+            
+            else:
+                results[profile_id] = {
+                    "type": acl_type,
+                    "mask_management": temp_profile_id_config,
+                    "rule_management": defaultdict(dict)
+                }
 
         return results
-    
-    async def set_dhcp_relay(self, request: RequestData) -> ResponseData:
-        include_oids = list(request.keys())
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids)
 
-        for param, data in payload.items():
-            data["set_value"] = request[param]
+    async def get_acl_ethernet_mask(self) -> ResponseData:
+        acl_type = "ethernet"
+        attributes_to_check = ["use_vlan", "mac_mask_state", "source_mac_mask", "destination_mac_mask", "use_802_1p", "use_ethernet_type", "owner"]
 
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "inconsistentValue":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
-    
-    async def _manage_dhcp_servers_for_ipif(self, request: RequestData, mode: str) -> ResponseData:
-        ipif_server_config = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], ["ipif_server_entry_status"])["ipif_server_entry_status"]
-        
-        payload = {
-            f"ipif_server_entry_status.{ipif_name}.{server}": {
-                **ipif_server_config,
-                "params": {"ipif_name_in_oid": L2SwitchClient._convert_name_into_oid(ipif_name),
-                           "dhcp_server": server},
-                "set_value": mode
+        return await self._get_acl_mask(acl_type, attributes_to_check)
+
+    async def get_acl_packet_content_mask(self) -> ResponseData:
+        acl_type = "packet_content"
+        masks = ["offset_0_15", "offset_16_31", "offset_32_47", "offset_48_63", "offset_64_79"]
+        attributes_to_check = [*masks, "owner"]
+
+        results = await self._get_acl_mask(acl_type, attributes_to_check)
+
+        for profile_id_config in results.values():
+            mask_management = profile_id_config["mask_management"]
+
+            general_mask = "0x" + "".join(mask_management[mask][2:] for mask in masks)
+            fully_inspected_bytes = [ind for ind, byte in enumerate(bytes.fromhex(general_mask[2:])) if byte == 0xFF]
+
+            profile_id_config["mask_management"] = {
+                "general_mask": general_mask,
+                "fully_inspected_bytes": fully_inspected_bytes,
+                "owner": mask_management["owner"]
             }
-            for ipif_name, servers in request["ipif_servers"].items() for server in servers
-        }
+        
+        return results
 
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "inconsistentValue":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
-    
-    async def add_dhcp_servers_for_ipif(self, request: RequestData) -> ResponseData:
-        return await self._manage_dhcp_servers_for_ipif(request, "create_and_go")
-    
-    async def delete_dhcp_servers_for_ipif(self, request: RequestData) -> ResponseData:
-        return await self._manage_dhcp_servers_for_ipif(request, "destroy")
-    
+    # rules
+    async def _get_acl_rule(self, acl_type: str, attributes_to_check: list[str],
+                            convert_value: Callable[[dict[int, dict[str, Any]], str], Any]) -> ResponseData:
+        attributes_to_check = [f"{acl_type}_{attribute}" for attribute in attributes_to_check]
+        pre_results = defaultdict(lambda: defaultdict(dict))
+        
+        for attribute in attributes_to_check:
+            for oid, value in await self._bulk_walk(self._switch_oids_config["acl_rule"][attribute]):
+                cut_oid, access_id = L2SwitchClient._parse_last_index(oid)
+                profile_id = L2SwitchClient._parse_last_index(cut_oid)[1]
+                pre_results[profile_id][access_id][attribute] = value
+        
+        results = {}
+
+        for profile_id, profile_id_config in pre_results.items():
+            results[profile_id] = {
+                "type": acl_type,
+                "mask_management": defaultdict(dict),
+                "rule_management": defaultdict(dict)
+            }
+            rule_management = results[profile_id]["rule_management"]
+
+            for access_id, access_id_config in profile_id_config.items():
+                temp_access_id_config = {}
+
+                for attribute in attributes_to_check:
+                    # if any attribute was not found, skip rule
+                    if attribute not in access_id_config:
+                        break
+
+                    temp_access_id_config[attribute.removeprefix(f"{acl_type}_")] = convert_value(access_id_config, attribute)
+                else:
+                    rule_management[access_id] = temp_access_id_config
+        
+        # if all access id rules are skipped in one profile id, keep the profile id because it should have at least correct mask
+        return results
+
+    async def get_acl_ethernet_rule(self) -> ResponseData:
+        def convert_value(access_id_config: dict[int, dict[str, Any]], attribute: str) -> Any:
+            value = access_id_config[attribute]
+
+            match attribute:
+                # when vlan name is not stated, the value is 64-byte zero string, miss it
+                case "ethernet_vlan_name":
+                    if value == SNMP.ZERO_32_BYTE_HEX:
+                        value = ""
+                # for ports, get the portlist
+                case "ethernet_ports":
+                    value = L2SwitchClient._parse_assigned_ports_from_hex(value, self._ports_count)
+            
+            return value
+
+        acl_type = "ethernet"
+        attributes_to_check = ["vlan_name", "source_mac", "destination_mac", "802_1p", "ethernet_type",
+                                "enable_local_priority", "local_priority", "permit", "ports", "owner", "rx_rate"]
+        
+        return await self._get_acl_rule(acl_type, attributes_to_check, convert_value)
+
+    async def get_acl_packet_content_rule(self) -> ResponseData:
+        def convert_value(access_id_config: dict[int, dict[str, Any]], attribute: str) -> Any:
+            value = access_id_config[attribute]
+
+            match attribute:
+                # for ports, get the portlist
+                case "packet_content_ports":
+                    value = L2SwitchClient._parse_assigned_ports_from_hex(value, self._ports_count)
+            
+            return value
+
+        acl_type = "packet_content"
+        attributes_to_check = [f"offset_{attribute}_{ind}"
+                               for ind in range(1, 6)
+                               for attribute in ["index", "mask", "data"]
+                               ] + ["enable_local_priority", "local_priority", "permit", "ports", "rx_rate"]
+        
+        return await self._get_acl_rule(acl_type, attributes_to_check, convert_value)
+
     ### VLAN ###
 
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
@@ -600,7 +673,7 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
 
-    ### IP INTERFACE ###
+    ### IPIF ###
 
     async def _get_ipif_name(self, if_index: int) -> ResponseData:
         payload = SNMPClient._filter_request_config(self._switch_oids_config["ipif"], ["name"])
@@ -608,7 +681,71 @@ class L2SwitchClient(SNMPClient):
         result = await self._get(payload)
         return result["name"]
 
-    ### ARPENTRY ###
+    ### DHCP RELAY ###
+
+    async def get_dhcp_relay(self) -> ResponseData:
+        include_oids = ["state", "hop_count", "time_threshold",
+                        "option82_state", "option82_check_state", "option82_policy", "option82_remote_id_type", "option82_remote_id"]
+        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids))
+
+        results["ipif_servers"] = defaultdict(set)
+        results["vlan_id_servers"] = defaultdict(set)
+
+        for oid, interface_name in await self._bulk_walk(self._switch_oids_config["dhcp_relay"]["ipif_server"]):
+            server_ip = L2SwitchClient._parse_ip_address_from_oid(oid)[1]
+            results["ipif_servers"][interface_name].add(server_ip)
+        
+        # vlan id - servers logic will be implemented for other switch models
+
+        return results
+    
+    async def set_dhcp_relay(self, request: RequestData) -> SNMPResponseCode:
+        include_oids = list(request.keys())
+        payload = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids)
+
+        for param, data in payload.items():
+            data["set_value"] = request[param]
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    async def _manage_dhcp_servers_for_ipif(self, request: RequestData, mode: str) -> SNMPResponseCode:
+        ipif_server_config = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], ["ipif_server_entry_status"])["ipif_server_entry_status"]
+        
+        payload = {
+            f"ipif_server_entry_status.{ipif_name}.{server}": {
+                **ipif_server_config,
+                "params": {"ipif_name_in_oid": L2SwitchClient._convert_name_into_oid(ipif_name),
+                           "dhcp_server": server},
+                "set_value": mode
+            }
+            for ipif_name, servers in request["ipif_servers"].items() for server in servers
+        }
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    async def add_dhcp_servers_for_ipif(self, request: RequestData) -> SNMPResponseCode:
+        return await self._manage_dhcp_servers_for_ipif(request, "create_and_go")
+    
+    async def delete_dhcp_servers_for_ipif(self, request: RequestData) -> SNMPResponseCode:
+        return await self._manage_dhcp_servers_for_ipif(request, "destroy")
+
+    ### ARP ###
 
     async def get_arp_table(self) -> ResponseData:
         results = defaultdict(dict)

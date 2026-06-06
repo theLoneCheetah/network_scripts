@@ -117,40 +117,19 @@ class L2SwitchHandler:
         response = await self._client.delete_all_trusted_host()
         print(response.value[1])
     
-    #### DHCP RELAY ###
+    ### ACL ###
 
-    async def get_dhcp_relay(self) -> ResponseData:
-        return await self._client.get_dhcp_relay()
-    
-    async def set_dhcp_relay(self, config: RequestData) -> None:
-        try:
-            request = DhcpRelayConfig(**config).model_dump(exclude_none=True)
-        except ValidationError:
-            print(SNMPResponseCode.INVALID_DATA.value[1])
-            return
-        
-        response = await self._client.set_dhcp_relay(request)
-        print(response.value[1])
-    
-    async def add_dhcp_servers_for_ipif(self, config: RequestData) -> None:
-        try:
-            request = ManageDhcpServersForIpifConfig(**config).model_dump(exclude_none=True)
-        except ValidationError:
-            print(SNMPResponseCode.INVALID_DATA.value[1])
-            return
-        
-        response = await self._client.add_dhcp_servers_for_ipif(request)
-        print(response.value[1])
-    
-    async def delete_dhcp_servers_for_ipif(self, config: RequestData) -> None:
-        try:
-            request = ManageDhcpServersForIpifConfig(**config).model_dump(exclude_none=True)
-        except ValidationError:
-            print(SNMPResponseCode.INVALID_DATA.value[1])
-            return
-        
-        response = await self._client.delete_dhcp_servers_for_ipif(request)
-        print(response.value[1])
+    async def get_acl_ethernet_mask(self) -> ResponseData:
+        return await self._client.get_acl_ethernet_mask()
+
+    async def get_acl_packet_content_mask(self) -> ResponseData:
+        return await self._client.get_acl_packet_content_mask()
+
+    async def get_acl_ethernet_rule(self) -> ResponseData:
+        return await self._client.get_acl_ethernet_rule()
+
+    async def get_acl_packet_content_rule(self) -> ResponseData:
+        return await self._client.get_acl_packet_content_rule()
     
     ### VLAN ###
 
@@ -245,7 +224,42 @@ class L2SwitchHandler:
         response = await self._client.clear_flood_fdb()
         print(response.value[1])
     
-    ### ARPENTRY ###
+    #### DHCP RELAY ###
+
+    async def get_dhcp_relay(self) -> ResponseData:
+        return await self._client.get_dhcp_relay()
+    
+    async def set_dhcp_relay(self, config: RequestData) -> None:
+        try:
+            request = DhcpRelayConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.set_dhcp_relay(request)
+        print(response.value[1])
+    
+    async def add_dhcp_servers_for_ipif(self, config: RequestData) -> None:
+        try:
+            request = ManageDhcpServersForIpifConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.add_dhcp_servers_for_ipif(request)
+        print(response.value[1])
+    
+    async def delete_dhcp_servers_for_ipif(self, config: RequestData) -> None:
+        try:
+            request = ManageDhcpServersForIpifConfig(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.delete_dhcp_servers_for_ipif(request)
+        print(response.value[1])
+    
+    ### ARP ###
 
     async def get_arp_table(self) -> ResponseData:
         return await self._client.get_arp_table()
