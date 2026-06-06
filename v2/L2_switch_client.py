@@ -12,7 +12,7 @@ from const import SNMP
 from snmp_exceptions import *
 
 type RequestData = dict[str, Any]
-type ResponseData = dict[str, Any]
+type ResponseData = dict[str | int, Any]
 
 class L2SwitchClient(SNMPClient):
     _port: int
@@ -252,7 +252,8 @@ class L2SwitchClient(SNMPClient):
     ### ACL ###
 
     # masks
-    async def _get_acl_mask(self, acl_type: str, attributes_to_check: list[str]) -> ResponseData:
+    async def _get_acl_mask(self, acl_type: str, attributes_to_check: list[str],
+                            check_profile_id: Callable[[dict[str, str]], dict[str, Any]]) -> ResponseData:
         attributes_to_check = [f"{acl_type}_{attribute}" for attribute in attributes_to_check]
         pre_results = defaultdict(dict)
         
@@ -276,38 +277,48 @@ class L2SwitchClient(SNMPClient):
             else:
                 results[profile_id] = {
                     "type": acl_type,
-                    "mask_management": temp_profile_id_config,
-                    "rule_management": defaultdict(dict)
+                    "mask_management": check_profile_id(temp_profile_id_config)
                 }
 
         return results
 
     async def get_acl_ethernet_mask(self) -> ResponseData:
+        def check_profile_id(profile_id_config: dict[str, str]) -> dict[str, Any]:
+            # if source or/and destination mac aren't checked, leave its/their mask/masks empty
+            match profile_id_config["mac_mask_state"]:
+                case "destination_mac":
+                    profile_id_config["source_mac_mask"] = ""
+                case "source_mac":
+                    profile_id_config["destination_mac_mask"] = ""
+                case "other":
+                    profile_id_config["source_mac_mask"] = ""
+                    profile_id_config["destination_mac_mask"] = ""
+            
+            return profile_id_config
+
         acl_type = "ethernet"
         attributes_to_check = ["use_vlan", "mac_mask_state", "source_mac_mask", "destination_mac_mask", "use_802_1p", "use_ethernet_type", "owner"]
 
-        return await self._get_acl_mask(acl_type, attributes_to_check)
+        return await self._get_acl_mask(acl_type, attributes_to_check, check_profile_id)
 
     async def get_acl_packet_content_mask(self) -> ResponseData:
+        def check_profile_id(profile_id_config: dict[str, str]) -> dict[str, Any]:
+            general_mask = "0x" + "".join(profile_id_config[mask][2:] for mask in masks)
+            fully_inspected_bytes = [ind for ind, byte in enumerate(bytes.fromhex(general_mask[2:])) if byte == 0xFF]
+
+            profile_id_config = {
+                "general_mask": general_mask,
+                "fully_inspected_bytes": fully_inspected_bytes,
+                "owner": profile_id_config["owner"]
+            }
+
+            return profile_id_config
+        
         acl_type = "packet_content"
         masks = ["offset_0_15", "offset_16_31", "offset_32_47", "offset_48_63", "offset_64_79"]
         attributes_to_check = [*masks, "owner"]
 
-        results = await self._get_acl_mask(acl_type, attributes_to_check)
-
-        for profile_id_config in results.values():
-            mask_management = profile_id_config["mask_management"]
-
-            general_mask = "0x" + "".join(mask_management[mask][2:] for mask in masks)
-            fully_inspected_bytes = [ind for ind, byte in enumerate(bytes.fromhex(general_mask[2:])) if byte == 0xFF]
-
-            profile_id_config["mask_management"] = {
-                "general_mask": general_mask,
-                "fully_inspected_bytes": fully_inspected_bytes,
-                "owner": mask_management["owner"]
-            }
-        
-        return results
+        return await self._get_acl_mask(acl_type, attributes_to_check, check_profile_id)
 
     # rules
     async def _get_acl_rule(self, acl_type: str, attributes_to_check: list[str],
@@ -326,7 +337,6 @@ class L2SwitchClient(SNMPClient):
         for profile_id, profile_id_config in pre_results.items():
             results[profile_id] = {
                 "type": acl_type,
-                "mask_management": defaultdict(dict),
                 "rule_management": defaultdict(dict)
             }
             rule_management = results[profile_id]["rule_management"]
@@ -350,13 +360,13 @@ class L2SwitchClient(SNMPClient):
         def convert_value(access_id_config: dict[int, dict[str, Any]], attribute: str) -> Any:
             value = access_id_config[attribute]
 
-            match attribute:
+            match attribute.removeprefix(f"{acl_type}_"):
                 # when vlan name is not stated, the value is 64-byte zero string, miss it
-                case "ethernet_vlan_name":
+                case "vlan_name":
                     if value == SNMP.ZERO_32_BYTE_HEX:
                         value = ""
                 # for ports, get the portlist
-                case "ethernet_ports":
+                case "ports":
                     value = L2SwitchClient._parse_assigned_ports_from_hex(value, self._ports_count)
             
             return value
@@ -371,9 +381,9 @@ class L2SwitchClient(SNMPClient):
         def convert_value(access_id_config: dict[int, dict[str, Any]], attribute: str) -> Any:
             value = access_id_config[attribute]
 
-            match attribute:
+            match attribute.removeprefix(f"{acl_type}_"):
                 # for ports, get the portlist
-                case "packet_content_ports":
+                case "ports":
                     value = L2SwitchClient._parse_assigned_ports_from_hex(value, self._ports_count)
             
             return value
@@ -385,6 +395,32 @@ class L2SwitchClient(SNMPClient):
                                ] + ["enable_local_priority", "local_priority", "permit", "ports", "rx_rate"]
         
         return await self._get_acl_rule(acl_type, attributes_to_check, convert_value)
+
+    # overall
+    async def _merge_acl_mask_and_rule(self, mask: dict[int, dict[str, Any]], rule: dict[int, dict[str, Any]]) -> ResponseData:
+        for profile_id, profile_id_config in mask.items():
+            if profile_id in rule:
+                profile_id_config.update(rule[profile_id])
+        
+        return mask
+    
+    async def get_acl_ethernet(self) -> ResponseData:
+        mask = await self.get_acl_ethernet_mask()
+        rule = await self.get_acl_ethernet_rule()
+        
+        return await self._merge_acl_mask_and_rule(mask, rule)
+    
+    async def get_acl_packet_content(self) -> ResponseData:
+        mask = await self.get_acl_packet_content_mask()
+        rule = await self.get_acl_packet_content_rule()
+        
+        return await self._merge_acl_mask_and_rule(mask, rule)
+    
+    async def get_acl_all(self) -> ResponseData:
+        ethernet = await self.get_acl_ethernet()
+        packet_content = await self.get_acl_packet_content()
+
+        return dict(sorted({**ethernet, **packet_content}.items()))
 
     ### VLAN ###
 

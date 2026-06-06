@@ -130,6 +130,15 @@ class L2SwitchHandler:
 
     async def get_acl_packet_content_rule(self) -> ResponseData:
         return await self._client.get_acl_packet_content_rule()
+
+    async def get_acl_ethernet(self) -> ResponseData:
+        return await self._client.get_acl_ethernet()
+
+    async def get_acl_packet_content(self) -> ResponseData:
+        return await self._client.get_acl_packet_content()
+
+    async def get_acl_all(self) -> ResponseData:
+        return await self._client.get_acl_all()
     
     ### VLAN ###
 

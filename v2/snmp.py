@@ -47,14 +47,8 @@ async def main() -> None:
     start_time = perf_counter()
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
-    
-    print(await switch_handler.get_acl_ethernet_mask())
-    print()
-    print(await switch_handler.get_acl_ethernet_rule())
-    print()
-    print(await switch_handler.get_acl_packet_content_mask())
-    print()
-    print(await switch_handler.get_acl_packet_content_rule())
+
+    print(await switch_handler.get_acl_all())
 
     print("Overall time:", perf_counter() - start_time)
 
