@@ -282,17 +282,13 @@ class L2SwitchClient(SNMPClient):
 
         return results
 
-    async def get_acl_ethernet_mask(self) -> ResponseData:
+    async def _get_acl_ethernet_mask(self) -> ResponseData:
         def check_profile_id(profile_id_config: dict[str, str]) -> dict[str, Any]:
-            # if source or/and destination mac aren't checked, leave its/their mask/masks empty
-            match profile_id_config["mac_mask_state"]:
-                case "destination_mac":
-                    profile_id_config["source_mac_mask"] = ""
-                case "source_mac":
-                    profile_id_config["destination_mac_mask"] = ""
-                case "other":
-                    profile_id_config["source_mac_mask"] = ""
-                    profile_id_config["destination_mac_mask"] = ""
+            # for zero/any source/destination mac masks, leave them empty
+            if profile_id_config["source_mac_mask"] == SNMP.ZERO_MAC_ADDRESS:
+                profile_id_config["source_mac_mask"] = ""
+            if profile_id_config["destination_mac_mask"] == SNMP.ZERO_MAC_ADDRESS:
+                profile_id_config["destination_mac_mask"] = ""
             
             return profile_id_config
 
@@ -301,14 +297,16 @@ class L2SwitchClient(SNMPClient):
 
         return await self._get_acl_mask(acl_type, attributes_to_check, check_profile_id)
 
-    async def get_acl_packet_content_mask(self) -> ResponseData:
+    async def _get_acl_packet_content_mask(self) -> ResponseData:
         def check_profile_id(profile_id_config: dict[str, str]) -> dict[str, Any]:
             general_mask = "0x" + "".join(profile_id_config[mask][2:] for mask in masks)
-            fully_inspected_bytes = [ind for ind, byte in enumerate(bytes.fromhex(general_mask[2:])) if byte == 0xFF]
+            fully_inspected_bytes = L2SwitchClient._parse_acl_packet_content_fully_inspected_bytes(general_mask[2:])
+            ipv4_arp_check_state = L2SwitchClient._discover_acl_packet_content_ipv4_arp_check_state(fully_inspected_bytes)
 
             profile_id_config = {
                 "general_mask": general_mask,
                 "fully_inspected_bytes": fully_inspected_bytes,
+                "ipv4_arp_check_state": ipv4_arp_check_state,
                 "owner": profile_id_config["owner"]
             }
 
@@ -320,9 +318,25 @@ class L2SwitchClient(SNMPClient):
 
         return await self._get_acl_mask(acl_type, attributes_to_check, check_profile_id)
 
+    @staticmethod
+    def _parse_acl_packet_content_fully_inspected_bytes(mask: str) -> set[int]:
+        return {ind for ind, byte in enumerate(bytes.fromhex(mask)) if byte == 0xFF}
+
+    @staticmethod
+    def _discover_acl_packet_content_ipv4_arp_check_state(fully_inspected_bytes: set[int]) -> str:
+        ipv4_check_state = all(byte in fully_inspected_bytes for byte in SNMP.SOURCE_IP_BYTES_IN_IPV4)
+        arp_check_state = all(byte in fully_inspected_bytes for byte in SNMP.SOURCE_IP_BYTES_IN_ARP)
+        if ipv4_check_state:
+            ipv4_arp_check_state = "both" if arp_check_state else "ipv4"
+        else:
+            ipv4_arp_check_state = "arp" if arp_check_state else "none"
+        
+        return ipv4_arp_check_state
+
     # rules
     async def _get_acl_rule(self, acl_type: str, attributes_to_check: list[str],
-                            convert_value: Callable[[dict[int, dict[str, Any]], str], Any]) -> ResponseData:
+                            convert_value: Callable[[dict[str, Any], str], Any],
+                            transform_access_id_config: Callable[[dict[str, Any]], dict[str, Any]]) -> ResponseData:
         attributes_to_check = [f"{acl_type}_{attribute}" for attribute in attributes_to_check]
         pre_results = defaultdict(lambda: defaultdict(dict))
         
@@ -351,34 +365,56 @@ class L2SwitchClient(SNMPClient):
 
                     temp_access_id_config[attribute.removeprefix(f"{acl_type}_")] = convert_value(access_id_config, attribute)
                 else:
-                    rule_management[access_id] = temp_access_id_config
+                    rule_management[access_id] = transform_access_id_config(temp_access_id_config)
         
         # if all access id rules are skipped in one profile id, keep the profile id because it should have at least correct mask
         return results
 
-    async def get_acl_ethernet_rule(self) -> ResponseData:
-        def convert_value(access_id_config: dict[int, dict[str, Any]], attribute: str) -> Any:
+    async def _get_acl_ethernet_rule(self) -> ResponseData:
+        def convert_value(access_id_config: dict[str, Any], attribute: str) -> Any:
             value = access_id_config[attribute]
 
             match attribute.removeprefix(f"{acl_type}_"):
                 # when vlan name is not stated, the value is 64-byte zero string, miss it
                 case "vlan_name":
-                    if value == SNMP.ZERO_32_BYTE_HEX:
+                    if value == SNMP.ZERO_VLAN_NAME:
+                        value = ""
+                # miss zero/any mac address values
+                case "source_mac" | "destination_mac":
+                    if value == SNMP.ZERO_MAC_ADDRESS:
+                        value = ""
+                # 802.1p default -1 becomes "" for unified form
+                case "802_1p":
+                    if value == -1:
+                        value = ""
+                # miss zero/any ethernet type value
+                case "ethernet_type":
+                    if value == SNMP.ZERO_ETHERNET_TYPE:
                         value = ""
                 # for ports, get the portlist
                 case "ports":
                     value = L2SwitchClient._parse_assigned_ports_from_hex(value, self._ports_count)
-            
+
             return value
+        
+        def transform_access_id_config(access_id_config: dict[str, Any]) -> dict[str, Any]:
+            # access id rule counts every frame if all filter attributes have default values
+            any_frame = all(access_id_config[key] == "" for key in filter_attributes)
+            return {
+                **{key: access_id_config[key] for key in filter_attributes},
+                "any_frame": any_frame,
+                **{key: access_id_config[key] for key in secondary_attributes}
+            }
 
         acl_type = "ethernet"
-        attributes_to_check = ["vlan_name", "source_mac", "destination_mac", "802_1p", "ethernet_type",
-                                "enable_local_priority", "local_priority", "permit", "ports", "owner", "rx_rate"]
+        filter_attributes = ["vlan_name", "source_mac", "destination_mac", "802_1p", "ethernet_type"]
+        secondary_attributes = ["enable_local_priority", "local_priority", "permit", "ports", "owner", "rx_rate"]
+        attributes_to_check = filter_attributes + secondary_attributes
         
-        return await self._get_acl_rule(acl_type, attributes_to_check, convert_value)
+        return await self._get_acl_rule(acl_type, attributes_to_check, convert_value, transform_access_id_config)
 
-    async def get_acl_packet_content_rule(self) -> ResponseData:
-        def convert_value(access_id_config: dict[int, dict[str, Any]], attribute: str) -> Any:
+    async def _get_acl_packet_content_rule(self) -> ResponseData:
+        def convert_value(access_id_config: dict[str, Any], attribute: str) -> Any:
             value = access_id_config[attribute]
 
             match attribute.removeprefix(f"{acl_type}_"):
@@ -387,14 +423,58 @@ class L2SwitchClient(SNMPClient):
                     value = L2SwitchClient._parse_assigned_ports_from_hex(value, self._ports_count)
             
             return value
+        
+        def transform_access_id_config(access_id_config: dict[str, Any]) -> dict[str, Any]:
+            offset_chunks = {}
+            
+            for ind in range(1, 6):
+                index, mask, data = [access_id_config.pop(f"offset_{attribute}_{ind}")
+                                     for attribute in ["index", "mask", "data"]]
+                # keep only those offset chunks that have not default value
+                if mask != SNMP.ZERO_OFFSET_CHUNK:
+                    fully_inspected_bytes = L2SwitchClient._parse_acl_packet_content_fully_inspected_bytes("00" * index + mask[2:])
+                    offset_chunks[index] = {"mask": mask,
+                                            "data": data,
+                                            "fully_inspected_bytes": fully_inspected_bytes}
+            
+            offset_chunks = dict(sorted(offset_chunks.items()))
+            mask, data = "", ""
+            fully_inspected_bytes = set()
+            ipv4_arp_check_state = "none"
+            source_ip = ""
+
+            # access id rule is considered wrong if any other chunk doesn't have default value
+            if len(offset_chunks) == 1:
+                main_offset_chunk = next(iter(offset_chunks.values()))
+                mask, data, fully_inspected_bytes = (
+                    main_offset_chunk[key] for key in ("mask", "data", "fully_inspected_bytes")
+                )
+
+                ipv4_arp_check_state = L2SwitchClient._discover_acl_packet_content_ipv4_arp_check_state(fully_inspected_bytes)
+                # source ip will be filled only if access id rule checks ipv4/arp source ip with real value
+                if ipv4_arp_check_state in {"ipv4", "arp"} and data != SNMP.ZERO_OFFSET_CHUNK:
+                    source_ip = L2SwitchClient._parse_acl_chunk_to_ip(data)
+            
+            return {
+                "offsets": offset_chunks,
+                "main_mask": mask,
+                "main_data": data,
+                "fully_inspected_bytes": fully_inspected_bytes,
+                "ipv4_arp_check_state": ipv4_arp_check_state,
+                "source_ip": source_ip,
+                **{key: access_id_config[key] for key in secondary_attributes}
+            }
 
         acl_type = "packet_content"
-        attributes_to_check = [f"offset_{attribute}_{ind}"
-                               for ind in range(1, 6)
-                               for attribute in ["index", "mask", "data"]
-                               ] + ["enable_local_priority", "local_priority", "permit", "ports", "rx_rate"]
+        filter_attributes = [
+            f"offset_{attribute}_{ind}"
+            for ind in range(1, 6)
+            for attribute in ["index", "mask", "data"]
+        ]
+        secondary_attributes = ["enable_local_priority", "local_priority", "permit", "ports", "rx_rate"]
+        attributes_to_check = filter_attributes + secondary_attributes
         
-        return await self._get_acl_rule(acl_type, attributes_to_check, convert_value)
+        return await self._get_acl_rule(acl_type, attributes_to_check, convert_value, transform_access_id_config)
 
     # overall
     async def _merge_acl_mask_and_rule(self, mask: dict[int, dict[str, Any]], rule: dict[int, dict[str, Any]]) -> ResponseData:
@@ -405,14 +485,14 @@ class L2SwitchClient(SNMPClient):
         return mask
     
     async def get_acl_ethernet(self) -> ResponseData:
-        mask = await self.get_acl_ethernet_mask()
-        rule = await self.get_acl_ethernet_rule()
+        mask = await self._get_acl_ethernet_mask()
+        rule = await self._get_acl_ethernet_rule()
         
         return await self._merge_acl_mask_and_rule(mask, rule)
     
     async def get_acl_packet_content(self) -> ResponseData:
-        mask = await self.get_acl_packet_content_mask()
-        rule = await self.get_acl_packet_content_rule()
+        mask = await self._get_acl_packet_content_mask()
+        rule = await self._get_acl_packet_content_rule()
         
         return await self._merge_acl_mask_and_rule(mask, rule)
     
@@ -421,6 +501,25 @@ class L2SwitchClient(SNMPClient):
         packet_content = await self.get_acl_packet_content()
 
         return dict(sorted({**ethernet, **packet_content}.items()))
+    
+    # for port
+    async def get_acl_for_port(self) -> ResponseData:
+        acl_table = await self.get_acl_all()
+        result = {}
+
+        for profile_id, profile_id_config in acl_table.items():
+            rule_management: dict[int, dict[str, Any]] = profile_id_config["rule_management"]
+            for access_id, access_id_config in rule_management.items():
+                if self._port in rule_management[access_id]["ports"]:
+                    if profile_id not in result:
+                        result[profile_id] = {
+                            "type": profile_id_config["type"],
+                            "mask_management": profile_id_config["mask_management"],
+                            "rule_management": {}
+                        }
+                    result[profile_id]["rule_management"][access_id] = access_id_config
+        
+        return result
 
     ### VLAN ###
 
@@ -1148,37 +1247,21 @@ class L2SwitchClient(SNMPClient):
     @override
     def _render_oid(self, oid: str, **params) -> str:
         return oid.format(port=self._port, **params)
+
+    @staticmethod
+    def _parse_last_index(oid: str) -> tuple[str, int]:
+        parts = oid.rpartition(".")
+        return parts[0], int(parts[2])
     
     @staticmethod
-    def _convert_name_into_oid(name: str) -> str:
-        return f"{len(name)}.{'.'.join(str(ord(sym)) for sym in name)}"
+    def _cut_base_oid_from_oid(oid: str, base_oid: str) -> str:
+        return oid.partition(base_oid + ".")[2]
 
     @staticmethod
     def _build_octet_by_pattern(data_tuple: tuple[int], pattern: str) -> bytes:
         mapping = {"1": "B", "2": "H", "4": "I", "8": "Q"}
         fmt = ">" + "".join(mapping[bytes_count] for bytes_count in pattern)
         return struct.pack(fmt, *data_tuple)
-
-    @staticmethod
-    def _parse_last_index(oid: str) -> tuple[str, int]:
-        parts = oid.rpartition(".")
-        return parts[0], int(parts[2])
-
-    @staticmethod
-    def _parse_ip_address_from_oid(oid: str) -> tuple[str, str]:
-        oid, *ip_address = oid.rsplit(".", 4)
-        ip_address = ".".join(ip_address[-4:])
-        return oid, ip_address
-
-    @staticmethod
-    def _get_request_name_for_vlan_status(status: str) -> str | None:
-        match status:
-            case "untagged":
-                return "untagged_ports"
-            case "tagged":
-                return "egress_ports"
-            case _:
-                return None
 
     @staticmethod
     def _parse_assigned_ports_from_hex(octet_string: str, ports_count: int) -> set[int]:
@@ -1195,10 +1278,30 @@ class L2SwitchClient(SNMPClient):
             result[byte_index] |= 1 << (7 - bit_index)
         
         return result
+
+    @staticmethod
+    def _parse_acl_chunk_to_ip(acl_entry: str) -> str:
+        return ".".join([str(int(acl_entry[2:][2*i : 2*i+2], 16)) for i in range(4)])
+
+    @staticmethod
+    def _parse_ip_address_from_oid(oid: str) -> tuple[str, str]:
+        oid, *ip_address = oid.rsplit(".", 4)
+        ip_address = ".".join(ip_address[-4:])
+        return oid, ip_address
     
     @staticmethod
-    def _cut_base_oid_from_oid(oid: str, base_oid: str) -> str:
-        return oid.partition(base_oid + ".")[2]
+    def _convert_name_into_oid(name: str) -> str:
+        return f"{len(name)}.{'.'.join(str(ord(sym)) for sym in name)}"
+
+    @staticmethod
+    def _get_request_name_for_vlan_status(status: str) -> str | None:
+        match status:
+            case "untagged":
+                return "untagged_ports"
+            case "tagged":
+                return "egress_ports"
+            case _:
+                return None
     
     @staticmethod
     def _parse_vlan_id_mac_from_oid_suffix(oid_suffix: str) -> tuple[str, str]:

@@ -118,19 +118,7 @@ class L2SwitchHandler:
         print(response.value[1])
     
     ### ACL ###
-
-    async def get_acl_ethernet_mask(self) -> ResponseData:
-        return await self._client.get_acl_ethernet_mask()
-
-    async def get_acl_packet_content_mask(self) -> ResponseData:
-        return await self._client.get_acl_packet_content_mask()
-
-    async def get_acl_ethernet_rule(self) -> ResponseData:
-        return await self._client.get_acl_ethernet_rule()
-
-    async def get_acl_packet_content_rule(self) -> ResponseData:
-        return await self._client.get_acl_packet_content_rule()
-
+    
     async def get_acl_ethernet(self) -> ResponseData:
         return await self._client.get_acl_ethernet()
 
@@ -139,6 +127,9 @@ class L2SwitchHandler:
 
     async def get_acl_all(self) -> ResponseData:
         return await self._client.get_acl_all()
+
+    async def get_acl_for_port(self) -> ResponseData:
+        return await self._client.get_acl_for_port()
     
     ### VLAN ###
 

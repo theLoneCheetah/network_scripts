@@ -18,7 +18,13 @@ class SNMP:
 
     DEFAULT_IP = "10.90.90.90"
 
-    ZERO_32_BYTE_HEX = "0x" + "0" * 64
+    ZERO_VLAN_NAME = "0x" + "0" * 64
+    ZERO_MAC_ADDRESS = "00-00-00-00-00-00"
+    ZERO_ETHERNET_TYPE = "0x0000"
+    ZERO_OFFSET_CHUNK = "0x00000000"
+
+    SOURCE_IP_BYTES_IN_IPV4 = [26, 27, 28, 29]
+    SOURCE_IP_BYTES_IN_ARP = [28, 29, 30, 31]
 
     @staticmethod
     def typify_mac_address(mac_address: str) -> OctetString:

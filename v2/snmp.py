@@ -1,6 +1,7 @@
 #!/usr/bin/python3
-from time import perf_counter
 import asyncio
+from time import perf_counter
+from pprint import pprint
 from pysnmp.hlapi.v3arch.asyncio import *
 from collections import defaultdict
 from const import SNMP
@@ -48,7 +49,8 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    print(await switch_handler.get_acl_all())
+    pprint(await switch_handler.get_acl_all(), sort_dicts=False)
+    pprint(await switch_handler.get_acl_for_port(), sort_dicts=False)
 
     print("Overall time:", perf_counter() - start_time)
 
