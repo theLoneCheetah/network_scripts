@@ -290,10 +290,20 @@ class L2SwitchClient(SNMPClient):
             if profile_id_config["destination_mac_mask"] == SNMP.ZERO_MAC_ADDRESS:
                 profile_id_config["destination_mac_mask"] = ""
             
-            return profile_id_config
+            source_mac_false_check_state = True \
+                if profile_id_config["mac_mask_state"] == "source_mac" and profile_id_config["source_mac_mask"] == "" \
+                else False
+
+            return {
+                **{key: profile_id_config[key] for key in filter_attributes},
+                "source_mac_false_check_state": source_mac_false_check_state,
+                "owner": profile_id_config["owner"]
+            }
 
         acl_type = "ethernet"
-        attributes_to_check = ["use_vlan", "mac_mask_state", "source_mac_mask", "destination_mac_mask", "use_802_1p", "use_ethernet_type", "owner"]
+        filter_attributes = ["use_vlan", "mac_mask_state", "source_mac_mask",
+                             "destination_mac_mask", "use_802_1p", "use_ethernet_type"]
+        attributes_to_check = [*filter_attributes, "owner"]
 
         return await self._get_acl_mask(acl_type, attributes_to_check, check_profile_id)
 
@@ -303,35 +313,18 @@ class L2SwitchClient(SNMPClient):
             fully_inspected_bytes = L2SwitchClient._parse_acl_packet_content_fully_inspected_bytes(general_mask[2:])
             ipv4_arp_check_state = L2SwitchClient._discover_acl_packet_content_ipv4_arp_check_state(fully_inspected_bytes)
 
-            profile_id_config = {
+            return {
                 "general_mask": general_mask,
                 "fully_inspected_bytes": fully_inspected_bytes,
                 "ipv4_arp_check_state": ipv4_arp_check_state,
                 "owner": profile_id_config["owner"]
             }
-
-            return profile_id_config
         
         acl_type = "packet_content"
         masks = ["offset_0_15", "offset_16_31", "offset_32_47", "offset_48_63", "offset_64_79"]
         attributes_to_check = [*masks, "owner"]
 
         return await self._get_acl_mask(acl_type, attributes_to_check, check_profile_id)
-
-    @staticmethod
-    def _parse_acl_packet_content_fully_inspected_bytes(mask: str) -> set[int]:
-        return {ind for ind, byte in enumerate(bytes.fromhex(mask)) if byte == 0xFF}
-
-    @staticmethod
-    def _discover_acl_packet_content_ipv4_arp_check_state(fully_inspected_bytes: set[int]) -> str:
-        ipv4_check_state = all(byte in fully_inspected_bytes for byte in SNMP.SOURCE_IP_BYTES_IN_IPV4)
-        arp_check_state = all(byte in fully_inspected_bytes for byte in SNMP.SOURCE_IP_BYTES_IN_ARP)
-        if ipv4_check_state:
-            ipv4_arp_check_state = "both" if arp_check_state else "ipv4"
-        else:
-            ipv4_arp_check_state = "arp" if arp_check_state else "none"
-        
-        return ipv4_arp_check_state
 
     # rules
     async def _get_acl_rule(self, acl_type: str, attributes_to_check: list[str],
@@ -400,6 +393,7 @@ class L2SwitchClient(SNMPClient):
         def transform_access_id_config(access_id_config: dict[str, Any]) -> dict[str, Any]:
             # access id rule counts every frame if all filter attributes have default values
             any_frame = all(access_id_config[key] == "" for key in filter_attributes)
+
             return {
                 **{key: access_id_config[key] for key in filter_attributes},
                 "any_frame": any_frame,
@@ -1278,6 +1272,21 @@ class L2SwitchClient(SNMPClient):
             result[byte_index] |= 1 << (7 - bit_index)
         
         return result
+
+    @staticmethod
+    def _parse_acl_packet_content_fully_inspected_bytes(mask: str) -> set[int]:
+        return {ind for ind, byte in enumerate(bytes.fromhex(mask)) if byte == 0xFF}
+
+    @staticmethod
+    def _discover_acl_packet_content_ipv4_arp_check_state(fully_inspected_bytes: set[int]) -> str:
+        ipv4_check_state = all(byte in fully_inspected_bytes for byte in SNMP.SOURCE_IP_BYTES_IN_IPV4)
+        arp_check_state = all(byte in fully_inspected_bytes for byte in SNMP.SOURCE_IP_BYTES_IN_ARP)
+        if ipv4_check_state:
+            ipv4_arp_check_state = "both" if arp_check_state else "ipv4"
+        else:
+            ipv4_arp_check_state = "arp" if arp_check_state else "none"
+        
+        return ipv4_arp_check_state
 
     @staticmethod
     def _parse_acl_chunk_to_ip(acl_entry: str) -> str:
