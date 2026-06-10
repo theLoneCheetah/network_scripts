@@ -49,8 +49,10 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    pprint(await switch_handler.get_acl_all(), sort_dicts=False)
-    pprint(await switch_handler.get_acl_for_port(), sort_dicts=False)
+    print(await switch_handler.get_arp_table())
+
+    # pprint(await switch_handler.get_acl_all(), sort_dicts=False)
+    # pprint(await switch_handler.get_acl_for_port(), sort_dicts=False)
 
     print("Overall time:", perf_counter() - start_time)
 

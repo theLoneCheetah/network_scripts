@@ -2,6 +2,7 @@
 import asyncio
 import yaml
 import struct
+import re
 from typing import Any, Self, Union, TypeAlias
 from abc import ABC, abstractmethod
 from icmplib import ping
@@ -148,7 +149,7 @@ class SNMPClient(ABC):
     async def _bulk_walk(self, payload: dict[str, Any]) -> list[tuple[str, Any]] | None:
         await self._initialize()
 
-        oid_object = ObjectType(ObjectIdentity(self._render_oid(payload["oid"])))
+        oid_object = ObjectType(ObjectIdentity(self._render_bulk_walk_oid(payload["oid"])))
 
         results = []
 
@@ -259,3 +260,7 @@ class SNMPClient(ABC):
     @abstractmethod
     def _render_oid(self, oid: str, **params) -> str:
         pass
+
+    @staticmethod
+    def _render_bulk_walk_oid(oid: str) -> str:
+        return re.sub(r"\.{.*", "", oid)

@@ -94,7 +94,7 @@
 - <a name="RFC2620-MIB"></a>**RFC2620-MIB** - мониторинг авторизации с использованием RADIUS-сервера
 - <a name="RFC2665-MIB"></a>**RFC2665-MIB** - спецификация дуплекса, физических ошибок (CRC: ошибки выравнивания и контрольной суммы) и коллизий для Ethernet-интерфейсов, частично расширение [IF-MIB](#IF-MIB)
 - <a name="RFC2674P-MIB"></a>**RFC2674P-MIB** - приоритеты трафика, классы, очереди
-- <a name="RFC2674Q-MIB"></a>**RFC2674Q-MIB** - FDB, VLAN (включая static и GVRP)
+- <a name="RFC2674Q-MIB"></a>**RFC2674Q-MIB** - FDB, VLAN (включая static, PVID и GVRP)
 - <a name="RFC2737-MIB"></a>**RFC2737-MIB** - физическая структура устройства, модули, порты, модель и прошивка
 - <a name="RFC2819-MIB"></a>**RFC2819-MIB** - удалённый мониторинг RMON на L2
 - <a name="RFC2863-MIB"></a>**RFC2863-MIB** - базовая статистика сетевых интерфейсов, статус, скорость, байты, ошибки (общий счётчик различных физических ошибок), unicast/multicast/broadcast пакеты, соответствие if_index имени ipif
@@ -290,9 +290,9 @@
 
 ### Команды на DES-3028
 - **create (ipif System)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.6.83.121.115.116.101.109.[dhcp_server] i 4`
-- **create (user ipif)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.[ipif_name_in_oid].[dhcp_server] i 4`
+- **create (user ipif)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.[ipif_name].[dhcp_server] i 4`
 - **delete (ipif System)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.6.83.121.115.116.101.109.[dhcp_server] i 6`
-- **delete (user ipif)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.[ipif_name_in_oid].[dhcp_server] i 6`
+- **delete (user ipif)**: `snmpset -v2c -c [SNMP_READ_WRITE] [SNMP_TEST_3028] 1.3.6.1.4.1.171.12.42.3.1.1.3.[ipif_name].[dhcp_server] i 6`
 
 ## Port security
 ### Команды на DES-3028 (port=21)
