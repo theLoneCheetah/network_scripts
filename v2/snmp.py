@@ -3,22 +3,46 @@ import asyncio
 from time import perf_counter
 from pprint import pprint
 from pysnmp.hlapi.v3arch.asyncio import *
-from collections import defaultdict
 from const import SNMP
-from schemas import PortSecurityConfig
 from snmp_exceptions import SNMPTransportError
 from L2_switch_handler import L2SwitchHandler
 
-async def dhcp_relay_config_example(switch_handler: L2SwitchHandler) -> None:
-    settings = await switch_handler.get_dhcp_relay()
-    server = list(settings["ipif_servers"]["System"])[0]
-    print(settings)
-    # await switch_handler.set_dhcp_relay({"option82_remote_id_type": "default"})
-    # print(await switch_handler.get_dhcp_relay())
-    await switch_handler.delete_dhcp_servers_for_ipif({"ipif_servers": {"System": {server}}})
-    print(await switch_handler.get_dhcp_relay())
-    await switch_handler.add_dhcp_servers_for_ipif({"ipif_servers": {"System": {server}}})
-    print(await switch_handler.get_dhcp_relay())
+async def current_time_config_example(switch_handler: L2SwitchHandler) -> None:
+    # sntp should be disabled
+    res = await switch_handler.get_current_time()
+    print(res)
+    await switch_handler.set_current_time(res)
+    res = await switch_handler.get_current_time()
+    print(res)
+
+async def acl_config_example(switch_handler: L2SwitchHandler) -> None:
+    # await switch_handler.create_acl_ethernet_mask({"profile_id": 140,
+    #                                                "source_mac_mask": "00-00-00-00-00-00"})
+    # await asyncio.sleep(5)
+    # await switch_handler.add_acl_ethernet_rule({"profile_id": 140,
+    #                                             "access_id": 1,
+    #                                             "source_mac": "00-00-00-00-00-00",
+    #                                             "permit": "deny",
+    #                                             "ports": {20}})
+    # await asyncio.sleep(5)
+    # await switch_handler.delete_acl_ethernet_rule({"profile_id": 140, "access_id": 1})
+    # await asyncio.sleep(5)
+    # await switch_handler.delete_acl_ethernet_mask({"profile_id": 140})
+    # await asyncio.sleep(5)
+    await switch_handler.create_acl_packet_content_mask({"profile_id": 140,
+                                                         "offset_16_31": "000000000000000000000000FFFF0000",
+                                                         "offset_64_79": "00FF00000000000000000000FFFFFF00"})
+    await asyncio.sleep(5)
+    # await switch_handler.add_acl_ethernet_rule({"profile_id": 140,
+    #                                             "access_id": 1,
+    #                                             "source_mac": "00-00-00-00-00-00",
+    #                                             "permit": "deny",
+    #                                             "ports": {20}})
+    # await asyncio.sleep(5)
+    # await switch_handler.delete_acl_ethernet_rule({"profile_id": 140, "access_id": 1})
+    # await asyncio.sleep(5)
+    await switch_handler.delete_acl_packet_content_mask({"profile_id": 140})
+    # pprint(await switch_handler.get_acl_all(), sort_dicts=False)
 
 async def vlan_config_example(switch_handler: L2SwitchHandler) -> None:
     vlan = {"vlan_id": 2, "vlan_name": "vlan2"}
@@ -31,6 +55,17 @@ async def vlan_config_example(switch_handler: L2SwitchHandler) -> None:
     await switch_handler.delete_vlan_from_ports({"vlan_id": vlan["vlan_id"], "portlist": {22,24}})
     await asyncio.sleep(5)
     await switch_handler.delete_vlan({"vlan_id": vlan["vlan_id"]})
+
+async def dhcp_relay_config_example(switch_handler: L2SwitchHandler) -> None:
+    settings = await switch_handler.get_dhcp_relay()
+    server = list(settings["ipif_servers"]["System"])[0]
+    print(settings)
+    # await switch_handler.set_dhcp_relay({"option82_remote_id_type": "default"})
+    # print(await switch_handler.get_dhcp_relay())
+    await switch_handler.delete_dhcp_servers_for_ipif({"ipif_servers": {"System": {server}}})
+    print(await switch_handler.get_dhcp_relay())
+    await switch_handler.add_dhcp_servers_for_ipif({"ipif_servers": {"System": {server}}})
+    print(await switch_handler.get_dhcp_relay())
 
 async def port_security_config_example(switch_handler: L2SwitchHandler) -> None:
     print(await switch_handler.get_port_security_on_port())
@@ -49,10 +84,7 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    print(await switch_handler.get_arp_table())
-
-    # pprint(await switch_handler.get_acl_all(), sort_dicts=False)
-    # pprint(await switch_handler.get_acl_for_port(), sort_dicts=False)
+    await acl_config_example(switch_handler)
 
     print("Overall time:", perf_counter() - start_time)
 

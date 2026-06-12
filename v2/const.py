@@ -28,12 +28,12 @@ class SNMP:
 
     @staticmethod
     def typify_mac_address(mac_address: str) -> OctetString:
-        print(repr(mac_address), type(mac_address))
         return OctetString(bytes.fromhex(mac_address.replace("-", "")))
 
     TYPE = {
         "integer": Integer,
         "octetstring": OctetString,
+        "hexstring": lambda val: OctetString(hexValue=val),
         "ipaddress": IpAddress,
         "macaddress": typify_mac_address
     }

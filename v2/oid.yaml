@@ -1,8 +1,9 @@
 data_types:
   - integer
+  - octetstring
+  - hexstring
   - ipaddress
   - macaddress
-  - octetstring
   - objectid
 
 system:
@@ -202,49 +203,131 @@ models:
             1: none
             2: start
       
-      acl_mask:
-        # ethernet acl
-        ethernet_use_vlan:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.1.1.2
+      acl:
+        # ethernet mask
+        ethernet_mask_use_vlan:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.1.1.2.{profile_id}
           value_type: integer
           values:
             1: enabled
             2: disabled
-        ethernet_mac_mask_state:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.1.1.3
+        ethernet_mask_mac_mask_state:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.1.1.3.{profile_id}
           value_type: integer
           values:
             1: other
             2: destination_mac
             3: source_mac
             4: destination_source_mac
-        ethernet_source_mac_mask:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.1.1.4
+        ethernet_mask_source_mac_mask:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.1.1.4.{profile_id}
           value_type: macaddress
-        ethernet_destination_mac_mask:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.1.1.5
+        ethernet_mask_destination_mac_mask:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.1.1.5.{profile_id}
           value_type: macaddress
-        ethernet_use_802_1p:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.1.1.6
+        ethernet_mask_use_802_1p:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.1.1.6.{profile_id}
           value_type: integer
           values:
             1: enabled
             2: disabled
-        ethernet_use_ethernet_type:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.1.1.7
+        ethernet_mask_use_ethernet_type:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.1.1.7.{profile_id}
           value_type: integer
           values:
             1: enabled
             2: disabled
-        ethernet_owner:
+        ethernet_mask_entry_status:
+          request_type: [set]
+          oid: 1.3.6.1.4.1.171.12.9.2.1.1.8.{profile_id}
+          value_type: integer
+          values:
+            1: active
+            2: not_in_service
+            3: not_ready
+            4: create_and_go
+            5: create_and_wait
+            6: destroy
+        ethernet_mask_owner:
           request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.1.1.9
+          oid: 1.3.6.1.4.1.171.12.9.2.1.1.9.{profile_id}
+          value_type: integer
+          values:
+            1: any
+            2: acl
+            3: ipbind
+            4: other
+            5: dhcp
+            6: netbios
+            7: ext-netbios
+        
+        # ethernet rule
+        ethernet_rule_vlan_name:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.3.{profile_id}.{access_id}
+          value_type: octetstring
+        ethernet_rule_source_mac:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.4.{profile_id}.{access_id}
+          value_type: macaddress
+        ethernet_rule_destination_mac:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.5.{profile_id}.{access_id}
+          value_type: macaddress
+        ethernet_rule_check_802_1p:   # specifies which packets will be scanned depending on their priority
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.6.{profile_id}.{access_id}
+          value_type: integer
+        ethernet_rule_ethernet_type:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.7.{profile_id}.{access_id}
+          value_type: hexstring
+        ethernet_rule_enable_local_priority:   # enables local priority for scanned packets
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.8.{profile_id}.{access_id}
+          value_type: integer
+          values:
+            1: enabled
+            2: disabled
+        ethernet_rule_local_priority:   # specifies local priority that will last during inner switch commutation
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.9.{profile_id}.{access_id}
+          value_type: integer
+        ethernet_rule_permit:   # action
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.13.{profile_id}.{access_id}
+          value_type: integer
+          values:
+            1: deny
+            2: permit
+        ethernet_rule_ports:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.14.{profile_id}.{access_id}
+          value_type: octetstring
+        ethernet_rule_rx_rate:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.17.{profile_id}.{access_id}
+          value_type: integer
+        ethernet_rule_entry_status:
+          request_type: [set]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.15.{profile_id}.{access_id}
+          value_type: integer
+          values:
+            1: active
+            2: not_in_service
+            3: not_ready
+            4: create_and_go
+            5: create_and_wait
+            6: destroy
+        ethernet_rule_owner:
+          request_type: [walk]
+          oid: 1.3.6.1.4.1.171.12.9.3.1.1.16.{profile_id}.{access_id}
           value_type: integer
           values:
             1: any
@@ -255,30 +338,41 @@ models:
             6: netbios
             7: ext-netbios
 
-        # packet content acl
-        packet_content_offset_0_15:
+        # packet content mask
+        packet_content_mask_offset_0_15:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.3.1.2.{profile_id}
+          value_type: hexstring
+        packet_content_mask_offset_16_31:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.3.1.3.{profile_id}
+          value_type: hexstring
+        packet_content_mask_offset_32_47:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.3.1.4.{profile_id}
+          value_type: hexstring
+        packet_content_mask_offset_48_63:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.3.1.5.{profile_id}
+          value_type: hexstring
+        packet_content_mask_offset_64_79:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.2.3.1.6.{profile_id}
+          value_type: hexstring
+        packet_content_mask_entry_status:
+          request_type: [set]
+          oid: 1.3.6.1.4.1.171.12.9.2.3.1.7.{profile_id}
+          value_type: integer
+          values:
+            1: active
+            2: not_in_service
+            3: not_ready
+            4: create_and_go
+            5: create_and_wait
+            6: destroy
+        packet_content_mask_owner:
           request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.3.1.2
-          value_type: octetstring
-        packet_content_offset_16_31:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.3.1.3
-          value_type: octetstring
-        packet_content_offset_32_47:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.3.1.4
-          value_type: octetstring
-        packet_content_offset_48_63:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.3.1.5
-          value_type: octetstring
-        packet_content_offset_64_79:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.3.1.6
-          value_type: octetstring
-        packet_content_owner:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.2.3.1.8
+          oid: 1.3.6.1.4.1.171.12.9.2.3.1.8.{profile_id}
           value_type: integer
           values:
             1: any
@@ -288,143 +382,93 @@ models:
             5: dhcp
             6: netbios
             7: ext-netbios
-      
-      acl_rule:
-        # ethernet acl
-        ethernet_vlan_name:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.3
-          value_type: octetstring
-        ethernet_source_mac:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.4
-          value_type: macaddress
-        ethernet_destination_mac:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.5
-          value_type: macaddress
-        ethernet_802_1p:   # specifies which packets will be scanned depending on their priority
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.6
+
+        # packet content rule
+        packet_content_rule_offset_index_1: &offset_index   # actual byte offset
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.8.{profile_id}.{access_id}
           value_type: integer
-        ethernet_ethernet_type:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.7
-          value_type: octetstring
-        ethernet_enable_local_priority:   # enables local priority for scanned packets
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.8
+        packet_content_rule_offset_mask_1: &offset_mask
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.9.{profile_id}.{access_id}
+          value_type: hexstring
+        packet_content_rule_offset_data_1: &offset_data
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.10.{profile_id}.{access_id}
+          value_type: hexstring
+        packet_content_rule_offset_index_2:   # actual byte offset
+          <<: *offset_index
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.11.{profile_id}.{access_id}
+        packet_content_rule_offset_mask_2:
+          <<: *offset_mask
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.12.{profile_id}.{access_id}
+        packet_content_rule_offset_data_2:
+          <<: *offset_data
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.13.{profile_id}.{access_id}
+        packet_content_rule_offset_index_3:   # actual byte offset
+          <<: *offset_index
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.14.{profile_id}.{access_id}
+        packet_content_rule_offset_mask_3:
+          <<: *offset_mask
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.15.{profile_id}.{access_id}
+        packet_content_rule_offset_data_3:
+          <<: *offset_data
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.16.{profile_id}.{access_id}
+        packet_content_rule_offset_index_4:   # actual byte offset
+          <<: *offset_index
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.17.{profile_id}.{access_id}
+        packet_content_rule_offset_mask_4:
+          <<: *offset_mask
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.18.{profile_id}.{access_id}
+        packet_content_rule_offset_data_4:
+          <<: *offset_data
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.19.{profile_id}.{access_id}
+        packet_content_rule_offset_index_5:   # actual byte offset
+          <<: *offset_index
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.20.{profile_id}.{access_id}
+        packet_content_rule_offset_mask_5:
+          <<: *offset_mask
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.21.{profile_id}.{access_id}
+        packet_content_rule_offset_data_5:
+          <<: *offset_data
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.22.{profile_id}.{access_id}
+        packet_content_rule_enable_local_priority:   # enables local priority for scanned packets
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.23.{profile_id}.{access_id}
           value_type: integer
           values:
             1: enabled
             2: disabled
-        ethernet_local_priority:   # specifies local priority that will last during inner switch commutation
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.9
+        packet_content_rule_local_priority:   # specifies local priority that will last during inner switch commutation
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.24.{profile_id}.{access_id}
           value_type: integer
-        ethernet_permit:   # action
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.13
-          value_type: integer
-          values:
-            1: deny
-            2: permit
-        ethernet_ports:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.14
-          value_type: octetstring
-        ethernet_owner:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.16
-          value_type: integer
-          values:
-            1: any
-            2: acl
-            3: ipbind
-            4: other
-            5: dhcp
-            6: netbios
-            7: ext-netbios
-        ethernet_rx_rate:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.1.1.17
-          value_type: integer
-        
-        # packet content acl
-        packet_content_offset_index_1: &offset_index   # actual byte offset
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.8
-          value_type: integer
-        packet_content_offset_mask_1: &offset_mask
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.9
-          value_type: octetstring
-        packet_content_offset_data_1: &offset_data
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.10
-          value_type: octetstring
-        packet_content_offset_index_2:   # actual byte offset
-          <<: *offset_index
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.11
-        packet_content_offset_mask_2:
-          <<: *offset_mask
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.12
-        packet_content_offset_data_2:
-          <<: *offset_data
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.13
-        packet_content_offset_index_3:   # actual byte offset
-          <<: *offset_index
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.14
-        packet_content_offset_mask_3:
-          <<: *offset_mask
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.15
-        packet_content_offset_data_3:
-          <<: *offset_data
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.16
-        packet_content_offset_index_4:   # actual byte offset
-          <<: *offset_index
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.17
-        packet_content_offset_mask_4:
-          <<: *offset_mask
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.18
-        packet_content_offset_data_4:
-          <<: *offset_data
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.19
-        packet_content_offset_index_5:   # actual byte offset
-          <<: *offset_index
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.20
-        packet_content_offset_mask_5:
-          <<: *offset_mask
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.21
-        packet_content_offset_data_5:
-          <<: *offset_data
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.22
-        packet_content_enable_local_priority:   # enables local priority for scanned packets
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.23
-          value_type: integer
-          values:
-            1: enabled
-            2: disabled
-        packet_content_local_priority:   # specifies local priority that will last during inner switch commutation
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.24
-          value_type: integer
-        packet_content_permit:   # action
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.29
+        packet_content_rule_permit:   # action
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.29.{profile_id}.{access_id}
           value_type: integer
           values:
             1: deny
             2: permit
-        packet_content_ports:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.30
+        packet_content_rule_ports:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.30.{profile_id}.{access_id}
           value_type: octetstring
-        packet_content_rx_rate:
-          request_type: [walk]
-          oid: 1.3.6.1.4.1.171.12.9.3.9.1.28
+        packet_content_rule_rx_rate:
+          request_type: [walk, set]
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.28.{profile_id}.{access_id}
           value_type: integer
+        packet_content_rule_entry_status:
+          request_type: [set]
+          oid: 1.3.6.1.4.1.171.12.9.3.9.1.33.{profile_id}.{access_id}
+          value_type: integer
+          values:
+            1: active
+            2: not_in_service
+            3: not_ready
+            4: create_and_go
+            5: create_and_wait
+            6: destroy
 
       vlan:
         name:

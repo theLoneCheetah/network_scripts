@@ -131,6 +131,66 @@ class L2SwitchHandler:
     async def get_acl_for_port(self) -> ResponseData:
         return await self._client.get_acl_for_port()
     
+    async def create_acl_ethernet_mask(self, config: RequestData) -> None:
+        try:
+            request = CreateAclEthernetMask(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.create_acl_ethernet_mask(request)
+        print(response.value[1])
+    
+    async def delete_acl_ethernet_mask(self, config: RequestData) -> None:
+        try:
+            request = DeleteAclMask(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.delete_acl_ethernet_mask(request)
+        print(response.value[1])
+    
+    async def add_acl_ethernet_rule(self, config: RequestData) -> None:
+        try:
+            request = AddAclEthernetRule(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.add_acl_ethernet_rule(request)
+        print(response.value[1])
+    
+    async def delete_acl_ethernet_rule(self, config: RequestData) -> None:
+        try:
+            request = DeleteAclRule(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.delete_acl_ethernet_rule(request)
+        print(response.value[1])
+    
+    async def create_acl_packet_content_mask(self, config: RequestData) -> None:
+        try:
+            request = CreateAclPacketContentMask(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.create_acl_packet_content_mask(request)
+        print(response.value[1])
+    
+    async def delete_acl_packet_content_mask(self, config: RequestData) -> None:
+        try:
+            request = DeleteAclMask(**config).model_dump(exclude_none=True)
+        except ValidationError:
+            print(SNMPResponseCode.INVALID_DATA.value[1])
+            return
+        
+        response = await self._client.delete_acl_packet_content_mask(request)
+        print(response.value[1])
+    
     ### VLAN ###
 
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:

@@ -88,7 +88,7 @@ class SNMPClient(ABC):
         if not skip_init:
             await self._initialize()
         
-        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"]))) for request in payload.values()]
+        oid_objects = [ObjectType(ObjectIdentity(self._render_get_set_oid(request["oid"], **request["params"]))) for request in payload.values()]
         
         errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
             self._engine,
@@ -122,7 +122,7 @@ class SNMPClient(ABC):
                 set_value = data["set_value"]
             data["set_value"] = SNMP.TYPE[data["value_type"]](set_value)
         
-        oid_objects = [ObjectType(ObjectIdentity(self._render_oid(request["oid"], **request["params"])), request["set_value"]) for request in payload.values()]
+        oid_objects = [ObjectType(ObjectIdentity(self._render_get_set_oid(request["oid"], **request["params"])), request["set_value"]) for request in payload.values()]
         
         errorIndication, errorStatus, errorIndex, varBinds = await set_cmd(
             self._engine,
@@ -258,7 +258,7 @@ class SNMPClient(ABC):
         return "-".join([octet_string[2*i:2*i+2].upper() for i in range(1, 7)])
 
     @abstractmethod
-    def _render_oid(self, oid: str, **params) -> str:
+    def _render_get_set_oid(self, oid: str, **params) -> str:
         pass
 
     @staticmethod
