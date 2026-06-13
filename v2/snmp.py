@@ -17,31 +17,41 @@ async def current_time_config_example(switch_handler: L2SwitchHandler) -> None:
 
 async def acl_config_example(switch_handler: L2SwitchHandler) -> None:
     # await switch_handler.create_acl_ethernet_mask({"profile_id": 140,
-    #                                                "source_mac_mask": "00-00-00-00-00-00"})
-    # await asyncio.sleep(5)
-    # await switch_handler.add_acl_ethernet_rule({"profile_id": 140,
-    #                                             "access_id": 1,
-    #                                             "source_mac": "00-00-00-00-00-00",
-    #                                             "permit": "deny",
-    #                                             "ports": {20}})
-    # await asyncio.sleep(5)
-    # await switch_handler.delete_acl_ethernet_rule({"profile_id": 140, "access_id": 1})
-    # await asyncio.sleep(5)
+    #                                                "advanced_params": {
+    #                                                    "use_vlan": "enabled",
+    #                                                    "source_mac_mask": "00-00-00-00-00-00",
+    #                                                    "use_802_1p": "enabled",
+    #                                                    "use_ethernet_type": "enabled"
+    #                                                 },
+    #                                                 "source_mac_false_check_state": True})
+    # await asyncio.sleep(3)
+    await switch_handler.add_acl_ethernet_rule({"profile_id": 140,
+                                                "access_id": 1,
+                                                "advanced_params": {
+                                                    "source_mac": "00-00-00-00-00-00",
+                                                    "local_priority": 3
+                                                },
+                                                # "any_frame": True,
+                                                "permit": "deny",
+                                                "ports": {20}})
+    await asyncio.sleep(3)
+    await switch_handler.delete_acl_ethernet_rule({"profile_id": 140, "access_id": 1})
+    # await asyncio.sleep(3)
     # await switch_handler.delete_acl_ethernet_mask({"profile_id": 140})
-    # await asyncio.sleep(5)
-    await switch_handler.create_acl_packet_content_mask({"profile_id": 140,
-                                                         "offset_16_31": "000000000000000000000000FFFF0000",
-                                                         "offset_64_79": "00FF00000000000000000000FFFFFF00"})
-    await asyncio.sleep(5)
-    # await switch_handler.add_acl_ethernet_rule({"profile_id": 140,
+
+    # await asyncio.sleep(3)
+    # await switch_handler.create_acl_packet_content_mask({"profile_id": 140,
+    #                                                      "offset_16_31": "00000000000000000000FFFFFFFF0000"})
+    # await asyncio.sleep(3)
+    # await switch_handler.add_acl_packet_content_rule({"profile_id": 140,
     #                                             "access_id": 1,
-    #                                             "source_mac": "00-00-00-00-00-00",
-    #                                             "permit": "deny",
+    #                                             "offsets": {26: "ffffffff"},
+    #                                             "permit": "permit",
     #                                             "ports": {20}})
-    # await asyncio.sleep(5)
-    # await switch_handler.delete_acl_ethernet_rule({"profile_id": 140, "access_id": 1})
-    # await asyncio.sleep(5)
-    await switch_handler.delete_acl_packet_content_mask({"profile_id": 140})
+    # await asyncio.sleep(3)
+    # await switch_handler.delete_acl_packet_content_rule({"profile_id": 140, "access_id": 1})
+    # await asyncio.sleep(3)
+    # await switch_handler.delete_acl_packet_content_mask({"profile_id": 140})
     # pprint(await switch_handler.get_acl_all(), sort_dicts=False)
 
 async def vlan_config_example(switch_handler: L2SwitchHandler) -> None:

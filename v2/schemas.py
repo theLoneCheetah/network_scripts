@@ -6,7 +6,9 @@ from ipaddress import IPv4Address
 from datetime import datetime
 from typing import Annotated, Literal, Self
 
-VALIDATE_DEFINITION = {"check_defined": True}
+INCLUSIVELY_NECESSARY_FIELD_SCHEMA = {"inclusively_necessary": True}
+EXCLUSIVELY_NECESSARY_FIELD_SCHEMA = {"exclusively_necessary": True}
+
 MAC_ADDRESS_REGEX = r"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
 
 ### BASE MODEL CONFIG ###
@@ -16,26 +18,40 @@ class RestrictedBaseModel(BaseModel):
     model_config = {"extra": "forbid"}
 
     @model_validator(mode="after")
-    def check_at_least_one_marked_field_is_defined(self) -> Self:
+    def check_field_groups(self) -> Self:
+        inclusively_necessary = set()
+        exclusively_necessary = set()
+
+        # compose separate sets for different groups
+        for field_name, field_info in self.model_fields.items():
+            if extra_schema := field_info.json_schema_extra:
+                if extra_schema.get("inclusively_necessary"):
+                    inclusively_necessary.add(field_name)
+                if extra_schema.get("exclusively_necessary"):
+                    exclusively_necessary.add(field_name)
+
         # all fields in model that are marked
-        marked_fields = {
-            field_name
-            for field_name, field_info in self.model_fields.items()
-            if field_info.json_schema_extra and field_info.json_schema_extra.get("check_defined")
+        all_marked = inclusively_necessary.union(exclusively_necessary)
+        
+        # all defined not None fields in model that are marked
+        all_defined_marked = {
+            field
+            for field in self.model_fields_set.intersection(all_marked)
+            if getattr(self, field) is not None
         }
-        # don't check for models without tags
-        if not marked_fields:
-            return self
+
+        # if doesn't have any inclusively necessary fields, raise error
+        if inclusively_necessary:
+            defined_inclusively_necessary = all_defined_marked.intersection(inclusively_necessary)
+            if not defined_inclusively_necessary:
+                raise ValueError("At least one of necessary parameters must be defined")
         
-        # is there at least one marked field that is defined
-        has_at_least_one_defined = any(
-            field in marked_fields and getattr(self, field) is not None
-            for field in self.model_fields_set
-        )
-        
-        # if not, raise error
-        if not has_at_least_one_defined:
-            raise ValueError("At least one parameter must be defined")
+        # if not exactly one exclusively necessary field is defined, raise
+        if exclusively_necessary:
+            defined_exclusively_necessary = all_defined_marked.intersection(exclusively_necessary)
+            if len(defined_exclusively_necessary) != 1:
+                raise ValueError("Exactly one of exclusively necessary parameters must be defined")
+            
         return self
 
 ### L2 SWITCH SCHEMAS ###
@@ -80,43 +96,62 @@ class AddTrustedHostConfig(RestrictedBaseModel):
 class DeleteTrustedHostConfig(RestrictedBaseModel):
     host_index: int
 
-class CreateAclEthernetMask(RestrictedBaseModel):
-    profile_id: Annotated[int, Field(ge=1, le=256)]
-    use_vlan: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
+class EthernetMaskAdvancedConfig(RestrictedBaseModel):
+    use_vlan: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
     source_mac_mask: Annotated[str | None, Field(pattern=MAC_ADDRESS_REGEX,
-                                                 json_schema_extra=VALIDATE_DEFINITION)] = None
+                                                 json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
     destination_mac_mask: Annotated[str | None, Field(pattern=MAC_ADDRESS_REGEX,
-                                                      json_schema_extra=VALIDATE_DEFINITION)] = None
-    use_802_1p: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
-    use_ethernet_type: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
+                                                      json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    use_802_1p: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    use_ethernet_type: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
 
-class DeleteAclMask(RestrictedBaseModel):
+class CreateAclEthernetMaskConfig(RestrictedBaseModel):
     profile_id: Annotated[int, Field(ge=1, le=256)]
+    advanced_params: Annotated[EthernetMaskAdvancedConfig | None,
+                               Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    source_mac_false_check_state: Annotated[bool | None, Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
 
-class AddAclEthernetRule(RestrictedBaseModel):
+class EthernetRuleAdvancedConfig(RestrictedBaseModel):
+    vlan_name: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    source_mac: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    destination_mac: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    check_802_1p: Annotated[int | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    ethernet_type: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    local_priority: Annotated[int | None, Field(ge=0, le=7)] = None
+    rx_rate: Annotated[int | None, Field(ge=64, le=1024000)] = None
+
+class AddAclEthernetRuleConfig(RestrictedBaseModel):
     profile_id: Annotated[int, Field(ge=1, le=256)]
     access_id: Annotated[int, Field(ge=1, le=65535)]
-    vlan_name: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
-    source_mac: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
-    destination_mac: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
-    check_802_1p: Annotated[int | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
-    ethernet_type: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
+    advanced_params: Annotated[EthernetRuleAdvancedConfig | None,
+                               Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    any_frame: Annotated[bool | None, Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    permit: str
+    ports: set[int]
+
+class DeleteAclMaskConfig(RestrictedBaseModel):
+    profile_id: Annotated[int, Field(ge=1, le=256)]
+
+class DeleteAclRuleConfig(RestrictedBaseModel):
+    profile_id: Annotated[int, Field(ge=1, le=256)]
+    access_id: Annotated[int, Field(ge=1, le=65535)]
+
+class CreateAclPacketContentMaskConfig(RestrictedBaseModel):
+    profile_id: Annotated[int, Field(ge=1, le=256)]
+    offset_0_15: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    offset_16_31: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    offset_32_47: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    offset_48_63: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    offset_64_79: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+
+class AddAclPacketContentRuleConfig(RestrictedBaseModel):
+    profile_id: Annotated[int, Field(ge=1, le=256)]
+    access_id: Annotated[int, Field(ge=1, le=65535)]
+    offsets: Annotated[dict[Annotated[int, Field(ge=0, le=76)], str], Field(min_length=1, max_length=5)]
     local_priority: Annotated[int | None, Field(ge=0, le=7)] = None
     permit: str
     ports: set[int]
     rx_rate: Annotated[int | None, Field(ge=64, le=1024000)] = None
-
-class DeleteAclRule(RestrictedBaseModel):
-    profile_id: Annotated[int, Field(ge=1, le=256)]
-    access_id: Annotated[int, Field(ge=1, le=65535)]
-
-class CreateAclPacketContentMask(RestrictedBaseModel):
-    profile_id: Annotated[int, Field(ge=1, le=256)]
-    offset_0_15: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
-    offset_16_31: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
-    offset_32_47: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
-    offset_48_63: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
-    offset_64_79: Annotated[str | None, Field(json_schema_extra=VALIDATE_DEFINITION)] = None
 
 class CreateVlanConfig(RestrictedBaseModel):
     vlan_id: int

@@ -229,18 +229,22 @@ class SNMPClient(ABC):
         value = value.prettyPrint()
 
         match data["value_type"]:
-            case "objectid":
-                if "values" in data:
-                    value = data["values"][value]
             case "integer":
                 value = int(value)
                 if "values" in data:
                     value = data["values"][value]
-            case "macaddress":
-                value = SNMPClient._convert_octet_string_into_mac(value)
             case "octetstring":
                 if "bytes_pattern" in data:
                     value = SNMPClient._split_octet_by_pattern(value, data["bytes_pattern"])
+            case "hexstring":
+                pass
+            case "ipaddress":
+                pass
+            case "macaddress":
+                value = SNMPClient._convert_octet_string_into_mac(value)
+            case "objectid":
+                if "values" in data:
+                    value = data["values"][value]
         
         return value
     
