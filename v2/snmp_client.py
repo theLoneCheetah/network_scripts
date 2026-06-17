@@ -43,15 +43,19 @@ class SNMPClient(ABC):
             self._config = yaml.safe_load(F)
     
     @classmethod
-    async def create(cls, ipaddress: str, *args) -> Self:
+    async def create(cls, ipaddress: str, *args, **kwargs) -> Self:
         self = cls(ipaddress, *args)
 
-        await self._initialize()
-        self._post_init()
+        assert_switch_models = kwargs.get("assert_switch_models")
+        await self._initialize(assert_switch_models=assert_switch_models)
 
+        # if only model assertion needed, post init isn't necessary
+        if "assert_switch_models" not in kwargs:
+            self._post_init()
+        
         return self
     
-    async def _initialize(self) -> None:
+    async def _initialize(self, assert_switch_models: set[str]) -> None:
         async with self._init_lock:
             if self._engine is not None:
                 return
@@ -62,17 +66,29 @@ class SNMPClient(ABC):
             self._transport = await UdpTransportTarget.create((self._ipaddress, 161), retries=2)
             self._context = ContextData()
 
-            await self._identify()
+            await self._identify(assert_switch_models)
     
-    async def _identify(self) -> None:
+    async def _identify(self, assert_switch_models: set[str]) -> None:
         task_oid = asyncio.create_task(self._get(SNMPClient._filter_request_config(self._config["system"], ["private_oid"]), True))
         task_description = asyncio.create_task(self._get(SNMPClient._filter_request_config(self._config["system"], ["description"]), True))
-        model, description = await asyncio.gather(task_oid, task_description)
+        models, description = await asyncio.gather(task_oid, task_description)
 
-        model = next(iter(model.values()))
+        models = next(iter(models.values()))
         description = next(iter(description.values()))
-        assert model in description   # description must contain model name
-        self._model = model
+        
+        for model in models:
+            if model in description:   # description must contain one of model names from config
+                self._model = model
+                break
+        else:
+            raise AssertionError(f"Switch model with ip {self._ipaddress} was not found in description")
+        
+        # check switch model with defined one and print error if assertion failed
+        if assert_switch_models:
+            try:
+                assert self._model in assert_switch_models
+            except AssertionError:
+                print(f"AssertionError: the switch model with ip {self._ipaddress} is {self._model}, not {assert_switch_models}")
     
     @abstractmethod
     def _post_init(self) -> None:

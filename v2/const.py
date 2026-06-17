@@ -10,6 +10,9 @@ import json
 class Database:
     USERNUM: Final[str] = "Number"
 
+class Country:
+    NSERV_NNET: Final[int] = int(os.getenv("COUNTRY_NSERV_NNET"))
+
 class SNMP:
     READ_ONLY = os.getenv("SNMP_READ_ONLY")
     READ_WRITE = os.getenv("SNMP_READ_WRITE")

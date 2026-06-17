@@ -1,9 +1,8 @@
 # environment file
 .env
 
-# test files and scripts
+# info file
 db.txt
-test*
 
 # temporary python files and environment
 **/__pycache__/

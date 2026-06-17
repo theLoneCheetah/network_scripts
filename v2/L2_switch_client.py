@@ -24,7 +24,7 @@ class L2SwitchClient(SNMPClient):
     _is_fiber_port: bool
     _switch_oids_config: dict[str, Any]
     
-    def __init__(self, ipaddress: str, port: int) -> None:
+    def __init__(self, ipaddress: str, port: int = None) -> None:
         super().__init__(ipaddress)
         self._port = port
     
