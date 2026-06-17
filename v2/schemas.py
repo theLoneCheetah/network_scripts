@@ -117,6 +117,7 @@ class EthernetRuleAdvancedConfig(RestrictedBaseModel):
     destination_mac: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
     check_802_1p: Annotated[int | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
     ethernet_type: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    permit: str
     local_priority: Annotated[int | None, Field(ge=0, le=7)] = None
     rx_rate: Annotated[int | None, Field(ge=64, le=1024000)] = None
 
@@ -125,8 +126,7 @@ class AddAclEthernetRuleConfig(RestrictedBaseModel):
     access_id: Annotated[int, Field(ge=1, le=65535)]
     advanced_params: Annotated[EthernetRuleAdvancedConfig | None,
                                Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
-    any_frame: Annotated[bool | None, Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
-    permit: str
+    deny_any_frame: Annotated[bool | None, Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
     ports: set[int]
 
 class DeleteAclMaskConfig(RestrictedBaseModel):

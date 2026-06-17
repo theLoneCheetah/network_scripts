@@ -16,30 +16,28 @@ async def current_time_config_example(switch_handler: L2SwitchHandler) -> None:
     print(res)
 
 async def acl_config_example(switch_handler: L2SwitchHandler) -> None:
-    # await switch_handler.create_acl_ethernet_mask({"profile_id": 140,
-    #                                                "advanced_params": {
-    #                                                    "use_vlan": "enabled",
-    #                                                    "source_mac_mask": "00-00-00-00-00-00",
-    #                                                    "use_802_1p": "enabled",
-    #                                                    "use_ethernet_type": "enabled"
-    #                                                 },
-    #                                                 "source_mac_false_check_state": True})
-    # await asyncio.sleep(3)
+    # ethernet
+    await switch_handler.create_acl_ethernet_mask({"profile_id": 140,
+                                                #    "advanced_params": {
+                                                #        "source_mac_mask": "00-00-00-00-00-00"
+                                                #     },
+                                                    "source_mac_false_check_state": True})
+    await asyncio.sleep(3)
     await switch_handler.add_acl_ethernet_rule({"profile_id": 140,
                                                 "access_id": 1,
-                                                "advanced_params": {
-                                                    "source_mac": "00-00-00-00-00-00",
-                                                    "local_priority": 3
-                                                },
-                                                # "any_frame": True,
-                                                "permit": "deny",
+                                                # "advanced_params": {
+                                                #     "source_mac": "00-00-00-00-00-00",
+                                                #     "permit": "deny"
+                                                # },
+                                                "deny_any_frame": True,
                                                 "ports": {20}})
     await asyncio.sleep(3)
     await switch_handler.delete_acl_ethernet_rule({"profile_id": 140, "access_id": 1})
-    # await asyncio.sleep(3)
-    # await switch_handler.delete_acl_ethernet_mask({"profile_id": 140})
+    await asyncio.sleep(3)
+    await switch_handler.delete_acl_ethernet_mask({"profile_id": 140})
 
     # await asyncio.sleep(3)
+    
     # await switch_handler.create_acl_packet_content_mask({"profile_id": 140,
     #                                                      "offset_16_31": "00000000000000000000FFFFFFFF0000"})
     # await asyncio.sleep(3)

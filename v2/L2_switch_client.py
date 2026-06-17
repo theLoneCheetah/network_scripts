@@ -396,11 +396,11 @@ class L2SwitchClient(SNMPClient):
         
         def transform_access_id_config(access_id_config: dict[str, Any]) -> dict[str, Any]:
             # access id rule counts every frame if all filter attributes have default values
-            any_frame = all(access_id_config[key] == "" for key in filter_attributes)
+            deny_any_frame = all(access_id_config[key] == "" for key in filter_attributes)
 
             return {
                 **{key: access_id_config[key] for key in filter_attributes},
-                "any_frame": any_frame,
+                "deny_any_frame": deny_any_frame,
                 **{key: access_id_config[key] for key in secondary_attributes}
             }
 
@@ -630,7 +630,7 @@ class L2SwitchClient(SNMPClient):
                     # enable_local_priority oid is necessary for local_priority oid
                     *(["enable_local_priority"] if "local_priority" in advanced_params else []),
                     *advanced_params,
-                    "permit", "ports", "entry_status"
+                    "ports", "entry_status"
                 ]
             ]
 
@@ -643,9 +643,28 @@ class L2SwitchClient(SNMPClient):
                     case "enable_local_priority":
                         set_value = "enabled"
                     case "ports":
-                        set_value = L2SwitchClient._combine_assigned_ports_to_hex(advanced_params[param])
+                        set_value = L2SwitchClient._combine_assigned_ports_to_hex(request["ports"])
                     case _:
                         set_value = advanced_params[param]
+                data["set_value"] = set_value
+                data["params"] = {"profile_id": request["profile_id"], "access_id": request["access_id"]}
+        
+        # custom request by deny_any_frame
+        else:
+            base_prefix = "ethernet_rule_"
+            include_oids = [f"{base_prefix}{param}" for param in ("source_mac", "permit", "ports", "entry_status")]
+            
+            payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], include_oids)
+            for param, data in payload.items():
+                match param.removeprefix(base_prefix):
+                    case "source_mac":
+                        set_value = SNMP.ZERO_MAC_ADDRESS
+                    case "permit":
+                        set_value = "deny"
+                    case "ports":
+                        set_value = L2SwitchClient._combine_assigned_ports_to_hex(request["ports"])
+                    case "entry_status":
+                        set_value = "create_and_go"
                 data["set_value"] = set_value
                 data["params"] = {"profile_id": request["profile_id"], "access_id": request["access_id"]}
 
@@ -654,7 +673,7 @@ class L2SwitchClient(SNMPClient):
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
-            if err.status == "inconsistentValue":
+            if err.status == "commitFailed":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
