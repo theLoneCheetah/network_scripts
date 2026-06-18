@@ -13,6 +13,7 @@ def get_switch_ip_addresses_by_model(model: str) -> set[str]:
     assert_switch_models = set([model])
 
     match model:
+        # L2
         case "DES-3028":
             database_model_names = {"3028", "3028-M"}
         case "DES-3052":
@@ -34,10 +35,29 @@ def get_switch_ip_addresses_by_model(model: str) -> set[str]:
             assert_switch_models = {"DGS-1210-28/ME/B1", "DGS-1210-28/ME/B2"}
         case "DGS-1210-52/ME/B1":
             database_model_names = {"DGS-1210-52P"}
+        # L2+
         case "DGS-3120-24TC":
             database_model_names = {"3120-24TC"}
-        case _:
-            database_model_names = set()
+        case "DGS-3120-24SC":
+            database_model_names = {"3120-24SC"}
+        # L2 fiber
+        case "DGS-3100-24TG":
+            database_model_names = {"3100-24"}
+        case "DGS-1210-28XS/ME/B1":
+            database_model_names = {"DGS-1210-28XSME"}
+        case "SNR-S2995G-48FX":
+            database_model_names = {"SNR-S2995G-48FX"}
+        # L2/L3
+        case "DGS-3612":
+            database_model_names = {"3612"}
+        case "DGS-3627G":
+            database_model_names = {"3627G"}
+        case "DGS-3620-28TC":
+            database_model_names = {"3620-28TC"}
+        case "DGS-3620-28SC":
+            database_model_names = {"3620-28SC"}
+        case "DGS-3630-28SC":
+            database_model_names = {"DGS-3630-28SC"}
     
     switch_ip_addresses = set()
     for name in database_model_names:
@@ -47,7 +67,7 @@ def get_switch_ip_addresses_by_model(model: str) -> set[str]:
 
 async def assert_switch_model_by_snmp(model_name: str) -> None:
     switch_ip_addresses, assert_switch_models = get_switch_ip_addresses_by_model(model_name)
-    switch_ip_addresses = ["10.139.65.189"]
+    
     start_time = perf_counter()
     count_hundreds = 0
     unavailable_switch_ip_addresses = set()
@@ -82,5 +102,16 @@ Overall time: {perf_counter() - start_time}""")
 # DGS-1210-28/ME ok
 # DGS-1210-52/ME/B1 ok
 # L2+
-# DGS-3120-24TC 
-asyncio.run(assert_switch_model_by_snmp("DGS-3120-24TC"))
+# DGS-3120-24TC ok
+# DGS-3120-24SC ok
+# L2 fiber
+# DGS-3100-24TG ok
+# DGS-1210-28XS/ME/B1 ok
+# SNR-S2995G-48FX ok
+# L2/L3
+# DGS-3612 ok
+# DGS-3627G ok
+# DGS-3620-28TC ok
+# DGS-3620-28SC ok
+# DGS-3630-28SC ok
+asyncio.run(assert_switch_model_by_snmp("DGS-3630-28SC"))

@@ -55,7 +55,7 @@ class SNMPClient(ABC):
         
         return self
     
-    async def _initialize(self, assert_switch_models: set[str]) -> None:
+    async def _initialize(self, assert_switch_models: set[str] | None = None) -> None:
         async with self._init_lock:
             if self._engine is not None:
                 return
@@ -250,6 +250,7 @@ class SNMPClient(ABC):
                 if "values" in data:
                     value = data["values"][value]
             case "octetstring":
+                # value = bytes.fromhex(value[2:]).decode("utf-8")   # for SNR-S2995G-48FX description
                 if "bytes_pattern" in data:
                     value = SNMPClient._split_octet_by_pattern(value, data["bytes_pattern"])
             case "hexstring":
