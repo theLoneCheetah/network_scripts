@@ -17,39 +17,63 @@ async def current_time_config_example(switch_handler: L2SwitchHandler) -> None:
 
 async def acl_config_example(switch_handler: L2SwitchHandler) -> None:
     # ethernet
-    await switch_handler.create_acl_ethernet_mask({"profile_id": 140,
-                                                #    "advanced_params": {
-                                                #        "source_mac_mask": "00-00-00-00-00-00"
-                                                #     },
-                                                    "source_mac_false_check_state": True})
+    await switch_handler.create_acl_ethernet_mask({
+        "profile_id": 140,
+        # "advanced_params": {
+        #     "source_mac_mask": "00-00-00-00-00-00"
+        # }
+        "source_mac_false_check_state": True
+    })
     await asyncio.sleep(3)
-    await switch_handler.add_acl_ethernet_rule({"profile_id": 140,
-                                                "access_id": 1,
-                                                # "advanced_params": {
-                                                #     "source_mac": "00-00-00-00-00-00",
-                                                #     "permit": "deny"
-                                                # },
-                                                "deny_any_frame": True,
-                                                "ports": {20}})
+    await switch_handler.add_acl_ethernet_rule({
+        "profile_id": 140,
+        "access_id": 1,
+        # "advanced_params": {
+        #     "source_mac": "00-00-00-00-00-00",
+        #     "permit": "deny"
+        # },
+        "deny_any_frame": True,
+        "ports": {20}
+    })
     await asyncio.sleep(3)
     await switch_handler.delete_acl_ethernet_rule({"profile_id": 140, "access_id": 1})
     await asyncio.sleep(3)
     await switch_handler.delete_acl_ethernet_mask({"profile_id": 140})
-
-    # await asyncio.sleep(3)
     
-    # await switch_handler.create_acl_packet_content_mask({"profile_id": 140,
-    #                                                      "offset_16_31": "00000000000000000000FFFFFFFF0000"})
-    # await asyncio.sleep(3)
-    # await switch_handler.add_acl_packet_content_rule({"profile_id": 140,
-    #                                             "access_id": 1,
-    #                                             "offsets": {26: "ffffffff"},
-    #                                             "permit": "permit",
-    #                                             "ports": {20}})
-    # await asyncio.sleep(3)
-    # await switch_handler.delete_acl_packet_content_rule({"profile_id": 140, "access_id": 1})
-    # await asyncio.sleep(3)
-    # await switch_handler.delete_acl_packet_content_mask({"profile_id": 140})
+    await asyncio.sleep(3)
+    
+    # packet content
+    await switch_handler.create_acl_packet_content_mask({
+        "profile_id": 140,
+        # "advanced_params": {
+        #     "offset_masks": {
+        #         "offset_16_31": "0x00000000000000000000ffffffff0000"
+        #     }
+        #     # "general_mask": "0x0000000000000000000000000000000000000000000000000000ffffffff0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        #     # "fully_inspected_bytes": {26, 27, 28, 29}
+        # }
+        "ipv4_arp_check_state": "ipv4"
+    })
+    await asyncio.sleep(3)
+    await switch_handler.add_acl_packet_content_rule({
+        "profile_id": 140,
+        "access_id": 1,
+        # "advanced_params": {
+        #     "offsets": {
+        #         26: "0x0a5a5a5a",
+        #     },
+        #     "permit": "permit"
+        # },
+        "custom_params": {
+            "ipv4_arp_check_state": "ipv4",
+            "source_ip": SNMP.DEFAULT_IP
+        },
+        "ports": {20}
+    })
+    await asyncio.sleep(3)
+    await switch_handler.delete_acl_packet_content_rule({"profile_id": 140, "access_id": 1})
+    await asyncio.sleep(3)
+    await switch_handler.delete_acl_packet_content_mask({"profile_id": 140})
     # pprint(await switch_handler.get_acl_all(), sort_dicts=False)
 
 async def vlan_config_example(switch_handler: L2SwitchHandler) -> None:

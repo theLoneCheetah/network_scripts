@@ -136,22 +136,43 @@ class DeleteAclRuleConfig(RestrictedBaseModel):
     profile_id: Annotated[int, Field(ge=1, le=256)]
     access_id: Annotated[int, Field(ge=1, le=65535)]
 
-class CreateAclPacketContentMaskConfig(RestrictedBaseModel):
-    profile_id: Annotated[int, Field(ge=1, le=256)]
+class PacketContentMaskAdvancedOffsetConfig(RestrictedBaseModel):
     offset_0_15: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
     offset_16_31: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
     offset_32_47: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
     offset_48_63: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
     offset_64_79: Annotated[str | None, Field(json_schema_extra=INCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
 
-class AddAclPacketContentRuleConfig(RestrictedBaseModel):
+class PacketContentMaskAdvancedConfig(RestrictedBaseModel):
+    offset_masks: Annotated[PacketContentMaskAdvancedOffsetConfig | None,
+                            Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    general_mask: Annotated[str | None, Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    fully_inspected_bytes: Annotated[set[int] | None, Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+
+class CreateAclPacketContentMaskConfig(RestrictedBaseModel):
     profile_id: Annotated[int, Field(ge=1, le=256)]
-    access_id: Annotated[int, Field(ge=1, le=65535)]
+    advanced_params: Annotated[PacketContentMaskAdvancedConfig | None,
+                               Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    ipv4_arp_check_state: Annotated[str | None, Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+
+class PacketContentRuleAdvancedConfig(RestrictedBaseModel):
     offsets: Annotated[dict[Annotated[int, Field(ge=0, le=76)], str], Field(min_length=1, max_length=5)]
     local_priority: Annotated[int | None, Field(ge=0, le=7)] = None
     permit: str
-    ports: set[int]
     rx_rate: Annotated[int | None, Field(ge=64, le=1024000)] = None
+
+class PacketContentRuleCustomConfig(RestrictedBaseModel):
+    ipv4_arp_check_state: str
+    source_ip: str
+
+class AddAclPacketContentRuleConfig(RestrictedBaseModel):
+    profile_id: Annotated[int, Field(ge=1, le=256)]
+    access_id: Annotated[int, Field(ge=1, le=65535)]
+    advanced_params: Annotated[PacketContentRuleAdvancedConfig | None,
+                               Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    custom_params: Annotated[PacketContentRuleCustomConfig | None,
+                             Field(json_schema_extra=EXCLUSIVELY_NECESSARY_FIELD_SCHEMA)] = None
+    ports: set[int]
 
 class CreateVlanConfig(RestrictedBaseModel):
     vlan_id: int

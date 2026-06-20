@@ -26,8 +26,10 @@ class SNMP:
     ZERO_ETHERNET_TYPE = "0x0000"
     ZERO_OFFSET_CHUNK = "0x00000000"
 
-    SOURCE_IP_BYTES_IN_IPV4 = [26, 27, 28, 29]
-    SOURCE_IP_BYTES_IN_ARP = [28, 29, 30, 31]
+    SOURCE_IP_BYTES_IN_IPV4 = {26, 27, 28, 29}
+    SOURCE_IP_OFFSET_IN_IPV4 = 26
+    SOURCE_IP_BYTES_IN_ARP = {28, 29, 30, 31}
+    SOURCE_IP_OFFSET_IN_ARP = 28
 
     @staticmethod
     def typify_mac_address(mac_address: str) -> OctetString:
@@ -36,7 +38,7 @@ class SNMP:
     TYPE = {
         "integer": Integer,
         "octetstring": OctetString,
-        "hexstring": lambda val: OctetString(hexValue=val),
+        "hexstring": lambda val: OctetString(hexValue=val.removeprefix("0x")),
         "ipaddress": IpAddress,
         "macaddress": typify_mac_address
     }
