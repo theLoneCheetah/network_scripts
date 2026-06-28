@@ -2,6 +2,7 @@
 from typing import Final
 from pysnmp.proto.rfc1902 import Integer, OctetString, IpAddress
 from dotenv import load_dotenv, find_dotenv
+from enum import StrEnum, auto
 load_dotenv(find_dotenv())   # find .env file
 import os
 import json
@@ -13,6 +14,24 @@ class Database:
 class Country:
     NSERV_NNET: Final[int] = int(os.getenv("COUNTRY_NSERV_NNET"))
 
+# enum for request types
+class SNMPRequestType(StrEnum):
+    GET = auto()
+    SET = auto()
+
+# enum for config sections in yaml, names are specified for clarity
+class SwitchConfigSection(StrEnum):
+    PRIVATE_MIBS = "private_mibs"
+    SWITCH = "switch"
+    TRUSTED_HOST = "trusted_host"
+    ACL = "acl"
+    VLAN = "vlan"
+    FDB = "fdb"
+    IPIF = "ipif"
+    DHCP_RELAY = "dhcp_relay"
+    ARP = "arp"
+    PORT = "port"
+
 class SNMP:
     READ_ONLY = os.getenv("SNMP_READ_ONLY")
     READ_WRITE = os.getenv("SNMP_READ_WRITE")
@@ -20,6 +39,9 @@ class SNMP:
     TEST_1210 = os.getenv("SNMP_TEST_1210")
 
     DEFAULT_IP = "10.90.90.90"
+
+    # mapping for formatting patterns with struct module, bytes_count: format_symbol
+    PATTERN_MAPPING = {"1": "B", "2": "H", "4": "I", "8": "Q"}
 
     ZERO_VLAN_NAME = "0x" + "0" * 64
     ZERO_MAC_ADDRESS = "00-00-00-00-00-00"

@@ -7,7 +7,7 @@ from snmp_exceptions import SNMPTransportError
 
 def any_database_test() -> None:
     test_database = TestDatabaseManager()
-    print(test_database.get_users_last_today_from_pseudo_L3())
+    print(test_database.get_empty_switches("3028"))
 
 def get_switch_ip_addresses_by_model(model: str) -> set[str]:
     assert_switch_models = set([model])
@@ -114,4 +114,4 @@ Overall time: {perf_counter() - start_time}""")
 # DGS-3620-28TC ok
 # DGS-3620-28SC ok
 # DGS-3630-28SC ok
-asyncio.run(assert_switch_model_by_snmp("DGS-3630-28SC"))
+asyncio.run(assert_switch_model_by_snmp("DGS-3120-24TC"))

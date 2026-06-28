@@ -3,15 +3,19 @@ import asyncio
 import struct
 from typing import override, Any, Callable
 from collections import defaultdict
+from pprint import pprint
 from copy import deepcopy
 from datetime import datetime
 from time import perf_counter
 from pysnmp.hlapi.v3arch.asyncio import *
+# local modules
 from snmp_client import SNMPClient
-from const import SNMP
+from const import SNMPRequestType, SwitchConfigSection, SNMP
 from snmp_exceptions import *
 
+# standard request data is dict with any value type
 type RequestData = dict[str, Any]
+# standard response data can have int key type
 type ResponseData = dict[str | int, Any]
 
 class L2SwitchClient(SNMPClient):
@@ -31,7 +35,6 @@ class L2SwitchClient(SNMPClient):
     @override
     def _post_init(self) -> None:
         self._ports_count = self._config["models"][self._model]["ports_count"]
-        self._model = self._config["models"][self._model]["base_model"]
 
         self._is_gigabit_ethernet_port = self._port >= self._config["models"][self._model]["first_gigabit_port"]
         self._is_combo_port = self._port in self._config["models"][self._model]["combo_ports"]
@@ -43,49 +46,59 @@ class L2SwitchClient(SNMPClient):
     
     ### MIB MODULES ###
 
+    # get available mibs by private switch oid
     async def scan_available_mibs(self) -> ResponseData:
         results = defaultdict(dict)
         
-        for oid, desciption in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["description"]):
-            results[L2SwitchClient._parse_last_index(oid)[1]]["desciption"] = desciption
-
-        for oid, version in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["version"]):
-            results[L2SwitchClient._parse_last_index(oid)[1]]["version"] = version
-
-        for oid, value_type in await self._bulk_walk(self._switch_oids_config["private_mib_modules"]["value_type"]):
-            results[L2SwitchClient._parse_last_index(oid)[1]]["value_type"] = value_type
+        # basically, mibs are identified by indices, so need to collect dictionary by them
+        for param in ("description", "version", "mib_type"):
+            for oid, desciption in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.PRIVATE_MIBS][param]):
+                results[L2SwitchClient._parse_last_index(oid)[1]][param] = desciption
         
-        return {value["desciption"]: {"version": value["version"], "value_type": value["value_type"]} for value in results.values()}
-
+        # index: {description, version, mib_type} -> description: {version, mib_type} in sorted by mib name order
+        return {
+            value["description"]: {"version": value["version"], "mib_type": value["mib_type"]}
+            for value in sorted(results.values(), key=lambda x: x["description"])
+        }
+    
     ### SWITCH MANAGEMENT AND INFO ###
 
-    async def _get_switch_data(self, include_oids: list[str]) -> ResponseData:
-        return await self._get(SNMPClient._filter_request_config(self._switch_oids_config["switch"], include_oids))
+    # get any data associated with switch by oids list
+    async def _get_switch_data(self, include_params: list[str]) -> ResponseData:
+        # return in standard form {request_name: data}
+        return await self._get(SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.SWITCH], include_params))
     
+    # perform reboot/reset operation
     async def perform_system_reboot(self, request: RequestData) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["system_reboot_mode"])
+        mode = request["system_reboot_mode"]
+        # for reset system, warning should be throwed
+        if mode == "reset_config_and_reboot":
+            print("Warning: you will lost connection to this device")
         
-        for param, data in payload.items():
-            data["set_value"] = request[param]
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.SWITCH], request)
         
         try:
             result = await self._set(payload)
+        # transport error always occurs, needs to be handled
         except SNMPTransportError:
-            await self._action_after_system_reboot(request["system_reboot_mode"])
+            # pass mode value to handler
+            await self._action_after_system_reboot(next(iter(request.values())))
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
     
+    # perform save config/log operation
     async def perform_save(self, request: RequestData) -> SNMPResponseCode:
-        action_payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["save_action"])
-        action_payload["save_action"]["set_value"] = request["save_action"]
+        action_payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.SWITCH], request)
         
         try:
             result = await self._set(action_payload)
+            # wait until saved
             await self._check_save_status()
         except SNMPTransportError as err:
+            # for config saving, transport error occurs and needs to be handled
             if request["save_action"] in {"config_id1", "config_id2", "all"}:
                 await self._check_save_status()
             else:
@@ -96,56 +109,71 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
     
+    # function to wait until save action completed
     async def _check_save_status(self) -> None:
-        status_payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["save_status"])
+        param = "save_status"
+        status_payload = SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.SWITCH], [param])
+
+        # while not completed, wait
         status = await self._get(status_payload)
-        while status["save_status"] not in {"other", "completed"}:
+        while status[param] not in {"other", "completed"}:
             status = await self._get(status_payload)
 
+    # get switch network and vlan configuration
     async def get_network_parameters(self) -> ResponseData:
-        include_oids = ["ip", "mask", "default_gateway", "management_vlan_id"]
-        return await self._get_switch_data(include_oids)
+        include_params = ["ip", "mask", "default_gateway", "management_vlan_id"]
+        return await self._get_switch_data(include_params)
     
+    # set switch network and vlan
     async def set_network_parameters(self, request: RequestData) -> SNMPResponseCode:
-        include_oids = list(request.keys())
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], include_oids)
+        # warning should be throwed
+        print("Warning: this may disrupt connection to this device")
         
-        for param, data in payload.items():
-            data["set_value"] = request[param]
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.SWITCH], request)
+        transport_error = False
         
         try:
             result = await self._set(payload)
+        # ignore transport error and mark error flag, it may not occur sometimes
         except SNMPTransportError:
-            if "ip" in request:
-                await self._action_after_ip_address_change(request["ip"])
-            elif "default_gateway" in request or "management_vlan_id" in request:
-                pass
-            else:
-                return SNMPResponseCode.TRANSPORT_ERROR
+            transport_error = True
         except SNMPProtocolError as err:
             if err.status == "inconsistentValue":
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
+        
+        # for ip change, handle transport troubles
+        if "ip" in request:
+            await self._action_after_ip_address_change(request["ip"])
+        # for other parameters change, there is no handler now
+        elif transport_error:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        
         return SNMPResponseCode.SUCCESS
 
+    # get switch main mac address
     async def get_mac_address(self) -> ResponseData:
         return await self._get_switch_data(["mac_address"])
     
+    # get switch ports number
     async def get_ports_number(self) -> ResponseData:
         return await self._get_switch_data(["ports_number"])
 
+    # get switch current time in datetime format
     async def get_current_time(self) -> ResponseData:
-        result = await self._get_switch_data(["current_time"])
-        return {"current_time": datetime(*result["current_time"])}
+        param = "current_time"
+        result = await self._get_switch_data([param])
+        result[param] = datetime(*result[param])
+        return result
     
+    # set switch current time
     async def set_current_time(self, request: RequestData) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["current_time"])
+        param = "current_time"
+        set_value: datetime = request[param]
+        # pattern includes 7 fragments, last are ms
+        request[param] = set_value.timetuple()[:6] + (set_value.microsecond // 100000,)
         
-        for param, data in payload.items():
-            set_value: datetime = request[param]
-            set_value = L2SwitchClient._build_octet_by_pattern(set_value.timetuple()[:6] + (set_value.microsecond // 100000,),
-                                                               data["bytes_pattern"])
-            data["set_value"] = set_value
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.SWITCH], request)
         
         try:
             result = await self._set(payload)
@@ -160,74 +188,91 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
 
+    # get switch cpu utilization
     async def get_cpu_utilization(self) -> ResponseData:
-        include_oids = ["cpu_utilization_5sec", "cpu_utilization_1min", "cpu_utilization_5min"]
-        results = await self._get_switch_data(include_oids)
-        return {key.removeprefix("cpu_utilization_"): value for key, value in results.items()}
+        base_prefix = "cpu_utilization_"
+        include_params = [f"{base_prefix}{param}" for param in ("5sec", "1min", "5min")]
+        results = await self._get_switch_data(include_params)
+        # return without prefix
+        return {key.removeprefix(base_prefix): value for key, value in results.items()}
 
+    # get switch dynamic ram utilization
     async def get_dram_utilization(self) -> ResponseData:
-        include_oids = ["dram_total", "dram_used", "dram_utilization"]
-        results = await self._get_switch_data(include_oids)
-        return {key.removeprefix("dram_"): value for key, value in results.items()}
+        base_prefix = "dram_"
+        include_params = [f"{base_prefix}{param}" for param in ("total", "used", "utilization")]
+        results = await self._get_switch_data(include_params)
+        # return without prefix
+        return {key.removeprefix(base_prefix): value for key, value in results.items()}
     
     ### TRUSTED HOST ###
 
+    # get trusted hosts supported by switch
     async def get_trusted_hosts(self) -> ResponseData:
         results = defaultdict(dict)
-        
-        for oid, ip in await self._bulk_walk(self._switch_oids_config["trusted_host"]["ip"]):
+
+        # for each of ordered host indices, there should be ip and mask
+        for oid, ip in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.TRUSTED_HOST]["ip"]):
             host_index = L2SwitchClient._parse_last_index(oid)[1]
             # consider 24-bit mask by default
             results[host_index] = {"ip": ip, "mask": "255.255.255.0"}
         
-        for oid, mask in await self._bulk_walk(self._switch_oids_config["trusted_host"]["mask"]):
+        for oid, mask in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.TRUSTED_HOST]["mask"]):
             host_index = L2SwitchClient._parse_last_index(oid)[1]
-            # consider 24-bit mask by default
-            results[host_index]["mask"] = mask
+            # skip masks without ip
+            if host_index in results:
+                results[host_index]["mask"] = mask
         
         return results
+
+    # add new trusted host for switch
+    async def add_trusted_host(self, request: RequestData) -> SNMPResponseCode:
+        # warning should be throwed
+        print("Warning: this may disrupt connection to this device")
+
+        # include only ip, mask and entry status
+        include_params = {param: request[param] for param in ("ip", "mask")}
+        include_params["entry_status"] = "create_and_go"
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.TRUSTED_HOST], include_params)
+        
+        # trusted host table is filled without spaces, so find first free index to avoid errors
+        host_index = await self._find_first_free_host_index()
+        for param in include_params:
+            payload[param]["params"]["host_index"] = host_index
+        
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
     
+    # helper function to find first free trusted host index
     async def _find_first_free_host_index(self) -> int:
         occupied_indices = set()
 
-        for oid, _ in await self._bulk_walk(self._switch_oids_config["trusted_host"]["ip"]):
+        # find all indices that are occupied
+        for oid, _ in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.TRUSTED_HOST]["ip"]):
             host_index = L2SwitchClient._parse_last_index(oid)[1]
             occupied_indices.add(host_index)
         
+        # search for first free one
         current = 1
         while current in occupied_indices:
             current += 1
         
         return current
-
-    async def add_trusted_host(self, request: RequestData) -> SNMPResponseCode:
-        include_oids = ["ip", "mask", "entry_status"]
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["trusted_host"], include_oids)
-        
-        payload["ip"]["set_value"] = request["ip"]
-        payload["mask"]["set_value"] = request["mask"]
-        payload["entry_status"]["set_value"] = "create_and_go"
-
-        # it's important to find free index to avoid errors
-        host_index = await self._find_first_free_host_index()
-        for oid in include_oids:
-            payload[oid]["params"] = {"host_index": host_index}
-
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "inconsistentValue":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
     
+    # delect one of trusted hosts
     async def delete_trusted_host(self, request: RequestData) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["trusted_host"], ["entry_status"])
+        # include only entry status to destroy
+        include_params = {"entry_status": "destroy"}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.TRUSTED_HOST], include_params)
         
-        payload["entry_status"]["params"] = {"host_index": request["host_index"]}
-        payload["entry_status"]["set_value"] = "destroy"
+        # only parameter is host index to address by useful number link
+        payload["entry_status"]["params"]["host_index"] = request["host_index"]
 
         try:
             result = await self._set(payload)
@@ -239,9 +284,11 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
     
+    # delete all trusted host entries
     async def delete_all_trusted_host(self) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["trusted_host"], ["delete_all"])
-        payload["delete_all"]["set_value"] = "start"
+        # main parameter to delete all
+        include_params = {"delete_all": "start"}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.TRUSTED_HOST], include_params)
 
         try:
             result = await self._set(payload)
@@ -255,38 +302,114 @@ class L2SwitchClient(SNMPClient):
     
     ### ACL ###
 
+    # public methods for getting acl data
+    
+    # get all acl rule masks and rules in one general table
+    async def get_acl_all(self) -> ResponseData:
+        ethernet = await self.get_acl_ethernet()
+        packet_content = await self.get_acl_packet_content()
+
+        # sort by profile id
+        return dict(sorted({**ethernet, **packet_content}.items()))
+    
+    # get only those acl data that affects the port
+    async def get_acl_for_port(self) -> ResponseData:
+        # need to get the general table
+        acl_table = await self.get_acl_all()
+        result = {}
+
+        # go through all profile id configs
+        for profile_id, profile_id_config in acl_table.items():
+            rule_management: dict[int, dict[str, Any]] = profile_id_config["rule_management"]
+
+            # check all access ids' entries in the config
+            for access_id, access_id_config in rule_management.items():
+                # check if rule works for this port
+                if self._port in rule_management[access_id]["ports"]:
+                    # for new profile id, add new structure with type and mask
+                    if profile_id not in result:
+                        result[profile_id] = {
+                            "type": profile_id_config["type"],
+                            "mask_management": profile_id_config["mask_management"],
+                            "rule_management": {}
+                        }
+                    # add access id rule
+                    result[profile_id]["rule_management"][access_id] = access_id_config
+        
+        return result
+    
+    # get acl ethernet mask&rule config
+    async def get_acl_ethernet(self) -> ResponseData:
+        mask = await self._get_acl_ethernet_mask()
+        rule = await self._get_acl_ethernet_rule()
+        
+        return await self._merge_acl_mask_and_rule(mask, rule)
+    
+    # get acl packet content mask&rule config
+    async def get_acl_packet_content(self) -> ResponseData:
+        mask = await self._get_acl_packet_content_mask()
+        rule = await self._get_acl_packet_content_rule()
+        
+        return await self._merge_acl_mask_and_rule(mask, rule)
+
+    # helper function to merge mask and rule into one acl table
+    async def _merge_acl_mask_and_rule(self, mask: dict[int, dict[str, Any]], rule: dict[int, dict[str, Any]]) -> ResponseData:
+        # for each profile id, update config using access id data (acl type is the same)
+        for profile_id, profile_id_config in mask.items():
+            if profile_id in rule:
+                profile_id_config.update(rule[profile_id])
+        
+        return mask
+
     # masks getting
-    async def _get_acl_mask(self, acl_type: str, attributes_to_check: list[str],
-                            check_profile_id: Callable[[dict[str, str]], dict[str, Any]]) -> ResponseData:
-        attributes_to_check = [f"{acl_type}_mask_{attribute}" for attribute in attributes_to_check]
+
+    # common function to get and parse acl masks configuration
+    async def _get_acl_mask(
+                self,
+                acl_type: str,   # ethernet or packet content
+                params_to_check: list[str],   # filter parameters
+                check_profile_id: Callable[[dict[str, str]], dict[str, Any]]   # inner function to check profile id entries
+            ) -> ResponseData:
+        # add prefix to params
+        base_prefix = f"{acl_type}_mask_"
+        params_to_check = [f"{base_prefix}{param}" for param in params_to_check]
         pre_results = defaultdict(dict)
         
-        for attribute in attributes_to_check:
-            for oid, value in await self._bulk_walk(self._switch_oids_config["acl"][attribute]):
+        # get the parameters as they are, form defaultdict as {profile_id: {param: value}}
+        for param in params_to_check:
+            for oid, value in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.ACL][param]):
+                # oid's end is the profile id index
                 profile_id = L2SwitchClient._parse_last_index(oid)[1]
-                pre_results[profile_id][attribute] = value
+                pre_results[profile_id][param] = value
         
+        # as mask data will be updated and refilled, another dict needed
         results = {}
 
+        # for each found profile id, check its data
         for profile_id, profile_id_config in pre_results.items():
             temp_profile_id_config = {}
 
-            for attribute in attributes_to_check:
-                # if any attribute was not found, skip profile
-                if attribute not in profile_id_config:
+            for param in params_to_check:
+                # if any param was not found, skip profile
+                if param not in profile_id_config:
                     break
-
-                temp_profile_id_config[attribute.removeprefix(f"{acl_type}_mask_")] = profile_id_config[attribute]
+                
+                # write parameter without prefix
+                temp_profile_id_config[param.removeprefix(base_prefix)] = profile_id_config[param]
             
             else:
+                # if all the parameters were found, remember profile id with acl type
                 results[profile_id] = {
                     "type": acl_type,
+                    # mask data are refilled with special function with custom fields
                     "mask_management": check_profile_id(temp_profile_id_config)
                 }
-
+        
         return results
 
+    # get the configuration of ethernet profile id's masks
     async def _get_acl_ethernet_mask(self) -> ResponseData:
+        # function to check and refill data in profile id mask, adding custom field
         def check_profile_id(profile_id_config: dict[str, str]) -> dict[str, Any]:
             # for zero/any source/destination mac masks, leave them empty
             if profile_id_config["source_mac_mask"] == SNMP.ZERO_MAC_ADDRESS:
@@ -294,34 +417,43 @@ class L2SwitchClient(SNMPClient):
             if profile_id_config["destination_mac_mask"] == SNMP.ZERO_MAC_ADDRESS:
                 profile_id_config["destination_mac_mask"] = ""
             
+            # ethernet rule should check any frame, so the mask falsely check mac address with zero mask
             source_mac_false_check_state = True \
                 if profile_id_config["mac_mask_state"] == "source_mac" and profile_id_config["source_mac_mask"] == "" \
                 else False
 
             return {
-                **{key: profile_id_config[key] for key in filter_attributes},
+                **{key: profile_id_config[key] for key in filter_params},
+                # custom variable after filter parameters
                 "source_mac_false_check_state": source_mac_false_check_state,
                 "owner": profile_id_config["owner"]
             }
 
         acl_type = "ethernet"
-        filter_attributes = ["use_vlan", "mac_mask_state", "source_mac_mask",
-                             "destination_mac_mask", "use_802_1p", "use_ethernet_type"]
-        attributes_to_check = [*filter_attributes, "owner"]
+        # filter params are specified separately for useful key order
+        filter_params = ["use_vlan", "mac_mask_state", "source_mac_mask", "destination_mac_mask", "use_802_1p", "use_ethernet_type"]
+        params_to_check = [*filter_params, "owner"]
 
-        return await self._get_acl_mask(acl_type, attributes_to_check, check_profile_id)
+        # common function does all the work
+        return await self._get_acl_mask(acl_type, params_to_check, check_profile_id)
 
+    # get the configuration of packet content profile id's masks
     async def _get_acl_packet_content_mask(self) -> ResponseData:
+        # function to check and refill data in profile id mask, adding custom fields
         def check_profile_id(profile_id_config: dict[str, str]) -> dict[str, Any]:
+            # combine masks into a general one
             general_mask = "0x" + "".join(profile_id_config[mask][2:] for mask in masks)
+            # based on bytes that are fully inspected, decide which of ipv4/arp fields are checked
             fully_inspected_bytes = L2SwitchClient._parse_acl_packet_content_fully_inspected_bytes(general_mask[2:])
             ipv4_arp_check_state = L2SwitchClient._discover_acl_packet_content_ipv4_arp_check_state(fully_inspected_bytes)
 
             return {
+                # offsets masks keeps their shape
                 "offset_masks": {
                     mask: profile_id_config[mask]
                     for mask in masks
                 },
+                # custom fields
                 "general_mask": general_mask,
                 "fully_inspected_bytes": fully_inspected_bytes,
                 "ipv4_arp_check_state": ipv4_arp_check_state,
@@ -329,27 +461,44 @@ class L2SwitchClient(SNMPClient):
             }
         
         acl_type = "packet_content"
+        # masks as filter params separately for iteration
         masks = ["offset_0_15", "offset_16_31", "offset_32_47", "offset_48_63", "offset_64_79"]
-        attributes_to_check = [*masks, "owner"]
+        params_to_check = [*masks, "owner"]
 
-        return await self._get_acl_mask(acl_type, attributes_to_check, check_profile_id)
+        # common function does all the work
+        return await self._get_acl_mask(acl_type, params_to_check, check_profile_id)
 
     # rules getting
-    async def _get_acl_rule(self, acl_type: str, attributes_to_check: list[str],
-                            convert_value: Callable[[dict[str, Any], str], Any],
-                            transform_access_id_config: Callable[[dict[str, Any]], dict[str, Any]]) -> ResponseData:
-        attributes_to_check = [f"{acl_type}_rule_{attribute}" for attribute in attributes_to_check]
+
+    # common function to get and parse acl rule configuration
+    async def _get_acl_rule(
+                self,
+                acl_type: str,   # ethernet or packet content
+                params_to_check: list[str],   # filter parameters
+                convert_value: Callable[[dict[str, Any], str], Any],   # inner function to convert specified values
+                transform_access_id_config: Callable[[dict[str, Any]], dict[str, Any]]   # inner function to check access id entries
+            ) -> ResponseData:
+        # add prefix to params
+        base_prefix = f"{acl_type}_rule_"
+        params_to_check = [f"{base_prefix}{param}" for param in params_to_check]
+
+        # form defaultdict as {profile_id: {access_id: {param: value}}}
         pre_results = defaultdict(lambda: defaultdict(dict))
         
-        for attribute in attributes_to_check:
-            for oid, value in await self._bulk_walk(self._switch_oids_config["acl"][attribute]):
+        # get the parameters as they are
+        for param in params_to_check:
+            for oid, value in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.ACL][param]):
+                # oid is {base}.{profile_id}.{access_id}, cut ids
                 cut_oid, access_id = L2SwitchClient._parse_last_index(oid)
                 profile_id = L2SwitchClient._parse_last_index(cut_oid)[1]
-                pre_results[profile_id][access_id][attribute] = value
+                pre_results[profile_id][access_id][param] = value
         
+        # as rule data will be updated and refilled, another dict needed
         results = {}
-
+        
+        # for each found profile id, check its data
         for profile_id, profile_id_config in pre_results.items():
+            # profile id should exist even if access ids are skipped, because it shoud have at least a mask
             results[profile_id] = {
                 "type": acl_type,
                 "rule_management": defaultdict(dict)
@@ -359,23 +508,28 @@ class L2SwitchClient(SNMPClient):
             for access_id, access_id_config in profile_id_config.items():
                 temp_access_id_config = {}
 
-                for attribute in attributes_to_check:
-                    # if any attribute was not found, skip rule
-                    if attribute not in access_id_config:
+                for param in params_to_check:
+                    # if any param was not found, skip rule
+                    if param not in access_id_config:
                         break
+                    
+                    # get the value and remove params's prefix
+                    value = access_id_config[param]
+                    param = param.removeprefix(base_prefix)
 
-                    temp_access_id_config[attribute.removeprefix(f"{acl_type}_rule_")] = convert_value(access_id_config, attribute)
+                    # write value after coversion and hiding zero fields
+                    temp_access_id_config[param] = convert_value(param, value)
                 else:
+                    # if all the parameters were found, remember transformed access id
                     rule_management[access_id] = transform_access_id_config(temp_access_id_config)
         
-        # if all access id rules are skipped in one profile id, keep the profile id because it should have at least correct mask
         return results
-
+    
+    # get the configuration of ethernet access id's rules
     async def _get_acl_ethernet_rule(self) -> ResponseData:
-        def convert_value(access_id_config: dict[str, Any], attribute: str) -> Any:
-            value = access_id_config[attribute]
-
-            match attribute.removeprefix(f"{acl_type}_rule_"):
+        # function to check and transform rule params' values
+        def convert_value(param: str, value: Any) -> Any:
+            match param:
                 # when vlan name is not stated, the value is 64-byte zero string, miss it
                 case "vlan_name":
                     if value == SNMP.ZERO_VLAN_NAME:
@@ -398,65 +552,81 @@ class L2SwitchClient(SNMPClient):
 
             return value
         
+        # function to calculate custom field and transform access id
         def transform_access_id_config(access_id_config: dict[str, Any]) -> dict[str, Any]:
-            # access id rule counts every frame if all filter attributes have default values
-            deny_any_frame = all(access_id_config[key] == "" for key in filter_attributes)
-
+            # access id rule checks every frame if all filter params have default values
+            deny_any_frame = all(access_id_config[key] == "" for key in filter_params)
+            
+            # return dict with custom field inside
             return {
-                **{key: access_id_config[key] for key in filter_attributes},
+                **{key: access_id_config[key] for key in filter_params},
                 "deny_any_frame": deny_any_frame,
-                **{key: access_id_config[key] for key in secondary_attributes}
+                **{key: access_id_config[key] for key in secondary_params}
             }
 
         acl_type = "ethernet"
-        filter_attributes = ["vlan_name", "source_mac", "destination_mac", "check_802_1p", "ethernet_type"]
-        secondary_attributes = ["enable_local_priority", "local_priority", "permit", "ports", "owner", "rx_rate"]
-        attributes_to_check = filter_attributes + secondary_attributes
+        # filter params separately for custom field
+        filter_params = ["vlan_name", "source_mac", "destination_mac", "check_802_1p", "ethernet_type"]
+        secondary_params = ["enable_local_priority", "local_priority", "permit", "ports", "owner", "rx_rate"]
+        params_to_check = filter_params + secondary_params
         
-        return await self._get_acl_rule(acl_type, attributes_to_check, convert_value, transform_access_id_config)
+        # common function does all the work
+        return await self._get_acl_rule(acl_type, params_to_check, convert_value, transform_access_id_config)
 
+    # get the configuration of packet content access id's rules
     async def _get_acl_packet_content_rule(self) -> ResponseData:
-        def convert_value(access_id_config: dict[str, Any], attribute: str) -> Any:
-            value = access_id_config[attribute]
-
-            match attribute.removeprefix(f"{acl_type}_rule_"):
+        # function to check and transform rule params' values
+        def convert_value(param: str, value: Any) -> Any:
+            match param:
                 # for ports, get the portlist
                 case "ports":
                     value = L2SwitchClient._parse_assigned_ports_from_hex(value, self._ports_count)
             
             return value
         
+        # function to calculate custom fields and transform access id
         def transform_access_id_config(access_id_config: dict[str, Any]) -> dict[str, Any]:
             offset_chunks = {}
             
+            # go through all chunks
             for ind in range(1, 6):
-                index, mask, data = [access_id_config.pop(f"offset_{attribute}_{ind}")
-                                     for attribute in ["index", "mask", "data"]]
+                # get index (offset), mask and data
+                index, mask, data = [access_id_config.pop(f"offset_{param}_{ind}") for param in ("index", "mask", "data")]
+
                 # keep only those offset chunks that have not default value
                 if mask != SNMP.ZERO_OFFSET_CHUNK:
+                    # for each chunk, calculate bytes that are fully inspected, mask is prefilled with spaces
                     fully_inspected_bytes = L2SwitchClient._parse_acl_packet_content_fully_inspected_bytes("00" * index + mask[2:])
-                    offset_chunks[index] = {"mask": mask,
-                                            "data": data,
-                                            "fully_inspected_bytes": fully_inspected_bytes}
+                    offset_chunks[index] = {
+                        "mask": mask,
+                        "data": data,
+                        "fully_inspected_bytes": fully_inspected_bytes
+                    }
             
+            # sort offset chunks ascending
             offset_chunks = dict(sorted(offset_chunks.items()))
+
+            # main data and custom fields that are filled when rule has one offset chunk
             mask, data = "", ""
             fully_inspected_bytes = set()
-            ipv4_arp_check_state = "none"
+            ipv4_arp_check_state = "none"   # by default, rule doesn't check anything
             source_ip = ""
 
             # access id rule is considered wrong if any other chunk doesn't have default value
             if len(offset_chunks) == 1:
                 main_offset_chunk = next(iter(offset_chunks.values()))
+                # get data from the main and only offset chunk
                 mask, data, fully_inspected_bytes = (
                     main_offset_chunk[key] for key in ("mask", "data", "fully_inspected_bytes")
                 )
-
+                
+                # decide which of ipv4/arp fields are checked
                 ipv4_arp_check_state = L2SwitchClient._discover_acl_packet_content_ipv4_arp_check_state(fully_inspected_bytes)
                 # source ip will be filled only if access id rule checks ipv4/arp source ip with real value
                 if ipv4_arp_check_state in {"ipv4", "arp"} and data != SNMP.ZERO_OFFSET_CHUNK:
                     source_ip = L2SwitchClient._parse_acl_chunk_to_ip(data)
             
+            # form resulting dict, starting with offset chunks and custom fields
             return {
                 "offsets": offset_chunks,
                 "main_mask": mask,
@@ -464,83 +634,148 @@ class L2SwitchClient(SNMPClient):
                 "fully_inspected_bytes": fully_inspected_bytes,
                 "ipv4_arp_check_state": ipv4_arp_check_state,
                 "source_ip": source_ip,
-                **{key: access_id_config[key] for key in secondary_attributes}
+                **{key: access_id_config[key] for key in secondary_params}
             }
 
         acl_type = "packet_content"
-        filter_attributes = [
-            f"offset_{attribute}_{ind}"
+        # filter params (3 fields for each of 5 blocks) separately
+        filter_params = [
+            f"offset_{param}_{ind}"
             for ind in range(1, 6)
-            for attribute in ["index", "mask", "data"]
+            for param in ("index", "mask", "data")
         ]
-        secondary_attributes = ["enable_local_priority", "local_priority", "permit", "ports", "rx_rate"]
-        attributes_to_check = filter_attributes + secondary_attributes
+        secondary_params = ["enable_local_priority", "local_priority", "permit", "ports", "rx_rate"]
+        params_to_check = filter_params + secondary_params
         
-        return await self._get_acl_rule(acl_type, attributes_to_check, convert_value, transform_access_id_config)
+        # common function does all the work
+        return await self._get_acl_rule(acl_type, params_to_check, convert_value, transform_access_id_config)
+    
+    # public mask/rule setting methods
 
-    # overall getting
-    async def _merge_acl_mask_and_rule(self, mask: dict[int, dict[str, Any]], rule: dict[int, dict[str, Any]]) -> ResponseData:
-        for profile_id, profile_id_config in mask.items():
-            if profile_id in rule:
-                profile_id_config.update(rule[profile_id])
-        
-        return mask
-    
-    async def get_acl_ethernet(self) -> ResponseData:
-        mask = await self._get_acl_ethernet_mask()
-        rule = await self._get_acl_ethernet_rule()
-        
-        return await self._merge_acl_mask_and_rule(mask, rule)
-    
-    async def get_acl_packet_content(self) -> ResponseData:
-        mask = await self._get_acl_packet_content_mask()
-        rule = await self._get_acl_packet_content_rule()
-        
-        return await self._merge_acl_mask_and_rule(mask, rule)
-    
-    async def get_acl_all(self) -> ResponseData:
-        ethernet = await self.get_acl_ethernet()
-        packet_content = await self.get_acl_packet_content()
-
-        return dict(sorted({**ethernet, **packet_content}.items()))
-    
-    # for port getting
-    async def get_acl_for_port(self) -> ResponseData:
-        acl_table = await self.get_acl_all()
-        result = {}
-
-        for profile_id, profile_id_config in acl_table.items():
-            rule_management: dict[int, dict[str, Any]] = profile_id_config["rule_management"]
-            for access_id, access_id_config in rule_management.items():
-                if self._port in rule_management[access_id]["ports"]:
-                    if profile_id not in result:
-                        result[profile_id] = {
-                            "type": profile_id_config["type"],
-                            "mask_management": profile_id_config["mask_management"],
-                            "rule_management": {}
-                        }
-                    result[profile_id]["rule_management"][access_id] = access_id_config
-        
-        return result
-    
-    # helper function for configuration
-    async def _acl_mask_or_rule_entry_status(self, base_prefix: str, profile_id: int, access_id: int = None) -> str:
-        oid = f"{base_prefix}entry_status"
-
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], [oid])
-        payload[oid]["params"]["profile_id"] = profile_id
-        if access_id is not None:
-            payload[oid]["params"]["access_id"] = access_id
-        
-        return (await self._get(payload))[oid]
-    
-    # ethernet mask setting
+    # create new acl ethernet mask
     async def create_acl_ethernet_mask(self, request: RequestData) -> SNMPResponseCode:
-        base_prefix = "ethernet_mask_"
+        return await self._create_acl_mask("ethernet", request, self._build_acl_ethernet_mask_include_params)
 
-        if await self._acl_mask_or_rule_entry_status(base_prefix, request["profile_id"]) == "active":
+    # create new acl packet content mask
+    async def create_acl_packet_content_mask(self, request: RequestData) -> SNMPResponseCode:
+        return await self._create_acl_mask("packet_content", request, self._build_acl_packet_content_mask_include_params)
+    
+    # add new acl ethernet rule
+    async def add_acl_ethernet_rule(self, request: RequestData) -> SNMPResponseCode:
+        return await self._add_acl_rule("ethernet", request, self._build_acl_ethernet_rule_include_params)
+    
+    # add new acl packet content rule
+    async def add_acl_packet_content_rule(self, request: RequestData) -> SNMPResponseCode:
+        return await self._add_acl_rule("packet_content", request, self._build_acl_packet_content_rule_include_params)
+
+    # mask/rule deleting
+
+    # delete ethernet profile id
+    async def delete_acl_ethernet_mask(self, request: RequestData) -> SNMPResponseCode:
+        return await self._delete_acl_entry("ethernet_mask_", request["profile_id"])
+    
+    # delete packet content profile id
+    async def delete_acl_packet_content_mask(self, request: RequestData) -> SNMPResponseCode:
+        return await self._delete_acl_entry("packet_content_mask_", request["profile_id"])
+    
+    # delete ethernet access id
+    async def delete_acl_ethernet_rule(self, request: RequestData) -> SNMPResponseCode:
+        return await self._delete_acl_entry("ethernet_rule_", request["profile_id"], request["access_id"])
+    
+    # delete packet content access id
+    async def delete_acl_packet_content_rule(self, request: RequestData) -> SNMPResponseCode:
+        return await self._delete_acl_entry("packet_content_rule_", request["profile_id"], request["access_id"])
+    
+    # common method to delete acl profile or access id
+    async def _delete_acl_entry(self, base_prefix: str, profile_id: int, access_id: int = None) -> SNMPResponseCode:
+        # if mask doesn't exist, return error
+        if await self._get_acl_entry_status(base_prefix, profile_id, access_id) is None:
             return SNMPResponseCode.INVALID_DATA
         
+        # destroy value for entry
+        param = f"{base_prefix}entry_status"
+        include_params = {param: "destroy"}
+        
+        # form payload
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.ACL], include_params)
+        
+        # profile id param - always
+        payload[param]["params"]["profile_id"] = profile_id
+        # access id param - if has it
+        if access_id is not None:
+            payload[param]["params"]["access_id"] = access_id
+
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "notWritable":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    # helper method to check if acl mask or rule exists
+    async def _get_acl_entry_status(self, base_prefix: str, profile_id: int, access_id: int = None) -> str:
+        # entry status oid formation
+        param = f"{base_prefix}entry_status"
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.ACL], [param])
+
+        # profile id param - always
+        payload[param]["params"]["profile_id"] = profile_id
+        # access id param - if has it
+        if access_id is not None:
+            payload[param]["params"]["access_id"] = access_id
+        
+        # return entry status value
+        return (await self._get(payload))[param]
+    
+    # mask setting
+
+    # common method for creating acl masks
+    async def _create_acl_mask(
+                self,
+                acl_type: str,   # ethernet or packet content
+                request: RequestData,   # user's request
+                build_include_params: Callable[[RequestData], dict[str, Any]]
+            ) -> SNMPResponseCode:
+        # form prefix based on acl type
+        base_prefix = f"{acl_type}_mask_"
+
+        # if mask with specified profile id already exists, return error
+        if await self._get_acl_entry_status(base_prefix, request["profile_id"]) == "active":
+            return SNMPResponseCode.INVALID_DATA
+        
+        # build params dict by specific method
+        try:
+            include_params = build_include_params(request)
+        # if ValueError was raised, request data are invalid, return error
+        except ValueError:
+            return SNMPResponseCode.INVALID_DATA
+        
+        # entry status param
+        include_params["entry_status"] = "create_and_go"
+        # add prefix
+        include_params = {f"{base_prefix}{param}": value for param, value in include_params.items()}
+        
+        # payload with profile id param
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.ACL], include_params)
+        for data in payload.values():
+            data["params"]["profile_id"] = request["profile_id"]
+        
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "notWritable":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+
+    # build payload parameters for ethernet mask setting
+    def _build_acl_ethernet_mask_include_params(self, request: RequestData) -> dict[str, Any]:
+        # if got advanced params
         if advanced_params := request.get("advanced_params"):
             # mac_mask_state oid is necessary for identifying any mac mask
             if "source_mac_mask" in advanced_params:
@@ -550,325 +785,108 @@ class L2SwitchClient(SNMPClient):
                     mac_mask_state = "source_mac"
             elif "destination_mac_mask" in advanced_params:
                 mac_mask_state = "destination_mac"
+            # default
             else:
                 mac_mask_state = "other"
-
-            include_oids = [
-                f"{base_prefix}{param}"
-                for param in [
-                    *(["mac_mask_state"] if mac_mask_state != "other" else []),
-                    *advanced_params,
-                    "entry_status"
-                ]
-            ]
             
-            payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], include_oids)
-            for param, data in payload.items():
-                param = param.removeprefix(base_prefix)
-                match param:
-                    case "entry_status":
-                        set_value = "create_and_go"
-                    case "mac_mask_state":
-                        set_value = mac_mask_state
-                    case _:
-                        set_value = advanced_params[param]
-                data["set_value"] = set_value
-                data["params"] = {"profile_id": request["profile_id"]}
+            include_params = {}
+
+            # mac_mask_state before mac masks
+            if mac_mask_state != "other":
+                include_params["mac_mask_state"] = mac_mask_state
+            # other params
+            include_params.update(advanced_params)
         
         # custom request by source_mac_false_check_state
         else:
-            include_oids = [f"{base_prefix}{param}" for param in ("mac_mask_state", "source_mac_mask", "entry_status")]
-            
-            payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], include_oids)
-            for param, data in payload.items():
-                match param.removeprefix(base_prefix):
-                    case "mac_mask_state":
-                        set_value = "source_mac"
-                    case "source_mac_mask":
-                        set_value = SNMP.ZERO_MAC_ADDRESS
-                    case "entry_status":
-                        set_value = "create_and_go"
-                data["set_value"] = set_value
-                data["params"] = {"profile_id": request["profile_id"]}
-
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "notWritable":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
-    
-    async def delete_acl_ethernet_mask(self, request: RequestData) -> SNMPResponseCode:
-        base_prefix = "ethernet_mask_"
-
-        if await self._acl_mask_or_rule_entry_status(base_prefix, request["profile_id"]) is None:
-            return SNMPResponseCode.INVALID_DATA
+            # only source mac with zero value
+            include_params = {
+                "mac_mask_state": "source_mac",
+                "source_mac_mask": SNMP.ZERO_MAC_ADDRESS
+            }
         
-        oid = f"{base_prefix}entry_status"
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], [oid])
-        payload[oid]["params"] = {"profile_id": request["profile_id"]}
-        payload[oid]["set_value"] = "destroy"
+        return include_params
 
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "notWritable":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
-    
-    # ethernet rule setting
-    async def add_acl_ethernet_rule(self, request: RequestData) -> SNMPResponseCode:
-        base_prefix = "ethernet_rule_"
-
-        if await self._acl_mask_or_rule_entry_status("ethernet_mask_", request["profile_id"]) is None or \
-                await self._acl_mask_or_rule_entry_status(base_prefix, request["profile_id"], request["access_id"]) == "active":
-            return SNMPResponseCode.INVALID_DATA
-        
-        if advanced_params := request.get("advanced_params"):
-            include_oids = [
-                f"{base_prefix}{param}"
-                for param in [
-                    # enable_local_priority oid is necessary for local_priority oid
-                    *(["enable_local_priority"] if "local_priority" in advanced_params else []),
-                    *advanced_params,
-                    "ports", "entry_status"
-                ]
-            ]
-
-            payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], include_oids)
-            for param, data in payload.items():
-                param = param.removeprefix(base_prefix)
-                match param:
-                    case "entry_status":
-                        set_value = "create_and_go"
-                    case "enable_local_priority":
-                        set_value = "enabled"
-                    case "ports":
-                        set_value = L2SwitchClient._combine_assigned_ports_to_hex(request["ports"])
-                    case _:
-                        set_value = advanced_params[param]
-                data["set_value"] = set_value
-                data["params"] = {"profile_id": request["profile_id"], "access_id": request["access_id"]}
-        
-        # custom request by deny_any_frame
-        else:
-            include_oids = [f"{base_prefix}{param}" for param in ("source_mac", "permit", "ports", "entry_status")]
-            
-            payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], include_oids)
-            for param, data in payload.items():
-                match param.removeprefix(base_prefix):
-                    case "source_mac":
-                        set_value = SNMP.ZERO_MAC_ADDRESS
-                    case "permit":
-                        set_value = "deny"
-                    case "ports":
-                        set_value = L2SwitchClient._combine_assigned_ports_to_hex(request["ports"])
-                    case "entry_status":
-                        set_value = "create_and_go"
-                data["set_value"] = set_value
-                data["params"] = {"profile_id": request["profile_id"], "access_id": request["access_id"]}
-
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "commitFailed":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
-    
-    async def delete_acl_ethernet_rule(self, request: RequestData) -> SNMPResponseCode:
-        base_prefix = "ethernet_rule_"
-
-        if await self._acl_mask_or_rule_entry_status(base_prefix, request["profile_id"], request["access_id"]) is None:
-            return SNMPResponseCode.INVALID_DATA
-        
-        oid = f"{base_prefix}entry_status"
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], [oid])
-        payload[oid]["params"] = {"profile_id": request["profile_id"],
-                                  "access_id": request["access_id"]}
-        payload[oid]["set_value"] = "destroy"
-
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "notWritable":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
-    
-    # packet content mask setting
-    async def create_acl_packet_content_mask(self, request: RequestData) -> SNMPResponseCode:
-        base_prefix = "packet_content_mask_"
-
-        if await self._acl_mask_or_rule_entry_status(base_prefix, request["profile_id"]) == "active":
-            return SNMPResponseCode.INVALID_DATA
-        
-        ipv4_arp_check_state = request.get("ipv4_arp_check_state")
-        if advanced_params := request.get("advanced_params"):
-            fully_inspected_bytes = advanced_params.get("fully_inspected_bytes")
-            general_mask = advanced_params.get("general_mask")
-            offset_masks = advanced_params.get("offset_masks")
-        else:
-            fully_inspected_bytes = None
-            general_mask = None
-            offset_masks = None
-        
-        if ipv4_arp_check_state:
+    # build payload parameters for packet content mask setting
+    def _build_acl_packet_content_mask_include_params(self, request: RequestData) -> dict[str, Any]:
+        # for custom request by ipv4_arp_check_state, create fully_inspected_bytes set
+        if ipv4_arp_check_state := request.get("ipv4_arp_check_state"):
             match ipv4_arp_check_state:
+                # for both ipv4/arp check, some bytes intersects
                 case "both":
                     fully_inspected_bytes = SNMP.SOURCE_IP_BYTES_IN_IPV4 | SNMP.SOURCE_IP_BYTES_IN_ARP
                 case "ipv4":
                     fully_inspected_bytes = SNMP.SOURCE_IP_BYTES_IN_IPV4
                 case "arp":
                     fully_inspected_bytes = SNMP.SOURCE_IP_BYTES_IN_ARP
+                # if state is unknown, raise error
                 case _:
-                    return SNMPResponseCode.INVALID_DATA
+                    raise ValueError
         
+        # otherwise, some of advanced params was defined
+        else:
+            advanced_params: dict[str, Any] = request.get("advanced_params")
+            # get this parameter
+            fully_inspected_bytes = advanced_params.get("fully_inspected_bytes")
+            general_mask = advanced_params.get("general_mask")   # if general mask was defined, bytes stage will be skipped
+            offset_masks = advanced_params.get("offset_masks")   # if offset masks were defined, bytes and general mask stages will be skipped
+        
+        # it's easy to create general mask from bytes if there are any
         if fully_inspected_bytes:
             general_mask = "0x" + "".join((
-                "ff" if i in fully_inspected_bytes else "00"
-                for i in range(80)
+                "ff" if byte in fully_inspected_bytes else "00"
+                for byte in range(80)
             ))
 
+        # if there is a general mask, cut it to offset masks
         if general_mask:
             general_mask = general_mask[2:]
-            offset_masks = {
-                f"offset_{i}_{i + 15}": "0x" + general_mask[i * 2 : i * 2 + 32]
-                for i in range(0, len(general_mask) // 2, 16)
-                if int(general_mask[i * 2 : i * 2 + 32], 16) != 0
-            }
+            offset_masks = {}
 
-        include_oids = [f"{base_prefix}{param}" for param in offset_masks.keys() if param != "profile_id"]
-        include_oids.append(f"{base_prefix}entry_status")
+            for i in range(0, len(general_mask) // 2, 16):
+                chunk_mask = general_mask[i * 2 : i * 2 + 32]
+                # exclude empty offset masks
+                if int(chunk_mask, 16) != 0:
+                    # hex value is expected with 0x
+                    offset_masks[f"offset_{i}_{i + 15}"] = f"0x{chunk_mask}"
         
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], include_oids)
-        for param, data in payload.items():
-            param = param.removeprefix(base_prefix)
-            match param:
-                case "entry_status":
-                    set_value = "create_and_go"
-                case _:
-                    set_value = offset_masks[param]
-            data["set_value"] = set_value
-            data["params"] = {"profile_id": request["profile_id"]}
-        
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "wrongLength":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
+        # offset_masks = include_params
+        return offset_masks
     
-    async def delete_acl_packet_content_mask(self, request: RequestData) -> SNMPResponseCode:
-        base_prefix = "packet_content_mask_"
+    # rule setting
 
-        if await self._acl_mask_or_rule_entry_status(base_prefix, request["profile_id"]) is None:
+    # common method for adding acl rules
+    async def _add_acl_rule(
+                self,
+                acl_type: str,   # ethernet or packet content
+                request: RequestData,   # user's request
+                build_include_params: Callable[[RequestData], dict[str, Any]]
+            ) -> SNMPResponseCode:
+        # form prefix based on acl type
+        base_prefix = f"{acl_type}_rule_"
+
+        # if profile id doesn't exist or access id already exists, return error
+        if await self._get_acl_entry_status(f"{acl_type}_mask_", request["profile_id"]) is None or \
+                await self._get_acl_entry_status(base_prefix, request["profile_id"], request["access_id"]) == "active":
             return SNMPResponseCode.INVALID_DATA
         
-        oid = f"{base_prefix}entry_status"
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], [oid])
-        payload[oid]["params"] = {"profile_id": request["profile_id"]}
-        payload[oid]["set_value"] = "destroy"
-
+        # build params dict by specific method
         try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "notWritable":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
-    
-    # ethernet packet content setting
-    async def add_acl_packet_content_rule(self, request: RequestData) -> SNMPResponseCode:
-        base_prefix = "packet_content_rule_"
-
-        if await self._acl_mask_or_rule_entry_status("packet_content_mask_", request["profile_id"]) is None or \
-                await self._acl_mask_or_rule_entry_status(base_prefix, request["profile_id"], request["access_id"]) == "active":
+            include_params = build_include_params(request)
+        # if ValueError was raised, request data are invalid, return error
+        except ValueError:
             return SNMPResponseCode.INVALID_DATA
         
-        if advanced_params := request.get("advanced_params"):
-            offsets = sorted(list(advanced_params["offsets"].items()))
-            include_oids = [
-                f"{base_prefix}offset_{attr}_{ind}"
-                for ind in range(1, len(offsets) + 1)
-                for attr in ("index", "data")
-            ]
-            
-            # enable_local_priority oid is necessary for local_priority oid
-            if "local_priority" in advanced_params:
-                include_oids.append(f"{base_prefix}enable_local_priority")
-            
-            include_oids.extend(
-                f"{base_prefix}{param}"
-                for param in advanced_params.keys()
-                if param != "offsets"
-            )
-            
-            include_oids.extend([f"{base_prefix}ports", f"{base_prefix}entry_status"])
+        # ports as a hex string, entry status param
+        include_params["ports"] = L2SwitchClient._combine_assigned_ports_to_hex(request["ports"])
+        include_params["entry_status"] = "create_and_go"
+        # add prefix
+        include_params = {f"{base_prefix}{param}": value for param, value in include_params.items()}
 
-            payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], include_oids)
-
-            for param, data in payload.items():
-                param = param.removeprefix(base_prefix)
-                match param:
-                    case "entry_status":
-                        set_value = "create_and_go"
-                    case "enable_local_priority":
-                        set_value = "enabled"
-                    case "ports":
-                        set_value = L2SwitchClient._combine_assigned_ports_to_hex(request[param])
-                    case _:
-                        if param.startswith("offset_index"):
-                            set_value = offsets[int(param[-1]) - 1][0]
-                        elif param.startswith("offset_data"):
-                            set_value = offsets[int(param[-1]) - 1][1]
-                        else:
-                            set_value = advanced_params[param]
-                data["set_value"] = set_value
-                data["params"] = {"profile_id": request["profile_id"], "access_id": request["access_id"]}
-        
-        else:
-            custom_params = request.get("custom_params")
-            ipv4_arp_check_state = custom_params["ipv4_arp_check_state"]
-            source_ip = custom_params["source_ip"]
-
-            include_oids = [
-                f"{base_prefix}{param}"
-                for param in ["offset_index_1", "offset_data_1", "permit", "ports", "entry_status"]
-            ]
-
-            payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], include_oids)
-
-            for param, data in payload.items():
-                param = param.removeprefix(base_prefix)
-                match param:
-                    case "entry_status":
-                        set_value = "create_and_go"
-                    case "ports":
-                        set_value = L2SwitchClient._combine_assigned_ports_to_hex(request[param])
-                    case "offset_index_1":
-                        set_value = SNMP.SOURCE_IP_OFFSET_IN_IPV4 if ipv4_arp_check_state == "ipv4" else SNMP.SOURCE_IP_OFFSET_IN_ARP
-                    case "offset_data_1":
-                        set_value = L2SwitchClient._convert_ip_to_acl_chunk(source_ip)
-                    case "permit":
-                        set_value = "permit"
-                data["set_value"] = set_value
-                data["params"] = {"profile_id": request["profile_id"], "access_id": request["access_id"]}
+        # payload with profile id and access id params
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.ACL], include_params)
+        for data in payload.values():
+            data["params"] = {"profile_id": request["profile_id"], "access_id": request["access_id"]}
         
         try:
             result = await self._set(payload)
@@ -879,96 +897,140 @@ class L2SwitchClient(SNMPClient):
                 return SNMPResponseCode.INVALID_DATA
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
-    
-    async def delete_acl_packet_content_rule(self, request: RequestData) -> SNMPResponseCode:
-        base_prefix = "packet_content_rule_"
 
-        if await self._acl_mask_or_rule_entry_status(base_prefix, request["profile_id"], request["access_id"]) is None:
-            return SNMPResponseCode.INVALID_DATA
+    # build payload parameters for ethernet rule setting
+    def _build_acl_ethernet_rule_include_params(self, request: RequestData) -> dict[str, Any]:
+        # if got advanced params
+        if advanced_params := request.get("advanced_params"):
+            include_params = {}
+
+            # enable_local_priority oid is necessary for local_priority oid and should be before
+            if "local_priority" in advanced_params:
+                include_params["enable_local_priority"] = "enabled"
+            # other params10.136.191.64
+            include_params.update(advanced_params)
         
-        oid = f"{base_prefix}entry_status"
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["acl"], [oid])
-        payload[oid]["params"] = {"profile_id": request["profile_id"],
-                                  "access_id": request["access_id"]}
-        payload[oid]["set_value"] = "destroy"
+        # custom request by deny_any_frame
+        else:
+            include_params = {
+                "source_mac": SNMP.ZERO_MAC_ADDRESS,   # zero mac, nothing to check as maak is also empty
+                "permit": "deny"   # deny any frames
+            }
 
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "notWritable":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
+        return include_params
+
+    # build payload parameters for packet content rule setting
+    def _build_acl_packet_content_rule_include_params(self, request: RequestData) -> dict[str, Any]:
+        # if got advanced params
+        if advanced_params := request.get("advanced_params"):
+            offsets: dict[int, str] = advanced_params["offsets"]
+            include_params = {}
+
+            # form offset param sorted by bytes index
+            for ind, (offset, mask) in enumerate(sorted(list(offsets.items()))):
+                include_params[f"offset_index_{ind + 1}"] = offset   # bytes offset
+                include_params[f"offset_data_{ind + 1}"] = mask   # chunk mask
+            
+            # enable_local_priority oid is necessary for local_priority oid
+            if "local_priority" in advanced_params:
+                include_params["enable_local_priority"] = "enabled"
+            # other params
+            include_params.update({param: value for param, value in advanced_params.items() if param != "offsets"})
+        
+        # custom request by protocol and ip address
+        else:
+            custom_params = request.get("custom_params")
+
+            # get protocol type (ipv4/arp)
+            ipv4_arp_check_state = custom_params["ipv4_arp_check_state"]
+            if ipv4_arp_check_state not in {"ipv4", "arp"}:   # if protocol type is unknown, raise error
+                raise ValueError
+            
+            # get source ip to filter
+            source_ip = custom_params["source_ip"]
+
+            include_params = {
+                "offset_index_1": (
+                    SNMP.SOURCE_IP_OFFSET_IN_IPV4   # bytes offset according to protocol type
+                    if ipv4_arp_check_state == "ipv4"
+                    else SNMP.SOURCE_IP_OFFSET_IN_ARP
+                ),
+                "offset_data_1": L2SwitchClient._convert_ip_to_acl_chunk(source_ip),   # convert ip into hex chunk
+                "permit": "permit"   # permit frames with this ip
+            }
+        
+        return include_params
 
     ### VLAN ###
 
+    # get the whole vlan table in tagged/untagged ports
     async def get_vlan_static_table(self) -> defaultdict[int, dict[str, Any]]:
         results = defaultdict(dict)
         
-        for oid, vlan_name in await self._bulk_walk(self._switch_oids_config["vlan"]["name"]):
+        # vlan names
+        for oid, vlan_name in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.VLAN]["name"]):
+            # vlan id is the last oid index
             vlan_id = L2SwitchClient._parse_last_index(oid)[1]
+            
             # consider default empty sets for tagged/untagged ports
             results[vlan_id] = {"vlan_name": vlan_name, "tagged_ports": set(), "untagged_ports": set()}
         
-        # tagged
-        for oid, octet_string in await self._bulk_walk(self._switch_oids_config["vlan"]["egress_ports"]):
+        # get egress ports, including all tagged and untagged ports
+        for oid, octet_string in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.VLAN]["egress_ports"]):
             vlan_id = L2SwitchClient._parse_last_index(oid)[1]
-            portlist = L2SwitchClient._parse_assigned_ports_from_hex(octet_string, self._ports_count)
-            # for first discovered vlan, consider vlan name is the same as vlan id
-            if vlan_id not in results:
-                results[vlan_id] = {"vlan_name": str(vlan_id), "untagged_ports": set()}
-            results[vlan_id]["tagged_ports"] = portlist
+            
+            # if vlan is known, write ports converted from hex
+            if vlan_id in results:
+                results[vlan_id]["tagged_ports"] = L2SwitchClient._parse_assigned_ports_from_hex(octet_string, self._ports_count)
         
-        # untagged
-        for oid, octet_string in await self._bulk_walk(self._switch_oids_config["vlan"]["untagged_ports"]):
+        # get untagged ports
+        for oid, octet_string in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.VLAN]["untagged_ports"]):
             vlan_id = L2SwitchClient._parse_last_index(oid)[1]
+            # convert ports from hex
             portlist = L2SwitchClient._parse_assigned_ports_from_hex(octet_string, self._ports_count)
-            # for first discovered vlan, consider vlan name is the same as vlan id
-            if vlan_id not in results:
-                results[vlan_id] = {"vlan_name": str(vlan_id), "tagged_ports": set(), "untagged_ports": portlist}
-            results[vlan_id]["untagged_ports"] = portlist
-            results[vlan_id]["tagged_ports"] -= results[vlan_id]["untagged_ports"]
+
+            # skip unknown vlans, write untagged ports
+            if vlan_id in results:
+                results[vlan_id]["untagged_ports"] = portlist
+                # remove ports that are untagged to leave only tagged
+                results[vlan_id]["tagged_ports"] -= portlist
         
+        # {vlan_id: {vlan_name, tagged_ports, untagged_ports}}
         return results
     
-    # get vlan static table for specified vlan
-    async def _get_exact_vlan_table(self, vlan_id: int) -> ResponseData:
-        vlan_static_table = await self.get_vlan_static_table()
-        if vlan_id not in vlan_static_table:
-            return {}
-        return {vlan_id: vlan_static_table[vlan_id]}
-    
+    # get vlan configuration for port
     async def get_vlan_on_port(self) -> ResponseData:
-        vlan_static_table = await self.get_vlan_static_table()
         result = defaultdict(dict)
 
-        for vlan_id, vlan_info in vlan_static_table.items():
-            vlan_name =  vlan_info["vlan_name"]
-            if self._port in vlan_info["tagged_ports"]:
+        # for each vlan in the general table
+        for vlan_id, vlan_data in (await self.get_vlan_static_table()).items():
+            vlan_name =  vlan_data["vlan_name"]
+            # remember if tagged
+            if self._port in vlan_data["tagged_ports"]:
                 result["tagged"][vlan_id] = vlan_name
-            elif self._port in vlan_info["untagged_ports"]:
+            # remember if untagged
+            elif self._port in vlan_data["untagged_ports"]:
                 result["untagged"][vlan_id] = vlan_name
 
+        # {tagged: {vlan_id: vlan_name}, untagged: {vlan_id: vlan_name}}
         return result
     
-    # check that vlan with this vlan_id exists, necessary for delete vlan, add/delete vlan on ports
-    async def _get_vlan_entry_status(self, vlan_id: int) -> ResponseData:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["entry_status"])
-        payload["entry_status"]["params"] = {"vlan_id": vlan_id}
-        return (await self._get(payload))["entry_status"]
-    
+    # create new vlan
     async def create_vlan(self, request: RequestData) -> SNMPResponseCode:
+        # if vlan with this vlan id already exists, return error
         if await self._get_vlan_entry_status(request["vlan_id"]) == "active":
             return SNMPResponseCode.INVALID_DATA
         
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["name", "entry_status"])
-        for command in payload.values():
-            command["params"] = {"vlan_id": request["vlan_id"]}
-        
-        payload["name"]["set_value"] = request["vlan_name"]
-        payload["entry_status"]["set_value"] = "create_and_go"
+        # params include vlan name and entry status
+        include_params = {
+            "name": request["vlan_name"],
+            "entry_status": "create_and_go"
+        }
+
+        # payload with vlan id param
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.VLAN], include_params)
+        for param in payload.values():
+            param["params"]["vlan_id"] = request["vlan_id"]
 
         try:
             result = await self._set(payload)
@@ -980,120 +1042,179 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
     
+    # delete vlan entry by vlan id
+    async def delete_vlan(self, request: RequestData) -> SNMPResponseCode:
+        # if vlan id doesn't exist, return error
+        if await self._get_vlan_entry_status(request["vlan_id"]) is None:
+            return SNMPResponseCode.INVALID_DATA
+        
+        # destroy entry
+        param = "entry_status"
+        include_params = {param: "destroy"}
+
+        # payload with vlan id param
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.VLAN], include_params)
+        payload[param]["params"]["vlan_id"] = request["vlan_id"]
+        
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    # configure vlan as tagged/untagged for ports
+    async def add_vlan_on_ports(self, request: RequestData) -> SNMPResponseCode:
+        # if vlan id doesn't exist, return error
+        if await self._get_vlan_entry_status(request["vlan_id"]) is None:
+            return SNMPResponseCode.INVALID_DATA
+
+        # get param name according to status, return error if not found
+        param = L2SwitchClient._get_param_name_for_vlan_status(request["status"])
+        if param is None:
+            return SNMPResponseCode.INVALID_DATA
+        
+        # combine current portlist with new ports (untagged + egress -> untagged)
+        portlist = request["portlist"] | await self._get_ports_with_vlan_status(request["vlan_id"], request["status"])
+        # convert to hex string
+        include_params = {param: L2SwitchClient._combine_assigned_ports_to_hex(portlist)}
+
+        # payload with vlan id param
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.VLAN], include_params)
+        payload[param]["params"]["vlan_id"] = request["vlan_id"]
+        
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "commitFailed":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+    
+    # delete vlan status from ports
+    async def delete_vlan_from_ports(self, request: RequestData) -> SNMPResponseCode:
+        # if vlan id doesn't exist, return error
+        if await self._get_vlan_entry_status(request["vlan_id"]) is None:
+            return SNMPResponseCode.INVALID_DATA
+
+        # status is tagged because zero egress_ports request removes ports from any vlan status
+        status = "tagged"
+        
+        # get param name according to status, return error if not found
+        param = L2SwitchClient._get_param_name_for_vlan_status(status)
+        if param is None:
+            return SNMPResponseCode.INVALID_DATA
+        
+        # substract ports to delete from current portlist
+        portlist = await self._get_ports_with_vlan_status(request["vlan_id"], status) - request["portlist"]
+        # convert to hex string
+        include_params = {param: L2SwitchClient._combine_assigned_ports_to_hex(portlist)}
+
+        # payload with vlan id param
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.VLAN], include_params)
+        payload[param]["params"]["vlan_id"] = request["vlan_id"]
+        
+        try:
+            result = await self._set(payload)
+        except SNMPTransportError:
+            return SNMPResponseCode.TRANSPORT_ERROR
+        except SNMPProtocolError as err:
+            if err.status == "inconsistentValue":
+                return SNMPResponseCode.INVALID_DATA
+            return SNMPResponseCode.UNKNOWN_ERROR
+        return SNMPResponseCode.SUCCESS
+
+    # change vlan name
     async def rename_vlan(self, request: RequestData) -> SNMPResponseCode:
         """
         WARNING: this way of changing VLAN's name is not stable and disrupts users' connections.
         """
-        old_vlan_data = await self._get_exact_vlan_table(request["vlan_id"])
+        vlan_id = request["vlan_id"]
+        
+        # get vlan config before changes
+        old_vlan_data = await self._get_exact_vlan_table(vlan_id)
 
-        response = await self.delete_vlan({"vlan_id": request["vlan_id"]})
+        # delete this vlan or return error
+        response = await self.delete_vlan({"vlan_id": vlan_id})
         if response != SNMPResponseCode.SUCCESS:
             return response
         
+        # create vlan with new name or return error
         response = await self.create_vlan(request)
         if response != SNMPResponseCode.SUCCESS:
             return response
         
-        for status in ["tagged", "untagged"]:
-            response = await self.add_vlan_on_ports({"vlan_id": request["vlan_id"],
-                                                     "portlist": old_vlan_data[request["vlan_id"]][f"{status}_ports"],
-                                                     "status": status})
+        # add ports back in tagged/untagged
+        for status in ("tagged", "untagged"):
+            response = await self.add_vlan_on_ports({
+                "vlan_id": vlan_id,
+                "portlist": old_vlan_data[vlan_id][f"{status}_ports"],
+                "status": status
+            })
+            # return error if occured
             if response != SNMPResponseCode.SUCCESS:
                 return response
         
+        # return final response status
         return response
 
-    async def delete_vlan(self, request: RequestData) -> SNMPResponseCode:
-        if await self._get_vlan_entry_status(request["vlan_id"]) is None:
-            return SNMPResponseCode.INVALID_DATA
-        
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], ["entry_status"])
-        payload["entry_status"]["params"] = {"vlan_id": request["vlan_id"]}
-        payload["entry_status"]["set_value"] = "destroy"
-        
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "inconsistentValue":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
+    # check that vlan_id entry exists, necessary for delete vlan, add/delete vlan on ports operations
+    async def _get_vlan_entry_status(self, vlan_id: int) -> ResponseData:
+        # form payload for entry status
+        param = "entry_status"
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.VLAN], [param])
+        payload[param]["params"]["vlan_id"] = vlan_id
+
+        # return entry status value
+        return (await self._get(payload))[param]
     
+    # get ports that are tagged or untagged for the vlan id
     async def _get_ports_with_vlan_status(self, vlan_id: int, status: str) -> set[int]:
-        request_name = L2SwitchClient._get_request_name_for_vlan_status(status)
-        if request_name is None:
+        # get param name according to status
+        param = L2SwitchClient._get_param_name_for_vlan_status(status)
+        if param is None:
             return SNMPResponseCode.INVALID_DATA
 
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], [request_name])
-        payload[request_name]["params"] = {"vlan_id": vlan_id}
-
+        # payload with vlan id param
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.VLAN], [param])
+        payload[param]["params"]["vlan_id"] = vlan_id
+        
+        # get portlist as hex and return as a set
         result = await self._get(payload)
-        ports = L2SwitchClient._parse_assigned_ports_from_hex(result[request_name], self._ports_count)
-        return ports
+        return L2SwitchClient._parse_assigned_ports_from_hex(result[param], self._ports_count)
     
-    async def add_vlan_on_ports(self, request: RequestData) -> SNMPResponseCode:
-        if await self._get_vlan_entry_status(request["vlan_id"]) is None:
-            return SNMPResponseCode.INVALID_DATA
-
-        request_name = L2SwitchClient._get_request_name_for_vlan_status(request["status"])
-        if request_name is None:
-            return SNMPResponseCode.INVALID_DATA
-        
-        # for ports that were untagged, untagged + egress -> untagged
-        portlist = request["portlist"] | await self._get_ports_with_vlan_status(request["vlan_id"], request["status"])
-        
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], [request_name])
-        payload[request_name]["params"] = {"vlan_id": request["vlan_id"]}
-        payload[request_name]["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(portlist)
-        
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "commitFailed":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
+    # get vlan static table for specified vlan id
+    async def _get_exact_vlan_table(self, vlan_id: int) -> ResponseData:
+        # use general vlan table to find specific vlan id config
+        return (await self.get_vlan_static_table()).get(vlan_id, {})
     
-    async def delete_vlan_from_ports(self, request: RequestData) -> SNMPResponseCode:
-        if await self._get_vlan_entry_status(request["vlan_id"]) is None:
-            return SNMPResponseCode.INVALID_DATA
-
-        status = "tagged"
-        portlist = await self._get_ports_with_vlan_status(request["vlan_id"], status) - request["portlist"]
-        
-        request_name = L2SwitchClient._get_request_name_for_vlan_status(status)
-        if request_name is None:
-            return SNMPResponseCode.INVALID_DATA
-        
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["vlan"], [request_name])
-        payload[request_name]["params"] = {"vlan_id": request["vlan_id"]}
-        payload[request_name]["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(portlist)
-        
-        try:
-            result = await self._set(payload)
-        except SNMPTransportError:
-            return SNMPResponseCode.TRANSPORT_ERROR
-        except SNMPProtocolError as err:
-            if err.status == "inconsistentValue":
-                return SNMPResponseCode.INVALID_DATA
-            return SNMPResponseCode.UNKNOWN_ERROR
-        return SNMPResponseCode.SUCCESS
-
+    # map vlan status to ports param name
+    @staticmethod
+    def _get_param_name_for_vlan_status(status: str) -> str | None:
+        match status:
+            case "untagged":
+                return "untagged_ports"
+            case "tagged":
+                return "egress_ports"
+            case _:
+                return None
+    
     ### FDB ###
 
     async def get_fdb_table(self) -> defaultdict[int, dict[str, dict[str, Any]]]:
         results = defaultdict(dict)
 
-        for oid, port in await self._bulk_walk(self._switch_oids_config["fdb"]["port"]):
+        for oid, port in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.FDB]["port"]):
             _, vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(oid)
             # default status is dynamic, so if mac's status won't be found it means it's dynamic
             results[vlan_id][mac] = {"port": port, "status": "dynamic"}
 
-        for oid, status in await self._bulk_walk(self._switch_oids_config["fdb"]["status"]):
+        for oid, status in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.FDB]["status"]):
             _, vlan_id, mac = L2SwitchClient._parse_vlan_id_mac_from_oid_suffix(oid)
             if status not in {"invalid" , "self"}:
                 status = "dynamic" if status == "learned" else "static"
@@ -1121,7 +1242,7 @@ class L2SwitchClient(SNMPClient):
         return await self.set_port_security_on_port({"admin_state": "disable"})
     
     async def clear_fdb_all(self) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["fdb"], ["clear_all"])
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.FDB], ["clear_all"])
         payload["clear_all"]["set_value"] = "start"
 
         try:
@@ -1137,7 +1258,7 @@ class L2SwitchClient(SNMPClient):
     ### FLOOD FDB ###
 
     async def get_flood_fdb(self) -> ResponseData:
-        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["state"]))
+        results = await self._get(SNMPClient._compose_request_payload(self._switch_oids_config["flood_fdb"], ["state"]))
         if results["state"] == "disabled":
             return results
         
@@ -1158,7 +1279,7 @@ class L2SwitchClient(SNMPClient):
         return results
     
     async def set_flood_fdb(self, request: RequestData) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["state"])
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config["flood_fdb"], ["state"])
         payload["state"]["set_value"] = request["state"]
 
         try:
@@ -1172,7 +1293,7 @@ class L2SwitchClient(SNMPClient):
         return SNMPResponseCode.SUCCESS
     
     async def clear_flood_fdb(self) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["flood_fdb"], ["clear"])
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config["flood_fdb"], ["clear"])
         payload["clear"]["set_value"] = "start"
 
         try:
@@ -1188,7 +1309,7 @@ class L2SwitchClient(SNMPClient):
     ### IPIF ###
 
     async def _get_ipif_name(self, if_index: int) -> ResponseData:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["ipif"], ["name"])
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.IPIF], ["name"])
         payload["name"]["params"] = {"if_index": if_index}
         result = await self._get(payload)
         return result["name"]
@@ -1196,14 +1317,14 @@ class L2SwitchClient(SNMPClient):
     ### DHCP RELAY ###
 
     async def get_dhcp_relay(self) -> ResponseData:
-        include_oids = ["state", "hop_count", "time_threshold",
+        include_params = ["state", "hop_count", "time_threshold",
                         "option82_state", "option82_check_state", "option82_policy", "option82_remote_id_type", "option82_remote_id"]
-        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids))
+        results = await self._get(SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.DHCP_RELAY], include_params))
 
         results["ipif_servers"] = defaultdict(set)
         results["vlan_id_servers"] = defaultdict(set)
 
-        for oid, interface_name in await self._bulk_walk(self._switch_oids_config["dhcp_relay"]["ipif_server"]):
+        for oid, interface_name in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.DHCP_RELAY]["ipif_server"]):
             server_ip = L2SwitchClient._parse_ip_address_from_oid(oid)[1]
             results["ipif_servers"][interface_name].add(server_ip)
         
@@ -1212,8 +1333,8 @@ class L2SwitchClient(SNMPClient):
         return results
     
     async def set_dhcp_relay(self, request: RequestData) -> SNMPResponseCode:
-        include_oids = list(request.keys())
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], include_oids)
+        include_params = list(request.keys())
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.DHCP_RELAY], include_params)
 
         for param, data in payload.items():
             data["set_value"] = request[param]
@@ -1229,7 +1350,7 @@ class L2SwitchClient(SNMPClient):
         return SNMPResponseCode.SUCCESS
     
     async def _manage_dhcp_servers_for_ipif(self, request: RequestData, mode: str) -> SNMPResponseCode:
-        ipif_server_config = SNMPClient._filter_request_config(self._switch_oids_config["dhcp_relay"], ["ipif_server_entry_status"])["ipif_server_entry_status"]
+        ipif_server_config = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.DHCP_RELAY], ["ipif_server_entry_status"])["ipif_server_entry_status"]
         
         payload = {
             f"ipif_server_entry_status.{ipif_name}.{server}": {
@@ -1263,14 +1384,14 @@ class L2SwitchClient(SNMPClient):
         results = defaultdict(dict)
         ipif_names = {}
 
-        for oid, mac in await self._bulk_walk(self._switch_oids_config["arp"]["mac_address"]):
+        for oid, mac in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.ARP]["mac_address"]):
             cut_oid, ip = L2SwitchClient._parse_ip_address_from_oid(oid)
             if_index = L2SwitchClient._parse_last_index(cut_oid)[1]
             if if_index not in ipif_names:
                 ipif_names[if_index] = await self._get_ipif_name(if_index)
             results[ipif_names[if_index]][ip] = {"mac_address": mac, "status": "dynamic"}
 
-        for oid, status in await self._bulk_walk(self._switch_oids_config["arp"]["status"]):
+        for oid, status in await self._bulk_walk(self._switch_oids_config[SwitchConfigSection.ARP]["status"]):
             cut_oid, ip = L2SwitchClient._parse_ip_address_from_oid(oid)
             if_index = L2SwitchClient._parse_last_index(cut_oid)[1]
             # if ip is unknown, don't count it
@@ -1284,26 +1405,26 @@ class L2SwitchClient(SNMPClient):
     async def _check_fiber_combo_port(self) -> None:
         async with self._check_combo_fiber_port_lock:
             if self._is_combo_fiber_port is None:
-                include_oids = ["link_status", "link_status_combo_fiber"]
-                copper_fiber_statuses = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
+                include_params = ["link_status", "link_status_combo_fiber"]
+                copper_fiber_statuses = await self._get(SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params))
 
                 if copper_fiber_statuses["link_status"] != "link_pass" and copper_fiber_statuses["link_status_combo_fiber"] == "link_pass":
                     self._is_combo_fiber_port = True
                 else:
                     self._is_combo_fiber_port = False
 
-    async def _get_port_data(self, include_oids: list[str]) -> ResponseData:
+    async def _get_port_data(self, include_params: list[str]) -> ResponseData:
         combo_fiber_suffix = None
         
         if self._is_combo_port:
-            if self._is_combo_fiber_port is None and any([oid in self._switch_oids_config["port"]["combo_ports_oids"] for oid in include_oids]):
+            if self._is_combo_fiber_port is None and any([oid in self._switch_oids_config[SwitchConfigSection.PORT]["combo_ports_oids"] for oid in include_params]):
                 await self._check_fiber_combo_port()
             
             if self._is_combo_fiber_port:
                 combo_fiber_suffix = "_combo_fiber"
-                include_oids = [oid + combo_fiber_suffix if oid in self._switch_oids_config["port"]["combo_ports_oids"] else oid for oid in include_oids]
+                include_params = [oid + combo_fiber_suffix if oid in self._switch_oids_config[SwitchConfigSection.PORT]["combo_ports_oids"] else oid for oid in include_params]
         
-        results = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
+        results = await self._get(SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params))
         
         if self._is_combo_fiber_port and combo_fiber_suffix is not None:
             results = {key.removesuffix(combo_fiber_suffix) if key.endswith(combo_fiber_suffix) else key: value for key, value in results.items()}
@@ -1311,8 +1432,8 @@ class L2SwitchClient(SNMPClient):
         return results
 
     async def get_port_status(self) -> ResponseData:
-        include_oids = ["admin_state", "speed_duplex_settings", "link_status", "speed_duplex_status"]
-        result = await self._get_port_data(include_oids)
+        include_params = ["admin_state", "speed_duplex_settings", "link_status", "speed_duplex_status"]
+        result = await self._get_port_data(include_params)
 
         result["link_speed_duplex_status"] = "link_down" if result["link_status"] != "link_pass" else result["speed_duplex_status"]
         del result["link_status"]
@@ -1321,14 +1442,14 @@ class L2SwitchClient(SNMPClient):
         return result
 
     async def get_port_management(self) -> ResponseData:
-        include_oids = ["admin_state", "speed_duplex_settings", "flow_control", "address_learning", "mdix_state"]
-        return await self._get_port_data(include_oids)
+        include_params = ["admin_state", "speed_duplex_settings", "flow_control", "address_learning", "mdix_state"]
+        return await self._get_port_data(include_params)
     
     async def set_port_management(self, request: RequestData) -> SNMPResponseCode:
         mdix_state_change = True if "mdix_state" in request else False   # mdix state change needs special logic and check
         
-        include_oids = list(key for key in request.keys() if key != "mdix_state")   # other parameters by default
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+        include_params = list(key for key in request.keys() if key != "mdix_state")   # other parameters by default
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
 
         for param, data in payload.items():
             data["set_value"] = request[param]
@@ -1337,7 +1458,7 @@ class L2SwitchClient(SNMPClient):
             result = await self._set(payload)
 
             if mdix_state_change:
-                mdix_payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["mdix_state"])
+                mdix_payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], ["mdix_state"])
                 mdix_payload["mdix_state"]["set_value"] = request["mdix_state"]
                 try:
                     mdix_result = await self._set(mdix_payload)
@@ -1364,21 +1485,21 @@ class L2SwitchClient(SNMPClient):
         if self._is_combo_fiber_port or self._is_fiber_port:
             return {"unable_to_perform": True}
 
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], ["cable_diagnostics_action"])
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], ["cable_diagnostics_action"])
         payload["cable_diagnostics_action"]["set_value"] = "action"
 
         action_status = await self._set(payload)
         while action_status["cable_diagnostics_action"] in {"action", "processing"}:
             action_status = await self._get(payload)
         
-        include_oids = []
+        include_params = []
         pairs = 4 if self._is_gigabit_ethernet_port else 2
 
         for i in range(1, pairs + 1):
-            include_oids.append(f"cable_diagnostics_pair{i}_status")
-            include_oids.append(f"cable_diagnostics_pair{i}_length")
+            include_params.append(f"cable_diagnostics_pair{i}_status")
+            include_params.append(f"cable_diagnostics_pair{i}_length")
         
-        pairs_tests = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids))
+        pairs_tests = await self._get(SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params))
         results = {f"pair{i}": {} for i in range(1, pairs + 1)}
 
         results["unable_to_perform"] = False
@@ -1405,13 +1526,13 @@ class L2SwitchClient(SNMPClient):
     ### PORT SECURITY ###
 
     async def get_port_security_on_port(self) -> ResponseData:
-        include_oids = ["port_security_max_learning_addresses", "port_security_lock_address_mode", "port_security_admin_state"]
-        results = await self._get_port_data(include_oids)
+        include_params = ["port_security_max_learning_addresses", "port_security_lock_address_mode", "port_security_admin_state"]
+        results = await self._get_port_data(include_params)
         return {key.removeprefix("port_security_"): value for key, value in results.items()}
     
     async def set_port_security_on_port(self, request: RequestData) -> SNMPResponseCode:
-        include_oids = [f"port_security_{param}" for param in request.keys()]
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+        include_params = [f"port_security_{param}" for param in request.keys()]
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
 
         for param, data in payload.items():
             data["set_value"] = request[param.removeprefix("port_security_")]
@@ -1439,7 +1560,7 @@ class L2SwitchClient(SNMPClient):
     async def clear_port_security_exact_mac_addresses(self, request: RequestData) -> SNMPResponseCode:
         vlan_table = await self.get_vlan_static_table()
 
-        clear_port_security_config = SNMPClient._filter_request_config(self._switch_oids_config["port"],
+        clear_port_security_config = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT],
                                                     ["clear_port_security_vlan_name", "clear_port_security_port",
                                                      "clear_port_security_mac_address", "clear_port_security_action"])
         all_payload_data = {
@@ -1466,13 +1587,13 @@ class L2SwitchClient(SNMPClient):
     ### LOOPBACK DETECTION ###
 
     async def get_loopdetect_on_port(self) -> ResponseData:
-        include_oids = ["loopdetect_state", "loopdetect_status"]
-        result = await self._get_port_data(include_oids)
+        include_params = ["loopdetect_state", "loopdetect_status"]
+        result = await self._get_port_data(include_params)
         return {key.removeprefix("loopdetect_"): value for key, value in result.items()}
     
     async def set_loopdetect_on_port(self, request: RequestData) -> SNMPResponseCode:
-        include_oids = [f"loopdetect_{param}" for param in request.keys()]
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+        include_params = [f"loopdetect_{param}" for param in request.keys()]
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
 
         for param, data in payload.items():
             data["set_value"] = request[param.removeprefix("loopdetect_")]
@@ -1490,19 +1611,19 @@ class L2SwitchClient(SNMPClient):
     ### PORT UTILIZATION ###
 
     async def get_port_utilization(self) -> ResponseData:
-        include_oids = ["utilization_tx_frames", "utilization_rx_frames", "utilization_percentage"]
-        return await self._get_port_data(include_oids)
+        include_params = ["utilization_tx_frames", "utilization_rx_frames", "utilization_percentage"]
+        return await self._get_port_data(include_params)
     
     ### BANDWIDTH CONTROL ###
 
     async def get_bandwidth_control_on_port(self) -> ResponseData:
-        include_oids = ["bandwidth_control_rx_rate", "bandwidth_control_tx_rate"]
-        results = await self._get_port_data(include_oids)
+        include_params = ["bandwidth_control_rx_rate", "bandwidth_control_tx_rate"]
+        results = await self._get_port_data(include_params)
         return {key.removeprefix("bandwidth_control_"): value for key, value in results.items()}
     
     async def set_bandwidth_control_on_port(self, request: RequestData) -> SNMPResponseCode:
-        include_oids = [f"bandwidth_control_{param}" for param in request.keys()]
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+        include_params = [f"bandwidth_control_{param}" for param in request.keys()]
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
 
         for param, data in payload.items():
             data["set_value"] = request[param.removeprefix("bandwidth_control_")]
@@ -1520,14 +1641,14 @@ class L2SwitchClient(SNMPClient):
     ### TRAFFIC CONTROL ###
     
     async def get_traffic_control_on_port(self) -> ResponseData:
-        include_oids = ["traffic_control_threshold", "traffic_control_broadcast_status", "traffic_control_multicast_status", "traffic_control_unicast_status",
+        include_params = ["traffic_control_threshold", "traffic_control_broadcast_status", "traffic_control_multicast_status", "traffic_control_unicast_status",
                         "traffic_control_action_status", "traffic_control_count_down", "traffic_control_time_interval"]
-        results = await self._get_port_data(include_oids)
+        results = await self._get_port_data(include_params)
         return {key.removeprefix("traffic_control_"): value for key, value in results.items()}
     
     async def set_traffic_control_on_port(self, request: RequestData) -> SNMPResponseCode:
-        include_oids = [f"traffic_control_{param}" for param in request.keys()]
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+        include_params = [f"traffic_control_{param}" for param in request.keys()]
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
 
         for param, data in payload.items():
             data["set_value"] = request[param.removeprefix("traffic_control_")]
@@ -1545,13 +1666,13 @@ class L2SwitchClient(SNMPClient):
     ### TRAFFIC SEGMENTATION ###
 
     async def get_traffic_segmentation_for_port(self) -> ResponseData:
-        result = await self._get(SNMPClient._filter_request_config(self._switch_oids_config["port"], ["traffic_segmentation_forward_ports"]))
+        result = await self._get(SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], ["traffic_segmentation_forward_ports"]))
         portlist = L2SwitchClient._parse_assigned_ports_from_hex(result["traffic_segmentation_forward_ports"], self._ports_count)
         return {"forward_ports": portlist}
 
     async def set_traffic_segmentation_for_port(self, request: RequestData) -> SNMPResponseCode:
-        include_oids = [f"traffic_segmentation_{param}" for param in request.keys()]
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], include_oids)
+        include_params = [f"traffic_segmentation_{param}" for param in request.keys()]
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
 
         for param, data in payload.items():
             data["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(request[param.removeprefix("traffic_segmentation_")])
@@ -1569,7 +1690,7 @@ class L2SwitchClient(SNMPClient):
     ### PORT STATISCTICS ###
 
     async def _get_packets_speed(self, packet_type: str) -> ResponseData:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["port"], [packet_type])
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], [packet_type])
 
         start_packets = (await self._get(payload))[packet_type]
         start_time = perf_counter()
@@ -1588,9 +1709,9 @@ class L2SwitchClient(SNMPClient):
         return {f"{key.removesuffix('bytes')}megabit": L2SwitchClient._byte_to_megabit(value) for res in results for key, value in res.items()}
     
     async def get_rx_tx_packets_all_types_on_port(self) -> ResponseData:
-        include_oids = ["rx_unicast_packets", "rx_multicast_packets", "rx_broadcast_packets",
+        include_params = ["rx_unicast_packets", "rx_multicast_packets", "rx_broadcast_packets",
                         "tx_unicast_packets", "tx_multicast_packets", "tx_broadcast_packets"]
-        tasks = [asyncio.create_task(self._get_packets_speed(key)) for key in include_oids]
+        tasks = [asyncio.create_task(self._get_packets_speed(key)) for key in include_params]
 
         results = await asyncio.gather(*tasks)
         return {key: value for res in results for key, value in res.items()}
@@ -1603,11 +1724,11 @@ class L2SwitchClient(SNMPClient):
         return results[0] | results[1]
     
     async def get_crc_errors_on_port(self) -> ResponseData:
-        include_oids = ["alignment_errors", "fcs_errors"]
-        return await self._get_port_data(include_oids)
+        include_params = ["alignment_errors", "fcs_errors"]
+        return await self._get_port_data(include_params)
 
     async def clear_all_counters(self) -> SNMPResponseCode:
-        payload = SNMPClient._filter_request_config(self._switch_oids_config["switch"], ["clear_all_counters"])
+        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.SWITCH], ["clear_all_counters"])
         payload["clear_all_counters"]["set_value"] = "active"
 
         try:
@@ -1626,23 +1747,20 @@ class L2SwitchClient(SNMPClient):
     def _render_get_set_oid(self, oid: str, **params) -> str:
         return oid.format(port=self._port, **params)
 
+    # parsing last index is necessary for gathering data by inner indices while bulk walking
     @staticmethod
     def _parse_last_index(oid: str) -> tuple[str, int]:
         parts = oid.rpartition(".")
+        # return base part in integer index
         return parts[0], int(parts[2])
 
-    @staticmethod
-    def _build_octet_by_pattern(data_tuple: tuple[int], pattern: str) -> bytes:
-        mapping = {"1": "B", "2": "H", "4": "I", "8": "Q"}
-        fmt = ">" + "".join(mapping[bytes_count] for bytes_count in pattern)
-        res= struct.pack(fmt, *data_tuple)
-        return struct.pack(fmt, *data_tuple)
-
+    # get set of port numbers from hex string using bit operators and ports count
     @staticmethod
     def _parse_assigned_ports_from_hex(octet_string: str, ports_count: int) -> set[int]:
         num_val = int(octet_string, 16)
         return {i + 1 for i in range(ports_count) if (num_val >> (63 - i)) & 1}
 
+    # combine set of ports to hex value as a bytearray
     @staticmethod
     def _combine_assigned_ports_to_hex(portlist: set[int]) -> bytearray:
         result = bytearray(8)
@@ -1654,14 +1772,19 @@ class L2SwitchClient(SNMPClient):
         
         return result
 
+    # return set of bytes numbers (starting from 0) that are fully covered with mask, mask should be without 0x
     @staticmethod
     def _parse_acl_packet_content_fully_inspected_bytes(mask: str) -> set[int]:
         return {ind for ind, byte in enumerate(bytes.fromhex(mask)) if byte == 0xFF}
 
+    # check if ipv4 and/or arp bytes are checked with set of bytes
     @staticmethod
     def _discover_acl_packet_content_ipv4_arp_check_state(fully_inspected_bytes: set[int]) -> str:
+        # find out separately that ipv4/arp are checked
         ipv4_check_state = all(byte in fully_inspected_bytes for byte in SNMP.SOURCE_IP_BYTES_IN_IPV4)
         arp_check_state = all(byte in fully_inspected_bytes for byte in SNMP.SOURCE_IP_BYTES_IN_ARP)
+        
+        # main variable for all states: none/ipv4/arp/both
         if ipv4_check_state:
             ipv4_arp_check_state = "both" if arp_check_state else "ipv4"
         else:
@@ -1669,6 +1792,7 @@ class L2SwitchClient(SNMPClient):
         
         return ipv4_arp_check_state
 
+    # parse 4-byte hex entry to ip address
     @staticmethod
     def _parse_acl_chunk_to_ip(acl_entry: str) -> str:
         return ".".join([str(int(acl_entry[2:][2*i : 2*i+2], 16)) for i in range(4)])
@@ -1687,16 +1811,6 @@ class L2SwitchClient(SNMPClient):
     def _convert_name_into_oid(name: str) -> str:
         return f"{len(name)}.{'.'.join(str(ord(sym)) for sym in name)}"
 
-    @staticmethod
-    def _get_request_name_for_vlan_status(status: str) -> str | None:
-        match status:
-            case "untagged":
-                return "untagged_ports"
-            case "tagged":
-                return "egress_ports"
-            case _:
-                return None
-    
     @staticmethod
     def _parse_vlan_id_mac_from_oid_suffix(oid: str) -> tuple[str, str]:
         oid, vlan_id, *mac = oid.rsplit(".", 7)
