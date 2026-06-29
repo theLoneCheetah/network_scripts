@@ -125,28 +125,62 @@ async def acl_config_example(switch_handler: L2SwitchHandler) -> None:
     pprint(await switch_handler.get_acl_all(), sort_dicts=False)
 
 async def vlan_config_example(switch_handler: L2SwitchHandler) -> None:
-    pprint(await switch_handler.get_vlan_on_port(), sort_dicts=False)
     # vlan = {"vlan_id": 2, "vlan_name": "vlan2"}
-    # await switch_handler.create_vlan({**vlan})
-    # await asyncio.sleep(5)
+    # await switch_handler.create_vlan(vlan)
+    # await asyncio.sleep(3)
+    # await switch_handler.rename_vlan({"vlan_id": 2, "vlan_name": "vlan222"})
+    # await asyncio.sleep(3)
     # await switch_handler.add_vlan_on_ports({"vlan_id": vlan["vlan_id"], "portlist": {21,22}, "status": "untagged"})
-    # await asyncio.sleep(5)
+    # await asyncio.sleep(3)
     # await switch_handler.add_vlan_on_ports({"vlan_id": vlan["vlan_id"], "portlist": {23,24}, "status": "tagged"})
-    # await asyncio.sleep(5)
+    # await asyncio.sleep(3)
     # await switch_handler.delete_vlan_from_ports({"vlan_id": vlan["vlan_id"], "portlist": {22,24}})
-    # await asyncio.sleep(5)
+    # await asyncio.sleep(3)
     # await switch_handler.delete_vlan({"vlan_id": vlan["vlan_id"]})
 
+    pprint(await switch_handler.get_vlan_static_table(), sort_dicts=False)
+
+async def fdb_flood_fdb_example(switch_handler: L2SwitchHandler) -> None:
+    # fdb
+    # pprint(await switch_handler.get_fdb_table(), sort_dicts=False)
+    # await switch_handler.clear_fdb_all()
+    # await asyncio.sleep(3)
+    # pprint(await switch_handler.get_fdb_table(), sort_dicts=False)
+    # await asyncio.sleep(3)
+    # pprint(await switch_handler.get_fdb_on_port(), sort_dicts=False)
+    # await switch_handler.clear_fdb_on_port()
+    # await asyncio.sleep(3)
+    # pprint(await switch_handler.get_fdb_on_port(), sort_dicts=False)
+
+    # flood fdb
+    # pprint(await switch_handler.get_flood_fdb(), sort_dicts=False)
+    # await switch_handler.clear_flood_fdb()
+    # await asyncio.sleep(3)
+    # pprint(await switch_handler.get_flood_fdb(), sort_dicts=False)
+    # await switch_handler.set_flood_fdb({"state": "disabled"})
+    # await asyncio.sleep(3)
+    # pprint(await switch_handler.get_flood_fdb(), sort_dicts=False)
+    # await switch_handler.set_flood_fdb({"state": "enabled"})
+    # await asyncio.sleep(3)
+    pprint(await switch_handler.get_flood_fdb(), sort_dicts=False)
+
 async def dhcp_relay_config_example(switch_handler: L2SwitchHandler) -> None:
-    settings = await switch_handler.get_dhcp_relay()
-    server = list(settings["ipif_servers"]["System"])[0]
-    print(settings)
-    # await switch_handler.set_dhcp_relay({"option82_remote_id_type": "default"})
-    # print(await switch_handler.get_dhcp_relay())
-    await switch_handler.delete_dhcp_servers_for_ipif({"ipif_servers": {"System": {server}}})
-    print(await switch_handler.get_dhcp_relay())
-    await switch_handler.add_dhcp_servers_for_ipif({"ipif_servers": {"System": {server}}})
-    print(await switch_handler.get_dhcp_relay())
+    # settings = await switch_handler.get_dhcp_relay()
+    # server = list(settings["ipif_servers"]["System"])[0]
+    # await switch_handler.set_dhcp_relay({"option82_remote_id_type": "default", "option82_policy": "replace", "time_threshold": 0})
+    # await asyncio.sleep(3)
+    # await switch_handler.delete_dhcp_server_for_ipif({"ipif_name": "System", "server": server})
+    # await asyncio.sleep(3)
+    # await switch_handler.add_dhcp_server_for_ipif({"ipif_name": "System", "server": server})
+    pprint(await switch_handler.get_dhcp_relay(), sort_dicts=False)
+
+async def port_management_example(switch_handler: L2SwitchHandler) -> None:
+    pprint(await switch_handler.get_port_status(), sort_dicts=False)
+    pprint(await switch_handler.get_port_management(), sort_dicts=False)
+    await switch_handler.set_port_management({"admin_state": "disabled"})
+    pprint(await switch_handler.get_port_management(), sort_dicts=False)
+    await switch_handler.set_port_management({"admin_state": "enabled"})
+    pprint(await switch_handler.get_port_management(), sort_dicts=False)
 
 async def port_security_config_example(switch_handler: L2SwitchHandler) -> None:
     print(await switch_handler.get_port_security_on_port())
@@ -165,7 +199,7 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    await vlan_config_example(switch_handler)
+    await port_management_example(switch_handler)
 
     print("Overall time:", perf_counter() - start_time)
 

@@ -192,10 +192,6 @@ class CreateVlanConfig(RestrictedBaseModel):
     vlan_id: int
     vlan_name: str
 
-# class RenameVlanConfig(RestrictedBaseModel):
-#     vlan_id: int
-#     vlan_name: str
-
 class DeleteVlanConfig(RestrictedBaseModel):
     vlan_id: int
 
@@ -207,6 +203,10 @@ class AddVlanOnPortsConfig(RestrictedBaseModel):
 class DeleteVlanFromPortsConfig(RestrictedBaseModel):
     vlan_id: int
     portlist: set[int]
+
+# class RenameVlanConfig(RestrictedBaseModel):
+#     vlan_id: int
+#     vlan_name: str
 
 ### FLOOD FDB ###
 
@@ -225,8 +225,9 @@ class DhcpRelayConfig(RestrictedBaseModel):
     option82_remote_id_type: str | None = None
     option82_remote_id: str | None = None
 
-class ManageDhcpServersForIpifConfig(RestrictedBaseModel):
-    ipif_servers: dict[str, set[str]]
+class ManageDhcpServerForIpifConfig(RestrictedBaseModel):
+    ipif_name: str
+    server: str
 
 ### PORT MANAGEMENT AND INFO ###
 

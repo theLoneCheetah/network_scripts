@@ -43,6 +43,9 @@ class SNMP:
     # mapping for formatting patterns with struct module, bytes_count: format_symbol
     PATTERN_MAPPING = {"1": "B", "2": "H", "4": "I", "8": "Q"}
 
+    # map vlan status to ports param name
+    PARAM_FOR_VLAN_STATUS = {"untagged": "untagged_ports", "tagged": "egress_ports"}
+
     ZERO_VLAN_NAME = "0x" + "0" * 64
     ZERO_MAC_ADDRESS = "00-00-00-00-00-00"
     ZERO_ETHERNET_TYPE = "0x0000"
