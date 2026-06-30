@@ -362,10 +362,10 @@ class L2SwitchHandler:
         response = await self._client.set_port_management(request)
         print(response.value[1])
     
-    ### CABLE DIAGNOSTICS ### 
+    ### CABLE DIAGNOSTIC ### 
 
-    async def get_cable_diagnostics_for_port(self) -> ResponseData:
-        return await self._client.get_cable_diagnostics_for_port()
+    async def get_cable_diagnostic_for_port(self) -> ResponseData:
+        return await self._client.get_cable_diagnostic_for_port()
     
     ### PORT SECURITY ###
 

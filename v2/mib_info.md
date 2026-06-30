@@ -214,7 +214,7 @@
   - basic management: state, speed and duplex, flow control, address learning, mdix state, management
   - link, speed and duplex status
   - combo ports
-  - cable diagnostics: action, pairs statuses and lengths
+  - cable diagnostic: action, pairs statuses and lengths
   - port security: state, max addresses, mode, management, clear by port/exact mac
   - loopback detection: status, enable, disable
   - port utilization

@@ -61,7 +61,7 @@ models:
     first_gigabit_port: 1
     combo_ports: !!set {}
     fiber_ports: !!set {}
-    are_cable_diagnostics_pairs_ordered: false
+    are_cable_diagnostic_pairs_ordered: false
   
   # L2
   DES-3028:
@@ -70,7 +70,7 @@ models:
     ports_count: 28
     first_gigabit_port: 25
     combo_ports: !!set { ? 25, ? 26 }
-    are_cable_diagnostics_pairs_ordered: true
+    are_cable_diagnostic_pairs_ordered: true
     firmware_release: 2.94
 
     oids:
@@ -763,8 +763,8 @@ models:
           <<: *speed_duplex_status
           oid: 1.3.6.1.4.1.171.11.63.6.2.2.1.1.5.{port}.101
         
-        # cable diagnostics
-        cable_diagnostics_action:
+        # cable diagnostic
+        cable_diagnostic_action:
           request_type: [set]
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.12.{port}
           value_type: integer
@@ -772,7 +772,7 @@ models:
             1: action
             2: processing
             3: other
-        cable_diagnostics_pair1_status: &cable_diagnostics_pair_status
+        cable_diagnostic_pair1_status: &cable_diagnostic_pair_status
           request_type: [get]
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.4.{port}
           value_type: integer
@@ -786,27 +786,27 @@ models:
             6: count
             7: no_cable
             8: other
-        cable_diagnostics_pair2_status:
-          <<: *cable_diagnostics_pair_status
+        cable_diagnostic_pair2_status:
+          <<: *cable_diagnostic_pair_status
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.5.{port}
-        cable_diagnostics_pair3_status:
-          <<: *cable_diagnostics_pair_status
+        cable_diagnostic_pair3_status:
+          <<: *cable_diagnostic_pair_status
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.6.{port}
-        cable_diagnostics_pair4_status:
-          <<: *cable_diagnostics_pair_status
+        cable_diagnostic_pair4_status:
+          <<: *cable_diagnostic_pair_status
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.7.{port}
-        cable_diagnostics_pair1_length: &cable_diagnostics_pair_length
+        cable_diagnostic_pair1_length: &cable_diagnostic_pair_length
           request_type: [get]
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.8.{port}
           value_type: integer
-        cable_diagnostics_pair2_length:
-          <<: *cable_diagnostics_pair_length
+        cable_diagnostic_pair2_length:
+          <<: *cable_diagnostic_pair_length
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.9.{port}
-        cable_diagnostics_pair3_length:
-          <<: *cable_diagnostics_pair_length
+        cable_diagnostic_pair3_length:
+          <<: *cable_diagnostic_pair_length
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.10.{port}
-        cable_diagnostics_pair4_length:
-          <<: *cable_diagnostics_pair_length
+        cable_diagnostic_pair4_length:
+          <<: *cable_diagnostic_pair_length
           oid: 1.3.6.1.4.1.171.12.58.1.1.1.11.{port}
         
         # port_security
@@ -989,7 +989,7 @@ models:
     base_model: DES-3028
     ports_count: 52
     first_gigabit_port: 49
-    are_cable_diagnostics_pairs_ordered: true
+    are_cable_diagnostic_pairs_ordered: true
     combo_ports: !!set { ? 49, ? 50 }
   
   DES-3200-28:
@@ -997,7 +997,7 @@ models:
     base_model: DES-3200-28
     ports_count: 28
     first_gigabit_port: 25
-    are_cable_diagnostics_pairs_ordered: true
+    are_cable_diagnostic_pairs_ordered: true
     combo_ports: !!set { ? 25, ? 26, ? 27, ? 28 }
   
   DES-3526:
@@ -1005,7 +1005,7 @@ models:
     base_model: DES-3526
     ports_count: 26
     first_gigabit_port: 25
-    are_cable_diagnostics_pairs_ordered: true
+    are_cable_diagnostic_pairs_ordered: true
     combo_ports: !!set { ? 25, ? 26 }
   
   DGS-3000-24TC:

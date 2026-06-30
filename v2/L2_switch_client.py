@@ -22,6 +22,8 @@ class L2SwitchClient(SNMPClient):
     _port: int
     _ports_count: int
     _is_gigabit_ethernet_port: bool
+    _number_of_cable_diagnostic_pairs: bool
+    _need_to_order_cable_diagnostic_pairs: bool
     _is_combo_port: bool
     _check_combo_fiber_port_lock: asyncio.Lock
     _is_combo_fiber_port: bool | None
@@ -34,15 +36,18 @@ class L2SwitchClient(SNMPClient):
     
     @override
     def _post_init(self) -> None:
-        self._ports_count = self._config["models"][self._model]["ports_count"]
+        switch_general_config = self._config["models"][self._model]
+        self._ports_count = switch_general_config["ports_count"]
 
-        self._is_gigabit_ethernet_port = self._port >= self._config["models"][self._model]["first_gigabit_port"]
-        self._is_combo_port = self._port in self._config["models"][self._model]["combo_ports"]
+        self._is_gigabit_ethernet_port = self._port >= switch_general_config["first_gigabit_port"]
+        self._number_of_cable_diagnostic_pairs = 4 if self._is_gigabit_ethernet_port else 2
+        self._need_to_order_cable_diagnostic_pairs = self._is_gigabit_ethernet_port and not switch_general_config["are_cable_diagnostic_pairs_ordered"]
+        self._is_combo_port = self._port in switch_general_config["combo_ports"]
         self._check_combo_fiber_port_lock = asyncio.Lock()
         self._is_combo_fiber_port = None
-        self._is_fiber_port = self._port in self._config["models"][self._model]["fiber_ports"]
+        self._is_fiber_port = self._port in switch_general_config["fiber_ports"]
 
-        self._switch_oids_config = self._config["models"][self._model]["oids"]
+        self._switch_oids_config = switch_general_config["oids"]
     
     ### MIB MODULES ###
 
@@ -71,7 +76,7 @@ class L2SwitchClient(SNMPClient):
     # perform reboot/reset operation
     async def perform_system_reboot(self, request: RequestData) -> SNMPResponseCode:
         mode = request["system_reboot_mode"]
-        # for reset system, warning should be throwed
+        # for reset system, warning should be thrown
         if mode == "reset_config_and_reboot":
             print("Warning: you will lost connection to this device")
         
@@ -126,7 +131,7 @@ class L2SwitchClient(SNMPClient):
     
     # set switch network and vlan
     async def set_network_parameters(self, request: RequestData) -> SNMPResponseCode:
-        # warning should be throwed
+        # warning should be thrown
         print("Warning: this may disrupt connection to this device")
         
         payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.SWITCH], request)
@@ -226,7 +231,7 @@ class L2SwitchClient(SNMPClient):
 
     # add new trusted host for switch
     async def add_trusted_host(self, request: RequestData) -> SNMPResponseCode:
-        # warning should be throwed
+        # warning should be thrown
         print("Warning: this may disrupt connection to this device")
 
         # include only ip, mask and entry status
@@ -1500,8 +1505,7 @@ class L2SwitchClient(SNMPClient):
                 # check links for medium and fiber ports
                 include_params = ["link_status", "link_status_combo_fiber"]
                 copper_fiber_statuses = await self._get(
-                    SNMPRequestType.GET,
-                    SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
+                    SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.PORT], include_params)
                 )
 
                 # only if fiber link is up and medium link is down, port is considered fiber
@@ -1552,7 +1556,6 @@ class L2SwitchClient(SNMPClient):
                 except SNMPTransportError:
                     # for DES-3028, mdix_state set request has timeout error, but it's ok if the value was set correctly
                     mdix_state = (await self._get_port_data(["mdix_state"]))["mdix_state"]
-                    print(mdix_state)
                     if request["mdix_state"] != mdix_state:
                         raise
             
@@ -1564,52 +1567,79 @@ class L2SwitchClient(SNMPClient):
             return SNMPResponseCode.UNKNOWN_ERROR
         return SNMPResponseCode.SUCCESS
     
-    ### CABLE DIAGNOSTICS ### 
+    ### CABLE DIAGNOSTIC ### 
 
-    async def get_cable_diagnostics_for_port(self) -> ResponseData:
+    # perform cable diagnostic for port and get the result
+    async def get_cable_diagnostic_for_port(self) -> ResponseData:
+        # little warning should be thrown
+        print("Warning: user may lost internet connection")
+
+        # for combo port, if unstated which type of it is used, identify
         if self._is_combo_port and self._is_combo_fiber_port is None:
             await self._identify_medium_fiber_combo_port()
         
+        # for any fiber port (only fiber or combo fiber), can't perform cable diagnostic
         if self._is_combo_fiber_port or self._is_fiber_port:
             return {"unable_to_perform": True}
-
-        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], ["cable_diagnostics_action"])
-        payload["cable_diagnostics_action"]["set_value"] = "action"
-
+        
+        # start diagnostic
+        param = "cable_diagnostic_action"
+        include_params = {param: "action"}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.PORT], include_params)
         action_status = await self._set(payload)
-        while action_status["cable_diagnostics_action"] in {"action", "processing"}:
+
+        # wait until finished (action = other)
+        while action_status[param] in {"action", "processing"}:
             action_status = await self._get(payload)
         
-        include_params = []
-        pairs = 4 if self._is_gigabit_ethernet_port else 2
-
-        for i in range(1, pairs + 1):
-            include_params.append(f"cable_diagnostics_pair{i}_status")
-            include_params.append(f"cable_diagnostics_pair{i}_length")
+        # get data as {cable_diagnostic_pair1_length, cable_diagnostic_pair1_status, ...}
+        include_params = [
+            f"cable_diagnostic_pair{i}_{suffix}"
+            for i in range(1, self._number_of_cable_diagnostic_pairs + 1)
+            for suffix in {"status", "length"}
+        ]
+        pairs_tests = await self._get(SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.PORT], include_params))
         
-        pairs_tests = await self._get(SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params))
-        results = {f"pair{i}": {} for i in range(1, pairs + 1)}
+        # base results parameters, no cable by default
+        results = {"unable_to_perform": False, "no_cable": True}
+        prefix = "cable_diagnostic_pair"
 
-        results["unable_to_perform"] = False
-        results["no_cable"] = True
-        need_to_order_pairs = self._is_gigabit_ethernet_port and not self._config["models"][self._model]["are_cable_diagnostics_pairs_ordered"]
+        # combine results
+        results = {
+            "pairs": {
+                # find out actual pair number
+                f"pair{self._get_actual_cable_diagnostic_pair_number(i)}": {
+                    # get status and length for each pair
+                    "status": pairs_tests[f"{prefix}{i}_status"],
+                    "length": pairs_tests[f"{prefix}{i}_length"]
+                }
+                # go through pair numbers
+                for i in range(1, self._number_of_cable_diagnostic_pairs + 1)
+            },
+            "unable_to_perform": False
+        }
 
-        def get_actual_pair_number(pair_number: int) -> int:
-            if not need_to_order_pairs or pair_number == 4:
-                return pair_number
-            if pair_number == 1:
-                return 3
-            if pair_number == 2:
-                return 1
-            return 2
+        # no cable if all pair statuses are no cable
+        results["no_cable"] = all(pair_data["status"] == "no_cable" for pair_data in results["pairs"].values())
 
-        for i in range(1, pairs + 1):
-            results[f"pair{get_actual_pair_number(i)}"] = {"status": pairs_tests[f"cable_diagnostics_pair{i}_status"],
-                                                           "length": pairs_tests[f"cable_diagnostics_pair{i}_length"]}
-            if pairs_tests[f"cable_diagnostics_pair{i}_status"] != "no_cable":
-                results["no_cable"] = False
-
+        # {{pairs: {pair1: {status, length}, ...}}, unable_to_perform, no_cable}
         return results
+
+    # map pair number got from snmp response with physical pair number
+    def _get_actual_cable_diagnostic_pair_number(self, pair_number: int) -> int:
+        # when rearrange isn't necessary, number stays the same, otherwise the scheme is:
+        # response - actual
+        #    1    -    3
+        #    2    -    1
+        #    3    -    2
+        #    4    -    4
+        if not self._need_to_order_cable_diagnostic_pairs or pair_number == 4:
+            return pair_number
+        if pair_number == 1:
+            return 3
+        if pair_number == 2:
+            return 1
+        return 2
 
     ### PORT SECURITY ###
 

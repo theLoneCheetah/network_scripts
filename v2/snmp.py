@@ -175,12 +175,14 @@ async def dhcp_relay_config_example(switch_handler: L2SwitchHandler) -> None:
     pprint(await switch_handler.get_dhcp_relay(), sort_dicts=False)
 
 async def port_management_example(switch_handler: L2SwitchHandler) -> None:
-    pprint(await switch_handler.get_port_status(), sort_dicts=False)
-    pprint(await switch_handler.get_port_management(), sort_dicts=False)
-    await switch_handler.set_port_management({"admin_state": "disabled"})
-    pprint(await switch_handler.get_port_management(), sort_dicts=False)
-    await switch_handler.set_port_management({"admin_state": "enabled"})
-    pprint(await switch_handler.get_port_management(), sort_dicts=False)
+    # pprint(await switch_handler.get_port_status(), sort_dicts=False)
+    # pprint(await switch_handler.get_port_management(), sort_dicts=False)
+    # await switch_handler.set_port_management({"admin_state": "disabled"})
+    # pprint(await switch_handler.get_port_management(), sort_dicts=False)
+    # await switch_handler.set_port_management({"admin_state": "enabled"})
+    # pprint(await switch_handler.get_port_management(), sort_dicts=False)
+
+    pprint(await switch_handler.get_cable_diagnostic_for_port(), sort_dicts=False)
 
 async def port_security_config_example(switch_handler: L2SwitchHandler) -> None:
     print(await switch_handler.get_port_security_on_port())
