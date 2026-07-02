@@ -69,9 +69,15 @@ class L2SwitchClient(SNMPClient):
     ### SWITCH MANAGEMENT AND INFO ###
 
     # get any data associated with switch by param list
-    async def _get_switch_data(self, include_params: list[str]) -> ResponseData:
-        # return in standard form {request_name: data}
-        return await self._get(SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.SWITCH], include_params))
+    async def _get_switch_data(self, include_params: list[str], prefix: str = "") -> ResponseData:
+        # add optional prefix
+        include_params = [f"{prefix}{param}" for param in include_params]
+
+        # get the results
+        results = await self._get(SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.SWITCH], include_params))
+        
+        # return in standard form {request_name: data}, excluding optional prefix
+        return {key.removeprefix(prefix): value for key, value in results.items()}
     
     # perform reboot/reset operation
     async def perform_system_reboot(self, request: RequestData) -> SNMPResponseCode:
@@ -195,17 +201,21 @@ class L2SwitchClient(SNMPClient):
 
     # get switch cpu utilization
     async def get_cpu_utilization(self) -> ResponseData:
+        # prefix and params
         base_prefix = "cpu_utilization_"
-        include_params = [f"{base_prefix}{param}" for param in ("5sec", "1min", "5min")]
-        results = await self._get_switch_data(include_params)
+        include_params = ["5sec", "1min", "5min"]
+        results = await self._get_switch_data(include_params, base_prefix)
+
         # return without prefix
         return {key.removeprefix(base_prefix): value for key, value in results.items()}
 
     # get switch dynamic ram utilization
     async def get_dram_utilization(self) -> ResponseData:
+        # prefix and params
         base_prefix = "dram_"
-        include_params = [f"{base_prefix}{param}" for param in ("total", "used", "utilization")]
-        results = await self._get_switch_data(include_params)
+        include_params = ["total", "used", "utilization"]
+        results = await self._get_switch_data(include_params, base_prefix)
+
         # return without prefix
         return {key.removeprefix(base_prefix): value for key, value in results.items()}
     
@@ -273,11 +283,12 @@ class L2SwitchClient(SNMPClient):
     # delect one of trusted hosts
     async def delete_trusted_host(self, request: RequestData) -> SNMPResponseCode:
         # include only entry status to destroy
-        include_params = {"entry_status": "destroy"}
+        param = "entry_status"
+        include_params = {param: "destroy"}
         payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.TRUSTED_HOST], include_params)
         
         # only parameter is host index to address by useful number link
-        payload["entry_status"]["params"]["host_index"] = request["host_index"]
+        payload[param]["params"]["host_index"] = request["host_index"]
 
         try:
             result = await self._set(payload)
@@ -1357,9 +1368,11 @@ class L2SwitchClient(SNMPClient):
     # get dhcp relay configuration
     async def get_dhcp_relay(self) -> ResponseData:
         # get main params: state, hops, threshold, option82 details
-        include_params = ["state", "hop_count", "time_threshold",
-                          "option82_state", "option82_check_state", "option82_policy",
-                          "option82_remote_id_type", "option82_remote_id"]
+        include_params = [
+            "state", "hop_count", "time_threshold",
+            "option82_state", "option82_check_state", "option82_policy",
+            "option82_remote_id_type", "option82_remote_id"
+        ]
         results = await self._get(SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.DHCP_RELAY], include_params))
 
         # two defaultdicts for different relay matches
@@ -1463,7 +1476,10 @@ class L2SwitchClient(SNMPClient):
     ### PORT MANAGEMENT AND INFO ###
 
     # get any data associated with exact port by param list
-    async def _get_port_data(self, include_params: list[str]) -> ResponseData:
+    async def _get_port_data(self, include_params: list[str], prefix: str = "") -> ResponseData:
+        # add optional prefix
+        include_params = [f"{prefix}{param}" for param in include_params]
+
         # special suffix 100/101 for medium/fiber combo ports in some oids
         combo_fiber_suffix = None
         
@@ -1494,8 +1510,8 @@ class L2SwitchClient(SNMPClient):
         if self._is_combo_fiber_port and combo_fiber_suffix is not None:
             results = {key.removesuffix(combo_fiber_suffix): value for key, value in results.items()}
         
-        # return in standard form {request_name: data}
-        return results
+        # return in standard form {request_name: data}, excluding optional prefix
+        return {key.removeprefix(prefix): value for key, value in results.items()}
 
     # identify, is the combo port type medium or fiber, by object fields
     async def _identify_medium_fiber_combo_port(self) -> None:
@@ -1643,17 +1659,20 @@ class L2SwitchClient(SNMPClient):
 
     ### PORT SECURITY ###
 
+    # get port security config for port
     async def get_port_security_on_port(self) -> ResponseData:
-        include_params = ["port_security_max_learning_addresses", "port_security_lock_address_mode", "port_security_admin_state"]
-        results = await self._get_port_data(include_params)
-        return {key.removeprefix("port_security_"): value for key, value in results.items()}
-    
-    async def set_port_security_on_port(self, request: RequestData) -> SNMPResponseCode:
-        include_params = [f"port_security_{param}" for param in request.keys()]
-        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
+        # prefix and params
+        prefix = "port_security_"
+        include_params = ["max_learning_addresses", "lock_address_mode", "admin_state"]
 
-        for param, data in payload.items():
-            data["set_value"] = request[param.removeprefix("port_security_")]
+        # return result using common port method
+        return await self._get_port_data(include_params, prefix)
+    
+    # manage port security settings for port
+    async def set_port_security_on_port(self, request: RequestData) -> SNMPResponseCode:
+        # add prefix to all parameters to form payload
+        include_params = {f"port_security_{param}": value for param, value in request.items()}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.PORT], include_params)
         
         try:
             result = await self._set(payload)
@@ -1667,33 +1686,42 @@ class L2SwitchClient(SNMPClient):
     
     # clear static fdb on port by switching port security mode on port
     async def clear_port_security_on_port(self) -> SNMPResponseCode:
-        current_mode = (await self._get_port_data(["port_security_lock_address_mode"]))["port_security_lock_address_mode"]
+        # prefix and param
+        prefix = "port_security_"
+        param = "lock_address_mode"
+        include_params = [param]
+
+        # get current mode and choose temporary one: delete_on_reset/permanent
+        current_mode = (await self._get_port_data(include_params, prefix))[param]
         temp_mode = "permanent" if current_mode == "delete_on_reset" else "delete_on_reset"
 
-        result = await self.set_port_security_on_port({"lock_address_mode": temp_mode})
+        # switch to temporary mode
+        result = await self.set_port_security_on_port({param: temp_mode})
+        # return error code if occured
         if result != SNMPResponseCode.SUCCESS:
             return result
-        return await self.set_port_security_on_port({"lock_address_mode": current_mode})
+        # switch back and return final status code
+        return await self.set_port_security_on_port({param: current_mode})
     
-    async def clear_port_security_exact_mac_addresses(self, request: RequestData) -> SNMPResponseCode:
+    # delete exact mac address from static fdb table on port
+    async def clear_port_security_exact_mac_address(self, request: RequestData) -> SNMPResponseCode:
+        # get vlan table to map vlan id with vlan name
         vlan_table = await self.get_vlan_static_table()
-
-        clear_port_security_config = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT],
-                                                    ["clear_port_security_vlan_name", "clear_port_security_port",
-                                                     "clear_port_security_mac_address", "clear_port_security_action"])
-        all_payload_data = {
-            f"clear_port_security.{vlan_table[mac_data["vlan_id"]]["vlan_name"]}.{mac_data["mac_address"]}": {
-                "clear_port_security_vlan_name": {**clear_port_security_config["clear_port_security_vlan_name"], "set_value": vlan_table[mac_data["vlan_id"]]["vlan_name"]},
-                "clear_port_security_port": {**clear_port_security_config["clear_port_security_port"], "set_value": mac_data["port"]},
-                "clear_port_security_mac_address": {**clear_port_security_config["clear_port_security_mac_address"], "set_value": mac_data["mac_address"]},
-                "clear_port_security_action": {**clear_port_security_config["clear_port_security_action"], "set_value": "start"}
-            }
-            for mac_data in request["mac_addresses_list"]
+        
+        # request includes vlan name, port, mac and action
+        include_params = {
+            "vlan_name": vlan_table[request["vlan_id"]]["vlan_name"],
+            "port": request["port"],
+            "mac_address": request["mac_address"],
+            "action": "start"
         }
 
+        # add prefix and form payload
+        include_params = {f"clear_port_security_{key}": value for key, value in include_params.items()}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.PORT], include_params)
+
         try:
-            for request, payload in all_payload_data.items():
-                result = await self._set(payload)
+            result = await self._set(payload)
         except SNMPTransportError:
             return SNMPResponseCode.TRANSPORT_ERROR
         except SNMPProtocolError as err:
@@ -1704,17 +1732,20 @@ class L2SwitchClient(SNMPClient):
 
     ### LOOPBACK DETECTION ###
 
+    # get loopback detection config for port
     async def get_loopdetect_on_port(self) -> ResponseData:
-        include_params = ["loopdetect_state", "loopdetect_status"]
-        result = await self._get_port_data(include_params)
-        return {key.removeprefix("loopdetect_"): value for key, value in result.items()}
-    
-    async def set_loopdetect_on_port(self, request: RequestData) -> SNMPResponseCode:
-        include_params = [f"loopdetect_{param}" for param in request.keys()]
-        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
+        # prefix and params
+        prefix = "loopdetect_"
+        include_params = ["state", "status"]
 
-        for param, data in payload.items():
-            data["set_value"] = request[param.removeprefix("loopdetect_")]
+        # return result using common port method
+        return await self._get_port_data(include_params, prefix)
+    
+    # manage loopback detection settings for port
+    async def set_loopdetect_on_port(self, request: RequestData) -> SNMPResponseCode:
+        # add prefix to all parameters to form payload
+        include_params = {f"loopdetect_{param}": value for param, value in request.items()}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.PORT], include_params)
 
         try:
             result = await self._set(payload)
@@ -1728,23 +1759,31 @@ class L2SwitchClient(SNMPClient):
 
     ### PORT UTILIZATION ###
 
+    # get port traffic utilization statistics
     async def get_port_utilization(self) -> ResponseData:
-        include_params = ["utilization_tx_frames", "utilization_rx_frames", "utilization_percentage"]
-        return await self._get_port_data(include_params)
+        # prefix and params
+        prefix = "utilization_"
+        include_params = ["tx_frames", "rx_frames", "percentage"]
+
+        # return result using common port method
+        return await self._get_port_data(include_params, prefix)
     
     ### BANDWIDTH CONTROL ###
 
+    # get bandwidth control config for port
     async def get_bandwidth_control_on_port(self) -> ResponseData:
-        include_params = ["bandwidth_control_rx_rate", "bandwidth_control_tx_rate"]
-        results = await self._get_port_data(include_params)
-        return {key.removeprefix("bandwidth_control_"): value for key, value in results.items()}
-    
-    async def set_bandwidth_control_on_port(self, request: RequestData) -> SNMPResponseCode:
-        include_params = [f"bandwidth_control_{param}" for param in request.keys()]
-        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
+        # prefix and params
+        prefix = "bandwidth_control_"
+        include_params = ["rx_rate", "tx_rate"]
 
-        for param, data in payload.items():
-            data["set_value"] = request[param.removeprefix("bandwidth_control_")]
+        # return result using common port method
+        return await self._get_port_data(include_params, prefix)
+    
+    # manage bandwidth control settings for port
+    async def set_bandwidth_control_on_port(self, request: RequestData) -> SNMPResponseCode:
+        # add prefix to all parameters to form payload
+        include_params = {f"bandwidth_control_{param}": value for param, value in request.items()}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.PORT], include_params)
         
         try:
             result = await self._set(payload)
@@ -1758,18 +1797,20 @@ class L2SwitchClient(SNMPClient):
     
     ### TRAFFIC CONTROL ###
     
+    # get traffic control config for port
     async def get_traffic_control_on_port(self) -> ResponseData:
-        include_params = ["traffic_control_threshold", "traffic_control_broadcast_status", "traffic_control_multicast_status", "traffic_control_unicast_status",
-                        "traffic_control_action_status", "traffic_control_count_down", "traffic_control_time_interval"]
-        results = await self._get_port_data(include_params)
-        return {key.removeprefix("traffic_control_"): value for key, value in results.items()}
-    
-    async def set_traffic_control_on_port(self, request: RequestData) -> SNMPResponseCode:
-        include_params = [f"traffic_control_{param}" for param in request.keys()]
-        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
+        # prefix and params
+        prefix = "traffic_control_"
+        include_params = ["threshold", "broadcast_status", "multicast_status", "unicast_status", "action_status", "count_down", "time_interval"]
 
-        for param, data in payload.items():
-            data["set_value"] = request[param.removeprefix("traffic_control_")]
+        # return result using common port method
+        return await self._get_port_data(include_params, prefix)
+    
+    # manage traffic control settings for port
+    async def set_traffic_control_on_port(self, request: RequestData) -> SNMPResponseCode:
+        # add prefix to all parameters to form payload
+        include_params = {f"traffic_control_{param}": value for param, value in request.items()}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.PORT], include_params)
         
         try:
             result = await self._set(payload)
@@ -1783,17 +1824,26 @@ class L2SwitchClient(SNMPClient):
     
     ### TRAFFIC SEGMENTATION ###
 
+    # get traffic segmentation config for port
     async def get_traffic_segmentation_for_port(self) -> ResponseData:
-        result = await self._get(SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], ["traffic_segmentation_forward_ports"]))
-        portlist = L2SwitchClient._parse_assigned_ports_from_hex(result["traffic_segmentation_forward_ports"], self._ports_count)
-        return {"forward_ports": portlist}
+        # prefix and param
+        prefix = "traffic_segmentation_"
+        param = "forward_ports"
+        include_params = [param]
 
+        # get result using common port method
+        result = await self._get_port_data(include_params, prefix)
+
+        # return result parsing hex string into portlist
+        portlist = L2SwitchClient._parse_assigned_ports_from_hex(result[param], self._ports_count)
+        return {param: portlist}
+
+    # manage traffic segmentation settings for port
     async def set_traffic_segmentation_for_port(self, request: RequestData) -> SNMPResponseCode:
-        include_params = [f"traffic_segmentation_{param}" for param in request.keys()]
-        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], include_params)
-
-        for param, data in payload.items():
-            data["set_value"] = L2SwitchClient._combine_assigned_ports_to_hex(request[param.removeprefix("traffic_segmentation_")])
+        # add prefix to to form payload, composing portlist to a hex string
+        param = "forward_ports"
+        include_params = {f"traffic_segmentation_{param}": L2SwitchClient._combine_assigned_ports_to_hex(request[param])}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.PORT], include_params)
 
         try:
             result = await self._set(payload)
@@ -1807,47 +1857,75 @@ class L2SwitchClient(SNMPClient):
     
     ### PORT STATISCTICS ###
 
-    async def _get_packets_speed(self, packet_type: str) -> ResponseData:
-        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.PORT], [packet_type])
-
-        start_packets = (await self._get(payload))[packet_type]
-        start_time = perf_counter()
-        await asyncio.sleep(0.5)
-        
-        end_packets = (await self._get(payload))[packet_type]
-        end_time = perf_counter()
-        speed = int((end_packets - start_packets) / (end_time - start_time))
-        return {packet_type: speed}
-    
-    async def get_rx_tx_megabit_speed_on_port(self) -> ResponseData:
-        task_rx_bytes = asyncio.create_task(self._get_packets_speed("rx_bytes"))
-        task_tx_bytes = asyncio.create_task(self._get_packets_speed("tx_bytes"))
-        
-        results = await asyncio.gather(task_rx_bytes, task_tx_bytes)
-        return {f"{key.removesuffix('bytes')}megabit": L2SwitchClient._byte_to_megabit(value) for res in results for key, value in res.items()}
-    
-    async def get_rx_tx_packets_all_types_on_port(self) -> ResponseData:
-        include_params = ["rx_unicast_packets", "rx_multicast_packets", "rx_broadcast_packets",
-                        "tx_unicast_packets", "tx_multicast_packets", "tx_broadcast_packets"]
-        tasks = [asyncio.create_task(self._get_packets_speed(key)) for key in include_params]
-
-        results = await asyncio.gather(*tasks)
-        return {key: value for res in results for key, value in res.items()}
-    
+    # get all port packet statistics: speed and different packet types count
     async def get_all_packet_statistics_on_port(self) -> ResponseData:
+        # speed and packet types count
         task_megabit = asyncio.create_task(self.get_rx_tx_megabit_speed_on_port())
-        task_packets = asyncio.create_task(self.get_rx_tx_packets_all_types_on_port())
+        task_packets = asyncio.create_task(self.get_rx_tx_all_packet_types_on_port())
 
+        # gather results
         results = await asyncio.gather(task_megabit, task_packets)
         return results[0] | results[1]
     
+    # get rx/tx port speed in megabit
+    async def get_rx_tx_megabit_speed_on_port(self) -> ResponseData:
+        # rx and tx bytes tasks
+        include_params = ["rx_bytes", "tx_bytes"]
+        tasks = [asyncio.create_task(self._get_packets_speed(key)) for key in include_params]
+        
+        # get and return refactored results
+        results = await asyncio.gather(*tasks)
+        return {
+            # convert bytes to megabit with replacing params suffix
+            f"{key.removesuffix('bytes')}megabit": L2SwitchClient._byte_to_megabit(value)
+            for res in results
+            for key, value in res.items()
+        }
+    
+    # get rx/tx all packet types: unicast, multicast, broadcast
+    async def get_rx_tx_all_packet_types_on_port(self) -> ResponseData:
+        # create a task for each parameter
+        include_params = [
+            "rx_unicast_packets", "rx_multicast_packets", "rx_broadcast_packets",
+            "tx_unicast_packets", "tx_multicast_packets", "tx_broadcast_packets"
+        ]
+        tasks = [asyncio.create_task(self._get_packets_speed(key)) for key in include_params]
+
+        # gather and return the results
+        results = await asyncio.gather(*tasks)
+        return {key: value for res in results for key, value in res.items()}
+    
+    # get different packet statistics as a time average value
+    async def _get_packets_speed(self, packet_type: str) -> ResponseData:
+        # payload for both requests
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.GET, self._switch_oids_config[SwitchConfigSection.PORT], [packet_type])
+
+        # get current counter value and remember start time
+        start_packets = (await self._get(payload))[packet_type]
+        start_time = perf_counter()
+
+        # wait a bit
+        await asyncio.sleep(SNMP.PACKET_STATISTICS_PAUSE)
+        
+        # get new current counter value and remember end time
+        end_packets = (await self._get(payload))[packet_type]
+        end_time = perf_counter()
+
+        # calculate speed as a time average value and return the result
+        speed = int((end_packets - start_packets) / (end_time - start_time))
+        return {packet_type: speed}
+    
+    # get crc errors split into to categories
     async def get_crc_errors_on_port(self) -> ResponseData:
+        # alignment error - when packet has wrong size
+        # fcs error - while checking crc sum, when some bits are wrong
         include_params = ["alignment_errors", "fcs_errors"]
         return await self._get_port_data(include_params)
 
+    # clear all counters as snmp doesn't have clear counters for port oid
     async def clear_all_counters(self) -> SNMPResponseCode:
-        payload = SNMPClient._compose_request_payload(self._switch_oids_config[SwitchConfigSection.SWITCH], ["clear_all_counters"])
-        payload["clear_all_counters"]["set_value"] = "active"
+        include_params = {"clear_all_counters": "active"}
+        payload = SNMPClient._compose_request_payload(SNMPRequestType.SET, self._switch_oids_config[SwitchConfigSection.SWITCH], include_params)
 
         try:
             result = await self._set(payload)
@@ -1861,6 +1939,7 @@ class L2SwitchClient(SNMPClient):
 
     ### HELPER FUNCTIONS ###
 
+    # render oid using L2 port and params dict
     @override
     def _render_get_set_oid(self, oid: str, **params) -> str:
         return oid.format(port=self._port, **params)
@@ -1915,6 +1994,7 @@ class L2SwitchClient(SNMPClient):
     def _parse_acl_chunk_to_ip(acl_entry: str) -> str:
         return ".".join([str(int(acl_entry[2:][2*i : 2*i+2], 16)) for i in range(4)])
 
+    # convert ip into 4-byte hex chunk
     @staticmethod
     def _convert_ip_to_acl_chunk(ip: str) -> str:
         return "".join(f"{int(octet):02x}" for octet in ip.split("."))
@@ -1926,6 +2006,7 @@ class L2SwitchClient(SNMPClient):
         ip_address = ".".join(ip_address[-4:])
         return oid, ip_address
     
+    # convert string name into oid as ASCII symbols
     @staticmethod
     def _convert_name_into_oid(name: str) -> str:
         return f"{len(name)}.{'.'.join(str(ord(sym)) for sym in name)}"
@@ -1943,6 +2024,7 @@ class L2SwitchClient(SNMPClient):
         # return base oid, vlan_id, mac
         return oid, vlan_id, mac
     
+    # calculate megabit from bytes
     @staticmethod
     def _byte_to_megabit(bytes_count: int) -> int:
         return round(bytes_count * 8 / 1024 / 1024)

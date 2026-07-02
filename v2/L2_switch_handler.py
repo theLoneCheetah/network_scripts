@@ -386,14 +386,14 @@ class L2SwitchHandler:
         response = await self._client.clear_port_security_on_port()
         print(response.value[1])
     
-    async def clear_port_security_exact_mac_addresses(self, config: RequestData) -> None:
+    async def clear_port_security_exact_mac_address(self, config: RequestData) -> None:
         try:
-            request = ClearPortSecurityExactMacAddressesConfig(**config).model_dump(exclude_none=True)
+            request = ClearPortSecurityExactMacAddressConfig(**config).model_dump(exclude_none=True)
         except ValidationError:
             print(SNMPResponseCode.INVALID_DATA.value[1])
             return
         
-        response = await self._client.clear_port_security_exact_mac_addresses(request)
+        response = await self._client.clear_port_security_exact_mac_address(request)
         print(response.value[1])
     
     ### LOOPBACK DETECTION ###
@@ -463,14 +463,14 @@ class L2SwitchHandler:
     
     ### PORT STATISCTICS ###
 
+    async def get_all_packet_statistics_on_port(self) -> ResponseData:
+        return await self._client.get_all_packet_statistics_on_port()
+
     async def get_rx_tx_megabit_speed_on_port(self) -> ResponseData:
         return await self._client.get_rx_tx_megabit_speed_on_port()
 
-    async def get_rx_tx_packets_all_types_on_port(self) -> ResponseData:
-        return await self._client.get_rx_tx_packets_all_types_on_port()
-
-    async def get_all_packet_statistics_on_port(self) -> ResponseData:
-        return await self._client.get_all_packet_statistics_on_port()
+    async def get_rx_tx_all_packet_types_on_port(self) -> ResponseData:
+        return await self._client.get_rx_tx_all_packet_types_on_port()
 
     async def get_crc_errors_on_port(self) -> ResponseData:
         return await self._client.get_crc_errors_on_port()

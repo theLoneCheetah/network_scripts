@@ -190,8 +190,34 @@ async def port_security_config_example(switch_handler: L2SwitchHandler) -> None:
     print(await switch_handler.get_port_security_on_port())
 
     # await switch_handler.clear_port_security_on_port()
-    # config = {"mac_addresses_list": [{"vlan_id": 11, "port": 2, "mac_address": "40-AE-30-0E-54-C5"}]}
-    # await switch_handler.clear_port_security_exact_mac_addresses(config)
+    # config = {"vlan_id": 11, "port": 2, "mac_address": "40-AE-30-0E-54-C5"}
+    # await switch_handler.clear_port_security_exact_mac_address(config)
+
+async def other_port_management_and_statistics_example(switch_handler: L2SwitchHandler) -> None:
+    pprint(await switch_handler.get_loopdetect_on_port(), sort_dicts=False)
+    await switch_handler.set_loopdetect_on_port({"state": "enabled"})
+    pprint(await switch_handler.get_loopdetect_on_port(), sort_dicts=False)
+
+    pprint(await switch_handler.get_port_utilization(), sort_dicts=False)
+
+    pprint(await switch_handler.get_bandwidth_control_on_port(), sort_dicts=False)
+    await switch_handler.set_bandwidth_control_on_port({"rx_rate": "1024000"})
+    pprint(await switch_handler.get_bandwidth_control_on_port(), sort_dicts=False)
+
+    pprint(await switch_handler.get_traffic_control_on_port(), sort_dicts=False)
+    await switch_handler.set_traffic_control_on_port({"broadcast_status": "disabled"})
+    pprint(await switch_handler.get_traffic_control_on_port(), sort_dicts=False)
+
+    pprint(await switch_handler.get_traffic_segmentation_for_port(), sort_dicts=False)
+    await switch_handler.set_traffic_segmentation_for_port({"forward_ports": set(i for i in range(1, 29))})
+    pprint(await switch_handler.get_traffic_segmentation_for_port(), sort_dicts=False)
+
+async def port_statistics_packet_error_example(switch_handler: L2SwitchHandler) -> None:
+    pprint(await switch_handler.get_all_packet_statistics_on_port(), sort_dicts=False)
+
+    # pprint(await switch_handler.get_crc_errors_on_port(), sort_dicts=False)
+    # await switch_handler.clear_all_counters()
+    # pprint(await switch_handler.get_crc_errors_on_port(), sort_dicts=False)
 
 async def main() -> None:
     ipaddress = SNMP.TEST_3028
@@ -201,7 +227,7 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    await port_management_example(switch_handler)
+    await port_statistics_packet_error_example(switch_handler)
 
     print("Overall time:", perf_counter() - start_time)
 

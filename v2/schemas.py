@@ -245,14 +245,10 @@ class PortSecurityConfig(RestrictedBaseModel):
     lock_address_mode: str | None = None
     admin_state: str | None = None
 
-# helper class for clear port security by mac addresses class
-class FdbMacAddressConfig(RestrictedBaseModel):
+class ClearPortSecurityExactMacAddressConfig(RestrictedBaseModel):
     vlan_id: Annotated[int, Field(ge=1, le=4094)]
     port: Annotated[int, Field(ge=1, le=52)]
     mac_address: Annotated[str, Field(pattern=MAC_ADDRESS_REGEX)]
-
-class ClearPortSecurityExactMacAddressesConfig(RestrictedBaseModel):
-    mac_addresses_list: list[FdbMacAddressConfig]
 
 ### LOOPBACK DETECTION ###
 

@@ -56,6 +56,9 @@ class SNMP:
     SOURCE_IP_BYTES_IN_ARP = {28, 29, 30, 31}
     SOURCE_IP_OFFSET_IN_ARP = 28
 
+    # pause for getting all packet statistics as a time average values
+    PACKET_STATISTICS_PAUSE = 0.5
+
     @staticmethod
     def typify_mac_address(mac_address: str) -> OctetString:
         return OctetString(bytes.fromhex(mac_address.replace("-", "")))
