@@ -4,6 +4,7 @@ import yaml
 import struct
 import re
 from typing import Any, Self
+from collections import defaultdict
 from abc import ABC, abstractmethod
 from pprint import pprint
 from copy import deepcopy
@@ -14,8 +15,14 @@ from pysnmp.proto.rfc1902 import OctetString, Integer, IpAddress
 from const import SNMPRequestType, SNMP
 from snmp_exceptions import *
 
-type SnmpValue = ObjectIdentifier | OctetString | Integer | IpAddress
+# standard request data is dict with any value type
+type RequestData = dict[str, Any]
+# standard response data can have int key type
+type ResponseData = dict[str | int, Any]
+# standard payload data for get/set request
 type PayloadData = dict[str, dict[str, Any]]
+# association of snmp value types that can be got
+type SnmpValue = ObjectIdentifier | OctetString | Integer | IpAddress
 
 class SNMPClient(ABC):
     _ipaddress: str
@@ -71,18 +78,8 @@ class SNMPClient(ABC):
             await self._identify(assert_switch_models)
     
     async def _identify(self, assert_switch_models: set[str] | None = None) -> None:
-        task_oid = asyncio.create_task(
-            self._get(
-                SNMPClient._compose_request_payload(SNMPRequestType.GET, self._config["system"], ["private_oid"]),
-                skip_init=True
-            )
-        )
-        task_description = asyncio.create_task(
-            self._get(
-                SNMPClient._compose_request_payload(SNMPRequestType.GET, self._config["system"], ["description"]),
-                skip_init=True
-            )
-        )
+        task_oid = asyncio.create_task(self._get(self._config["system"], ["private_oid"], skip_init=True))
+        task_description = asyncio.create_task(self._get(self._config["system"], ["description"], skip_init=True))
         models, description = await asyncio.gather(task_oid, task_description)
 
         models = next(iter(models.values()))
@@ -116,91 +113,138 @@ class SNMPClient(ABC):
         # otherwise False
         return False
     
-    async def _get(self, payload: PayloadData, skip_init: bool = False) -> dict[str, Any] | None:
+    async def _execute_snmp(
+                self,
+                request_type: SNMPRequestType,   # type of snmp request
+                config_fragment: dict[str, Any],   # one of specified oid groups
+                include_params: list[str] | dict[str, Any],   # parameters, optionally with values
+                oid_vars: dict[str, Any] | None = None,   # variables to substitute into oids
+                skip_init: bool = False   # flag for marking requests without pre-initialization
+            ) -> dict[str, Any] | list[tuple[str, Any]]:
+        # if it's not one of the identifying requests, check initialization
         if not skip_init:
             await self._initialize()
-        
-        oid_objects = [ObjectType(ObjectIdentity(self._render_get_set_oid(request["oid"], **request["params"])))
-                       for request in payload.values()]
-        
-        errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
-            self._engine,
-            self._read_community,
-            self._transport,
-            self._context,
-            *oid_objects
-        )
-        
-        try:
-            SNMPClient._check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload)
-        except SNMPTransportError:
-            raise
-        except SNMPProtocolError:
-            raise
-        
-        results = {}
 
-        for (command_name, data), varBind in zip(payload.items(), varBinds):
-            results[command_name] = SNMPClient._convert_result_value(varBind[1], data)
-        
-        return results
-    
-    async def _set(self, payload: PayloadData) -> dict[str, Any] | None:
-        await self._initialize()
-        
-        oid_objects = [ObjectType(ObjectIdentity(self._render_get_set_oid(request["oid"], **request["params"])), request["set_value"])
-                       for request in payload.values()]
-        
-        errorIndication, errorStatus, errorIndex, varBinds = await set_cmd(
-            self._engine,
-            self._write_community,
-            self._transport,
-            self._context,
-            *oid_objects
-        )
-        
-        try:
-            SNMPClient._check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload)
-        except SNMPTransportError:
-            raise
-        except SNMPProtocolError:
-            raise
-        
-        results = {}
+        # render payload with params and oids by common method
+        payload = SNMPClient._compose_request_payload(request_type, config_fragment, include_params, oid_vars)
 
-        for (command_name, data), varBind in zip(payload.items(), varBinds):
-            results[command_name] = SNMPClient._convert_result_value(varBind[1], data)
-        
-        return results
-    
-    async def _bulk_walk(self, payload: dict[str, Any]) -> list[tuple[str, Any]] | None:
-        await self._initialize()
+        # for bulk_walk requests
+        if request_type == SNMPRequestType.BULK_WALK:
+            # get the first params' data (cause it's only one param)
+            param_data = next(iter(payload.values()))
 
-        oid_object = ObjectType(ObjectIdentity(self._render_bulk_walk_oid(payload["oid"])))
+            # create oid object
+            oid_object = ObjectType(ObjectIdentity(param_data["oid"]))
 
-        results = []
+            results = []
 
-        async for (errorIndication, errorStatus, errorIndex, varBinds) in bulk_walk_cmd(
-            self._engine,
-            self._read_community,
-            self._transport,
-            self._context,
-            0, self._max_repetitions,
-            oid_object,
-            lexicographicMode=False
-        ):
-            try:
-                SNMPClient._check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload)
-            except SNMPTransportError:
-                raise
-            except SNMPProtocolError:
-                raise
+            # walk through all bulk_walk blocks of oids to collect values
+            async for (errorIndication, errorStatus, errorIndex, varBinds) in bulk_walk_cmd(
+                self._engine,
+                self._read_community,
+                self._transport,
+                self._context,
+                0, self._max_repetitions,
+                oid_object,
+                lexicographicMode=False
+            ):
+                # handle errors
+                try:
+                    SNMPClient._check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload)
+                except SNMPTransportError:
+                    raise
+                except SNMPProtocolError:
+                    raise
+                
+                # for each oid - value pair
+                for varBind in varBinds:
+                    oid = str(varBind[0])
+                    # convert value
+                    value = SNMPClient._convert_result_value(varBind[1], param_data)
+                    # write oid and value
+                    results.append((oid, value))
             
-            for varBind in varBinds:
-                oid = str(varBind[0])
-                value = SNMPClient._convert_result_value(varBind[1], payload)
-                results.append((oid, value))
+            # [(oid, value), ...]
+            return results
         
+        # for get requests, form simple oid objects, use read community
+        if request_type == SNMPRequestType.GET:
+            oid_objects = [ObjectType(ObjectIdentity(request["oid"])) for request in payload.values()]
+            cmd = get_cmd
+            community = self._read_community
+        
+        # for set requests, form oid objects with set values, use write community
+        else:
+            oid_objects = [ObjectType(ObjectIdentity(request["oid"]), request["set_value"]) for request in payload.values()]
+            cmd = set_cmd
+            community = self._write_community
+        
+        # perform request using selected command and community
+        errorIndication, errorStatus, errorIndex, varBinds = await cmd(
+            self._engine,
+            community,
+            self._transport,
+            self._context,
+            *oid_objects
+        )
+        
+        # handle errors
+        try:
+            SNMPClient._check_errors(errorIndication, errorStatus, errorIndex, varBinds, payload)
+        except SNMPTransportError:
+            raise
+        except SNMPProtocolError:
+            raise
+        
+        results = {}
+
+        # for each value, convert it and write with the param name
+        for (command_name, data), varBind in zip(payload.items(), varBinds):
+            results[command_name] = SNMPClient._convert_result_value(varBind[1], data)
+        
+        # {param: value, ...}
+        return results
+
+    # snmp get request
+    async def _get(
+                self,
+                config_fragment: dict[str, Any],   # one of specified oid groups
+                include_params: dict[str, Any],   # parameters with values
+                oid_vars: dict[str, Any] | None = None,   # variables to substitute into oids
+                skip_init: bool = False   # flag for marking requests without pre-initialization
+            ) -> dict[str, Any]:
+        # use common method and return results dict
+        return await self._execute_snmp(SNMPRequestType.GET, config_fragment, include_params, oid_vars, skip_init)
+
+    # snmp set request
+    async def _set(
+                self,
+                config_fragment: dict[str, Any],   # one of specified oid groups
+                include_params: dict[str, Any],   # parameters with values
+                oid_vars: dict[str, Any] | None = None   # variables to substitute into oids
+            ) -> dict[str, Any]:
+        # use common method and return results dict, usually reflecting set values
+        return await self._execute_snmp(SNMPRequestType.SET, config_fragment, include_params, oid_vars)
+
+    # snmp bulk_walk request
+    async def _bulk_walk(
+                self,
+                config_fragment: dict[str, Any],   # one of specified oid groups
+                include_params: list[str]   # list of parameter names
+            ) -> list[tuple[str, Any]]:
+        # use common method and return results list with pairs (oid, value)
+        return await self._execute_snmp(SNMPRequestType.BULK_WALK, config_fragment, include_params)
+
+    # get available mibs by private switch oid
+    async def scan_available_mibs(self) -> ResponseData:
+        # standard mib scanning oid returns only mib names
+        results = set()
+        
+        # walk through all values
+        for _, desciption in await self._bulk_walk(self._config["system"], ["standard_mib"]):
+            results.add(desciption)
+        
+        # return set of mib names
         return results
     
     # handle result of switch reboot/reset
@@ -249,16 +293,28 @@ class SNMPClient(ABC):
     
     # form payload for request from oid fragment by oids list (get request) or dict (set)
     @staticmethod
-    def _compose_request_payload(request_type: SNMPRequestType, config_fragment: dict[str, Any], include_params: list[str] | dict[str, Any]) -> PayloadData:
+    def _compose_request_payload(
+                request_type: SNMPRequestType,   # type of snmp request
+                config_fragment: dict[str, Any],   # one of specified oid groups
+                include_params: list[str] | dict[str, Any],   # parameters, optionally with values
+                oid_vars: dict[str, Any] | None = None   # variables to substitute into oids
+            ) -> PayloadData:
         result = {}
 
         # for config fragment, include only specified oids
         for key in include_params:
             if key in config_fragment:
                 # deepcopy is needed for keeping nested structure safe
-                item = deepcopy(config_fragment[key])
-                # include default params key
-                item["params"] = {}
+                item: dict[str, Any] = deepcopy(config_fragment[key])
+                
+                # for bulk walk requests, payload includes only one oid
+                if request_type == SNMPRequestType.BULK_WALK:
+                    # exclude any indices from oid to get dry oid for walking
+                    item["oid"] = SNMPClient._render_bulk_walk_oid(item["oid"])
+
+                # for get/set requests, make substitutions in oid if it's needed
+                elif oid_vars is not None:
+                    item["oid"] = SNMPClient._render_get_set_oid(item["oid"], oid_vars)
 
                 # include set_value for set requests
                 if request_type == SNMPRequestType.SET:
@@ -335,10 +391,18 @@ class SNMPClient(ABC):
     def _convert_octet_string_into_mac(octet_string: str) -> str:
         return "-".join([octet_string[2*i:2*i+2].upper() for i in range(1, 7)])
 
-    @abstractmethod
-    def _render_get_set_oid(self, oid: str, **params) -> str:
-        pass
+    # ender any oid using vars dict to substitute variables and indices if has any
+    @staticmethod
+    def _render_get_set_oid(oid: str, oid_vars: dict[str, Any]) -> str:
+        return oid.format(**oid_vars)
 
     @staticmethod
     def _render_bulk_walk_oid(oid: str) -> str:
         return re.sub(r"\.{.*", "", oid)
+
+    # parsing last index is necessary for gathering data by inner indices while bulk walking
+    @staticmethod
+    def _parse_last_index(oid: str) -> tuple[str, int]:
+        parts = oid.rpartition(".")
+        # return base part in integer index
+        return parts[0], int(parts[2])

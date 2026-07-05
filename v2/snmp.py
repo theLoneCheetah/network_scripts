@@ -122,7 +122,7 @@ async def acl_config_example(switch_handler: L2SwitchHandler) -> None:
     # await asyncio.sleep(3)
     # await switch_handler.delete_acl_packet_content_mask({"profile_id": 140})
 
-    pprint(await switch_handler.get_acl_all(), sort_dicts=False)
+    pprint(await switch_handler.get_acl_for_port(), sort_dicts=False)
 
 async def vlan_config_example(switch_handler: L2SwitchHandler) -> None:
     # vlan = {"vlan_id": 2, "vlan_name": "vlan2"}
@@ -153,7 +153,7 @@ async def fdb_flood_fdb_example(switch_handler: L2SwitchHandler) -> None:
     # pprint(await switch_handler.get_fdb_on_port(), sort_dicts=False)
 
     # flood fdb
-    # pprint(await switch_handler.get_flood_fdb(), sort_dicts=False)
+    pprint(await switch_handler.get_flood_fdb(), sort_dicts=False)
     # await switch_handler.clear_flood_fdb()
     # await asyncio.sleep(3)
     # pprint(await switch_handler.get_flood_fdb(), sort_dicts=False)
@@ -162,7 +162,7 @@ async def fdb_flood_fdb_example(switch_handler: L2SwitchHandler) -> None:
     # pprint(await switch_handler.get_flood_fdb(), sort_dicts=False)
     # await switch_handler.set_flood_fdb({"state": "enabled"})
     # await asyncio.sleep(3)
-    pprint(await switch_handler.get_flood_fdb(), sort_dicts=False)
+    pprint(await switch_handler.get_fdb_table(), sort_dicts=False)
 
 async def dhcp_relay_config_example(switch_handler: L2SwitchHandler) -> None:
     # settings = await switch_handler.get_dhcp_relay()
@@ -175,14 +175,14 @@ async def dhcp_relay_config_example(switch_handler: L2SwitchHandler) -> None:
     pprint(await switch_handler.get_dhcp_relay(), sort_dicts=False)
 
 async def port_management_example(switch_handler: L2SwitchHandler) -> None:
-    # pprint(await switch_handler.get_port_status(), sort_dicts=False)
+    pprint(await switch_handler.get_port_status(), sort_dicts=False)
     # pprint(await switch_handler.get_port_management(), sort_dicts=False)
     # await switch_handler.set_port_management({"admin_state": "disabled"})
     # pprint(await switch_handler.get_port_management(), sort_dicts=False)
     # await switch_handler.set_port_management({"admin_state": "enabled"})
     # pprint(await switch_handler.get_port_management(), sort_dicts=False)
 
-    pprint(await switch_handler.get_cable_diagnostic_for_port(), sort_dicts=False)
+    # pprint(await switch_handler.get_cable_diagnostic_for_port(), sort_dicts=False)
 
 async def port_security_config_example(switch_handler: L2SwitchHandler) -> None:
     print(await switch_handler.get_port_security_on_port())
@@ -227,7 +227,9 @@ async def main() -> None:
 
     switch_handler = await L2SwitchHandler.create(ipaddress, port)
 
-    await port_statistics_packet_error_example(switch_handler)
+    # await switch_config_example(switch_handler)
+
+    pprint(await switch_handler.scan_available_mibs())
 
     print("Overall time:", perf_counter() - start_time)
 

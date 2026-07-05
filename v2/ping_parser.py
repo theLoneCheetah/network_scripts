@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 import re
 
-ru_windows_regex = re.compile(r"Ответ от (?P<ip>(?:\d+\.){3}\d+): число байт=(?P<bytes>\d+) время=(?P<time>\d+)мс TTL=(?P<ttl>\d+)\n")
-en_linux_regex = re.compile(r"(?P<bytes>\d+) bytes from (?P<ip>(?:\d+\.){3}\d+): icmp_seq=(?:\d+) ttl=(?P<ttl>\d+) time=(?P<time>[\d.]+) ms\n")
+ru_windows_regex = re.compile(r"Ответ от (?P<ip>(?:\d+\.){3}\d+): число байт=(?P<bytes>\d+) время[=<](?P<time>\d+)мс TTL=(?P<ttl>\d+)\n")
+en_linux_regex = re.compile(r"(?P<bytes>\d+) bytes from (?P<ip>(?:\d+\.){3}\d+): icmp_seq=(?:\d+) ttl=(?P<ttl>\d+) time[=<](?P<time>[\d.]+) ms\n")
 
 count = 0
 lost = 0
@@ -12,7 +12,7 @@ sum_time = 0
 results = []
 
 for line in open("v2/ping_result.txt", "r", encoding="utf-16"):
-    match = re.match(en_linux_regex, line)
+    match = re.match(ru_windows_regex, line)
     count += 1
 
     if match is None:

@@ -20,7 +20,7 @@ class L2SwitchHandler:
     @classmethod
     async def create(cls, ipaddress: str, port: int) -> Self:
         self = cls(port)
-        self._client = await L2SwitchClient.create(ipaddress, port)
+        self._client = await L2SwitchClient.create(ipaddress)
         return self
 
     ### MIB MODULES ###
@@ -123,7 +123,7 @@ class L2SwitchHandler:
         return await self._client.get_acl_all()
 
     async def get_acl_for_port(self) -> ResponseData:
-        return await self._client.get_acl_for_port()
+        return await self._client.get_acl_for_port(self._port)
     
     async def get_acl_ethernet(self) -> ResponseData:
         return await self._client.get_acl_ethernet()
@@ -217,7 +217,7 @@ class L2SwitchHandler:
         return await self._client.get_vlan_static_table()
     
     async def get_vlan_on_port(self) -> ResponseData:
-        return await self._client.get_vlan_on_port()
+        return await self._client.get_vlan_on_port(self._port)
     
     async def create_vlan(self, config: RequestData) -> None:
         try:
@@ -275,10 +275,10 @@ class L2SwitchHandler:
         return await self._client.get_fdb_table()
     
     async def get_fdb_on_port(self) -> ResponseData:
-        return await self._client.get_fdb_on_port()
+        return await self._client.get_fdb_on_port(self._port)
     
     async def clear_fdb_on_port(self) -> None:
-        response = await self._client.clear_fdb_on_port()
+        response = await self._client.clear_fdb_on_port(self._port)
         print(response.value[1])
 
     async def clear_fdb_all(self) -> None:
@@ -347,10 +347,10 @@ class L2SwitchHandler:
     ### PORT MANAGEMENT AND INFO ###
 
     async def get_port_status(self) -> ResponseData:
-        return await self._client.get_port_status()
+        return await self._client.get_port_status(self._port)
     
     async def get_port_management(self) -> ResponseData:
-        return await self._client.get_port_management()
+        return await self._client.get_port_management(self._port)
     
     async def set_port_management(self, config: RequestData) -> None:
         try:
@@ -359,18 +359,18 @@ class L2SwitchHandler:
             print(SNMPResponseCode.INVALID_DATA.value[1])
             return
         
-        response = await self._client.set_port_management(request)
+        response = await self._client.set_port_management(request, self._port)
         print(response.value[1])
     
     ### CABLE DIAGNOSTIC ### 
 
     async def get_cable_diagnostic_for_port(self) -> ResponseData:
-        return await self._client.get_cable_diagnostic_for_port()
+        return await self._client.get_cable_diagnostic_for_port(self._port)
     
     ### PORT SECURITY ###
 
     async def get_port_security_on_port(self) -> ResponseData:
-        return await self._client.get_port_security_on_port()
+        return await self._client.get_port_security_on_port(self._port)
     
     async def set_port_security_on_port(self, config: RequestData) -> None:
         try:
@@ -379,11 +379,11 @@ class L2SwitchHandler:
             print(SNMPResponseCode.INVALID_DATA.value[1])
             return
         
-        response = await self._client.set_port_security_on_port(request)
+        response = await self._client.set_port_security_on_port(request, self._port)
         print(response.value[1])
     
     async def clear_port_security_on_port(self) -> None:
-        response = await self._client.clear_port_security_on_port()
+        response = await self._client.clear_port_security_on_port(self._port)
         print(response.value[1])
     
     async def clear_port_security_exact_mac_address(self, config: RequestData) -> None:
@@ -393,13 +393,13 @@ class L2SwitchHandler:
             print(SNMPResponseCode.INVALID_DATA.value[1])
             return
         
-        response = await self._client.clear_port_security_exact_mac_address(request)
+        response = await self._client.clear_port_security_exact_mac_address(request, self._port)
         print(response.value[1])
     
     ### LOOPBACK DETECTION ###
 
     async def get_loopdetect_on_port(self) -> ResponseData:
-        return await self._client.get_loopdetect_on_port()
+        return await self._client.get_loopdetect_on_port(self._port)
     
     async def set_loopdetect_on_port(self, config: RequestData) -> None:
         try:
@@ -408,18 +408,18 @@ class L2SwitchHandler:
             print(SNMPResponseCode.INVALID_DATA.value[1])
             return
         
-        response = await self._client.set_loopdetect_on_port(request)
+        response = await self._client.set_loopdetect_on_port(request, self._port)
         print(response.value[1])
 
     ### PORT UTILIZATION ###
 
     async def get_port_utilization(self) -> ResponseData:
-        return await self._client.get_port_utilization()
+        return await self._client.get_port_utilization(self._port)
     
     ### BANDWIDTH CONTROL ###
 
     async def get_bandwidth_control_on_port(self) -> ResponseData:
-        return await self._client.get_bandwidth_control_on_port()
+        return await self._client.get_bandwidth_control_on_port(self._port)
     
     async def set_bandwidth_control_on_port(self, config: RequestData) -> None:
         try:
@@ -428,13 +428,13 @@ class L2SwitchHandler:
             print(SNMPResponseCode.INVALID_DATA.value[1])
             return
         
-        response = await self._client.set_bandwidth_control_on_port(request)
+        response = await self._client.set_bandwidth_control_on_port(request, self._port)
         print(response.value[1])
     
     ### TRAFFIC CONTROL ###
     
     async def get_traffic_control_on_port(self) -> ResponseData:
-        return await self._client.get_traffic_control_on_port()
+        return await self._client.get_traffic_control_on_port(self._port)
     
     async def set_traffic_control_on_port(self, config: RequestData) -> None:
         try:
@@ -443,13 +443,13 @@ class L2SwitchHandler:
             print(SNMPResponseCode.INVALID_DATA.value[1])
             return
         
-        response = await self._client.set_traffic_control_on_port(request)
+        response = await self._client.set_traffic_control_on_port(request, self._port)
         print(response.value[1])
     
     ### TRAFFIC SEGMENTATION ###
 
     async def get_traffic_segmentation_for_port(self) -> ResponseData:
-        return await self._client.get_traffic_segmentation_for_port()
+        return await self._client.get_traffic_segmentation_for_port(self._port)
 
     async def set_traffic_segmentation_for_port(self, config: RequestData) -> None:
         try:
@@ -458,23 +458,23 @@ class L2SwitchHandler:
             print(SNMPResponseCode.INVALID_DATA.value[1])
             return
         
-        response = await self._client.set_traffic_segmentation_for_port(request)
+        response = await self._client.set_traffic_segmentation_for_port(request, self._port)
         print(response.value[1])
     
     ### PORT STATISCTICS ###
 
     async def get_all_packet_statistics_on_port(self) -> ResponseData:
-        return await self._client.get_all_packet_statistics_on_port()
+        return await self._client.get_all_packet_statistics_on_port(self._port)
 
     async def get_rx_tx_megabit_speed_on_port(self) -> ResponseData:
-        return await self._client.get_rx_tx_megabit_speed_on_port()
+        return await self._client.get_rx_tx_megabit_speed_on_port(self._port)
 
     async def get_rx_tx_all_packet_types_on_port(self) -> ResponseData:
-        return await self._client.get_rx_tx_all_packet_types_on_port()
+        return await self._client.get_rx_tx_all_packet_types_on_port(self._port)
 
     async def get_crc_errors_on_port(self) -> ResponseData:
-        return await self._client.get_crc_errors_on_port()
+        return await self._client.get_crc_errors_on_port(self._port)
 
     async def clear_all_counters(self) -> None:
-        response = await self._client.clear_all_counters()
+        response = await self._client.clear_all_counters(self._port)
         print(response.value[1])

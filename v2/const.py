@@ -18,6 +18,7 @@ class Country:
 class SNMPRequestType(StrEnum):
     GET = auto()
     SET = auto()
+    BULK_WALK = auto()
 
 # enum for config sections in yaml, names are specified for clarity
 class SwitchConfigSection(StrEnum):
@@ -27,6 +28,7 @@ class SwitchConfigSection(StrEnum):
     ACL = "acl"
     VLAN = "vlan"
     FDB = "fdb"
+    FLOOD_FDB = "flood_fdb"
     IPIF = "ipif"
     DHCP_RELAY = "dhcp_relay"
     ARP = "arp"
@@ -36,7 +38,8 @@ class SNMP:
     READ_ONLY = os.getenv("SNMP_READ_ONLY")
     READ_WRITE = os.getenv("SNMP_READ_WRITE")
     TEST_3028 = os.getenv("SNMP_TEST_3028")
-    TEST_1210 = os.getenv("SNMP_TEST_1210")
+    TEST_1210_B1 = os.getenv("SNMP_TEST_1210_B1")
+    TEST_1210_B2 = os.getenv("SNMP_TEST_1210_B2")
 
     DEFAULT_IP = "10.90.90.90"
 
