@@ -116,6 +116,6 @@ class OLTVersion3(BaseOLT):
     @property
     def _command_regex_acs_profile_config(self):
         data = super()._command_regex_acs_profile_config
-        data["regex"] = r'Base profile = "(?:(?P<default>1402_default_v2)|(?P<bridge>1402_bridge_v2))"'
+        data["regex"] = r'Base profile = "(?:(?P<default>1402_default_v2)|(?P<bridge>1402_bridge_v2)|(?P<other>[^"]+))?"'
         return data
     

@@ -299,12 +299,14 @@ class BaseOLT(BaseNetworkDevice):
         temp = self._session.before.decode("utf-8")
         match = re.search(self._command_regex_acs_profile_config["regex"], temp, re.DOTALL)
 
-        # catch base acs profile name: default, bridge or no base profile
+        # catch base acs profile name: default, bridge, unknown or no base profile
         acs_profile_type = None
         if match.group("default"):
             acs_profile_type = "default"
         elif match.group("bridge"):
             acs_profile_type = "bridge"
+        elif match.group("other"):
+            acs_profile_type = "other"
         
         # return base profile
         return acs_profile_type

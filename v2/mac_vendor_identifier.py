@@ -116,5 +116,12 @@ Unknown MACs count: {unknown_macs_count}
 Time: {duration * 1000:.1f} ms
 Average time for MAC: {average * 1000:.1f} ms""")
 
+# check exact mac
+async def check_one_mac() -> None:
+    mac = input("Enter MAC address: ")
 
-asyncio.run(test_api_with_many_macs())
+    # create context and get vendor
+    async with MacVendorIdentifier() as api:
+        print(await api.get_mac_vendor(mac))
+
+asyncio.run(check_one_mac())

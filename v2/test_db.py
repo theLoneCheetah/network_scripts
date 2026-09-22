@@ -78,7 +78,14 @@ class TestDatabaseManager:
             
             return sorted(results, key=lambda x: x["COUNT"])
 
+    def get_all_streets_data(self):
+        with self.__connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM streets")
+            return cursor.fetchall()
+
 if __name__ == "__main__":
     db = TestDatabaseManager()
-    random_usernums = db.get_random_usernums()
-    print(random_usernums)
+    street_codes = db.get_all_streets_data()
+
+    with open("out.txt", "w") as F:
+        F.writelines(str(i) + "\n" for i in street_codes)

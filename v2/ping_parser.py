@@ -2,6 +2,7 @@
 import re
 
 ru_windows_regex = re.compile(r"Ответ от (?P<ip>(?:\d+\.){3}\d+): число байт=(?P<bytes>\d+) время[=<](?P<time>\d+)мс TTL=(?P<ttl>\d+)\n")
+en_windows_regex = re.compile(r"Reply from (?P<ip>(?:\d+\.){3}\d+): bytes=(?P<bytes>\d+) time[=<](?P<time>\d+)ms TTL=(?P<ttl>\d+)\n")
 en_linux_regex = re.compile(r"(?P<bytes>\d+) bytes from (?P<ip>(?:\d+\.){3}\d+): icmp_seq=(?:\d+) ttl=(?P<ttl>\d+) time[=<](?P<time>[\d.]+) ms\n")
 
 count = 0

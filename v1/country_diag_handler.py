@@ -84,6 +84,7 @@ class CountryDiagHandler(DiagHandler):
 
         # acs-profile
         self.__acs_profile_not_found = False
+        self.__unknown_base_profile = False
         self.__no_base_profile = False
         self.__bridge_profile = False
         self.__wrong_acs_profile_settings = False
@@ -386,6 +387,10 @@ class CountryDiagHandler(DiagHandler):
         if res is None:
             self.__no_base_profile = True
             return
+        # error flag and return if unknown profile found
+        elif res == "other":
+            self.__unknown_base_profile = True
+            return
         # mark flag if it's bridge profile, otherwise it's default
         elif res == "bridge":
             self.__bridge_profile = True
@@ -498,6 +503,8 @@ class CountryDiagHandler(DiagHandler):
         # acs-profile: mode not found, no base profile, wrong
         if self.__acs_profile_not_found:
             print("Не найден acs-profile")
+        elif self.__unknown_base_profile:
+            print("Неизвестный базовый профиль в acs-profile")
         elif self.__no_base_profile:
             print("Не назначен базовый профиль в acs-profile")
         elif self.__wrong_acs_profile_settings:
