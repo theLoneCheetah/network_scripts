@@ -250,10 +250,10 @@ def show_ip_interface(model: str, vlan_id: int, vlan_name: str, ipif_name: str) 
         case x if x == CISCO_SWITCH:
             return {"command": f"show ip interface vlan {vlan_id}",
                     "regex": rf"IP address is ((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
-        case "DGS-3120-24TC":
+        case "DGS-3120-24TC" | "DGS-3120-24SC":
             return {"command": f"show ipif {ipif_name}",
                     "showall": "show ipif",
-                    "regex": rf"VLAN Name\s+:\s+{vlan_name}\s+Interface Admin State\s+:\s+Enabled\s+Link Status\s+:\s+LinkUp\s+IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
+                    "regex": rf"VLAN Name\s+:\s+{vlan_name}\s+Interface Admin State\s+:\s+Enabled\s+(?:Link Status\s+:\s+LinkUp\s+)?IPv4 Address\s+:\s+((?:\d{{1,3}}\.){{3}}\d{{1,3}})/(\d+)"}
         case _:
             return {"command": f"show ipif {ipif_name}",
                     "showall": "show ipif",
