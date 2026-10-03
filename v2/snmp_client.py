@@ -209,7 +209,7 @@ class SNMPClient(ABC):
     async def _get(
                 self,
                 config_fragment: dict[str, Any],   # one of specified oid groups
-                include_params: dict[str, Any],   # parameters with values
+                include_params: list[str],   # list of parameter names
                 oid_vars: dict[str, Any] | None = None,   # variables to substitute into oids
                 skip_init: bool = False   # flag for marking requests without pre-initialization
             ) -> dict[str, Any]:

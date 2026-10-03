@@ -476,5 +476,5 @@ class L2SwitchHandler:
         return await self._client.get_crc_errors_on_port(self._port)
 
     async def clear_all_counters(self) -> None:
-        response = await self._client.clear_all_counters(self._port)
+        response = await self._client.clear_all_counters()
         print(response.value[1])

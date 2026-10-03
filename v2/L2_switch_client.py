@@ -1864,8 +1864,8 @@ class L2SwitchClient(SNMPClient):
     # get all port packet statistics: speed and different packet types count
     async def get_all_packet_statistics_on_port(self, port: int) -> ResponseData:
         # speed and packet types count
-        task_megabit = asyncio.create_task(self.get_rx_tx_megabit_speed_on_port())
-        task_packets = asyncio.create_task(self.get_rx_tx_all_packet_types_on_port())
+        task_megabit = asyncio.create_task(self.get_rx_tx_megabit_speed_on_port(port))
+        task_packets = asyncio.create_task(self.get_rx_tx_all_packet_types_on_port(port))
 
         # gather results
         results = await asyncio.gather(task_megabit, task_packets)
@@ -1875,7 +1875,7 @@ class L2SwitchClient(SNMPClient):
     async def get_rx_tx_megabit_speed_on_port(self, port: int) -> ResponseData:
         # rx and tx bytes tasks
         include_params = ["rx_bytes", "tx_bytes"]
-        tasks = [asyncio.create_task(self._get_packets_speed(key)) for key in include_params]
+        tasks = [asyncio.create_task(self._get_packets_speed(key, port)) for key in include_params]
         
         # get and return refactored results
         results = await asyncio.gather(*tasks)
