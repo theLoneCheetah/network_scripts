@@ -104,7 +104,7 @@ class L2SwitchClient(SNMPClient):
     ### SWITCH MANAGEMENT AND INFO ###
 
     # get any data associated with switch by param list
-    async def _get_switch_data(self, include_params: list[str], prefix: str | None = None) -> ResponseData:
+    async def _get_switch_data(self, include_params: list[str], prefix: str = "") -> ResponseData:
         # add optional prefix
         if prefix is not None:
             include_params = [f"{prefix}{param}" for param in include_params]
@@ -1479,7 +1479,7 @@ class L2SwitchClient(SNMPClient):
     ### PORT MANAGEMENT AND INFO ###
 
     # get any data associated with exact port by param list
-    async def _get_port_data(self, port: int, include_params: list[str], prefix: str | None = None) -> ResponseData:
+    async def _get_port_data(self, port: int, include_params: list[str], prefix: str = "") -> ResponseData:
         # add optional prefix
         if prefix is not None:
             include_params = [f"{prefix}{param}" for param in include_params]
